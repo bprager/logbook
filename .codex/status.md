@@ -4,7 +4,7 @@ Updated: 2026-04-27
 
 ## Current Focus
 
-Preparing the first minor planning release.
+First minor planning release completed.
 
 ## Active Request
 
@@ -22,7 +22,7 @@ Preparing the first minor planning release.
 - [x] Proposed architecture and implementation sequence.
 - [x] Updated README for GitHub.
 - [x] Prepared `0.1.0` release notes.
-- [x] Release content ready to commit and push.
+- [x] Committed and pushed `0.1.0`.
 
 ## Notes
 
@@ -38,4 +38,4 @@ Preparing the first minor planning release.
 - Audio retention: do not link audio in Obsidian; delete local and Sony-recorder source audio after 24 hours once processing and vault sync are confirmed.
 - Local `.env` placeholder created and ignored by git for tokens, Obsidian CLI settings, `odin` API config, Sony recorder mount details, and retention settings.
 - Detailed plan captured in `.codex/architecture-plan.md`.
-- No existing git tags were found; use `0.1.0` as the first minor planning release.
+- `0.1.0` is the first minor planning release and is tagged as `v0.1.0`.
