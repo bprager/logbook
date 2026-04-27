@@ -1,0 +1,54 @@
+# macOS
+.DS_Store
+
+# Project setup files intentionally tracked even if a global gitignore hides them
+!.codex/
+!.codex/**
+!Changelog.md
+!.editorconfig
+
+# Editor and local environment
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.python-version
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Runtime data
+VoiceIngest/
+voice_ingest.sqlite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+logs/
+tmp/
+
+# Audio and transcript artifacts
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.rttm
+*.srt
+*.vtt
+
+# Model caches and secrets
+.cache/
+models/
+*.key
+*.pem
