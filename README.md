@@ -151,6 +151,12 @@ Backfill jobs already marked as routed:
 PYTHONPATH=src python3 -m logbook.cli route-transcripts --env .env --vault /Users/bernd/Obsidian/obs-vault --writer obsidian-cli --include-routed
 ```
 
+Render canonical daily logs from routed inbox entries:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli consolidate-logs --env .env --vault /Users/bernd/Obsidian/obs-vault --writer obsidian-cli
+```
+
 Run the standard-library test suite:
 
 ```bash

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from logbook.config import ConfigError, load_app_config, load_recorder_config
+from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
 from logbook.ingest import run_ingest_dry_run
 from logbook.recorder import discover_recordings, validate_recorder
@@ -87,6 +88,29 @@ def main(argv: list[str] | None = None) -> int:
         help="include jobs that were already routed, for controlled vault backfills",
     )
 
+    consolidate_parser = subparsers.add_parser(
+        "consolidate-logs",
+        help="render canonical daily logs from routed log inbox entries",
+    )
+    consolidate_parser.add_argument("--env", type=Path, default=Path(".env"))
+    consolidate_parser.add_argument(
+        "--vault",
+        type=Path,
+        required=True,
+        help="vault root to write canonical daily logs",
+    )
+    consolidate_parser.add_argument(
+        "--writer",
+        choices=("filesystem", "obsidian-cli"),
+        default="filesystem",
+        help="write daily logs directly or through obsidian-cli create",
+    )
+    consolidate_parser.add_argument(
+        "--date",
+        default=None,
+        help="optional YYYY-MM-DD date to consolidate",
+    )
+
     vault_parser = subparsers.add_parser(
         "vault-preflight",
         help="validate configured Obsidian CLI and vault paths without writing",
@@ -119,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
             include_routed=args.include_routed,
             commit_message=args.commit_message,
         )
+    if args.command == "consolidate-logs":
+        return _consolidate_logs(args.env, args.vault, args.writer, args.date)
     if args.command == "vault-preflight":
         return _vault_preflight(args.env, args.vault)
 
@@ -372,6 +398,60 @@ def _route_transcripts(
         print(
             f"- filename={item.job.source_filename} status={item.status} "
             f"job_id={item.job.id} classification={label} output_path={output_path}"
+        )
+
+    return 1 if result.failed_count else 0
+
+
+def _consolidate_logs(
+    env_path: Path,
+    vault_root: Path,
+    writer_mode: str,
+    entry_date: str | None,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    if writer_mode == "obsidian-cli":
+        if config.obsidian is None:
+            print("config_error: missing Obsidian configuration", file=sys.stderr)
+            return 2
+        workflow = ObsidianVaultWorkflow(
+            config=config.obsidian,
+            vault_root=vault_root,
+            lock_root=config.processing_root,
+        )
+        preflight = workflow.preflight()
+        if not preflight.operational:
+            _print_vault_preflight(preflight)
+            return 1
+        note_writer = ObsidianCliNoteWriter(config=config.obsidian, vault_root=vault_root)
+    else:
+        note_writer = FilesystemNoteWriter()
+
+    result = consolidate_daily_logs(
+        config=config,
+        vault_root=vault_root,
+        note_writer=note_writer,
+        entry_date=entry_date,
+    )
+    print("Consolidate daily logs")
+    print(f"env_path={env_path}")
+    print(f"vault_root={result.vault_root}")
+    print("delete_audio=no")
+    print(f"writer={writer_mode}")
+    print(f"date={entry_date if entry_date is not None else '-'}")
+    print(f"consolidated_count={result.consolidated_count}")
+    print(f"failed_count={result.failed_count}")
+    print("consolidation_results:")
+    for item in result.items:
+        output_path = item.daily_log_path if item.daily_log_path is not None else "-"
+        print(
+            f"- date={item.entry_date} status={item.status} "
+            f"entry_count={item.entry_count} output_path={output_path}"
         )
 
     return 1 if result.failed_count else 0

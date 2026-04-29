@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 from logbook.classifier import PrefixClassification
 from logbook.ledger import RecordingJob
+
+
+class DailyLogEntryLike(Protocol):
+    job: RecordingJob
+    recorded_at: datetime
+    content: str
 
 
 def render_routed_note(
@@ -25,6 +32,35 @@ def render_routed_note(
         "audio_retention": "source audio retained outside Obsidian until retention gate",
     }
     return f"{_frontmatter(frontmatter)}\n# {title}\n\n{classification.content.strip()}\n"
+
+
+def render_daily_log(
+    entry_date: str,
+    entries: list[DailyLogEntryLike],
+    generated_from: str,
+) -> str:
+    if not entries:
+        raise ValueError("daily log requires at least one entry")
+
+    recorded_at = entries[0].recorded_at
+    title = recorded_at.strftime("%A, %B %-d, %Y Log")
+    frontmatter = {
+        "type": "daily_log",
+        "date": entry_date,
+        "source": "voice_ingest",
+        "entry_count": str(len(entries)),
+        "generated_from": generated_from,
+    }
+    sections = [_frontmatter(frontmatter), f"# {title}"]
+    for entry in entries:
+        sections.extend(
+            [
+                f"## {entry.recorded_at:%H:%M}",
+                entry.content.strip(),
+                f"_Source: `logbook-job-{entry.job.id}`_",
+            ]
+        )
+    return "\n\n".join(sections).rstrip() + "\n"
 
 
 def atomic_write_text(path: Path, content: str) -> None:

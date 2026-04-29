@@ -341,22 +341,24 @@ Acceptance:
 
 ### LGB-015 - Consolidation Engine
 
-Status: Blocked
+Status: In progress
 
 Dependencies: LGB-003, LGB-004, LGB-011, LGB-012, LGB-025
 
 Deliverables:
 
 - Track open log date.
-- Consolidate dates earlier than a later-arriving log.
+- Manual consolidation CLI for routed log entries.
+- Consolidate routed log entries by date.
 - Render final daily logs in timestamp order.
-- Record daily consolidation metadata.
-- Sync generated daily logs through the Obsidian CLI vault workflow.
+- Record each job's canonical daily log path and consolidated timestamp in the ledger.
+- Sync generated daily logs through the Obsidian vault Git workflow.
 
 Acceptance:
 
 - The canonical path exactly matches `06 - Timestamps/YYYY/MM-Month/YYYY-MM-DD-Weekday-Log.md`.
 - Only one final daily log exists for a date.
+- Real vault pilot generated and pushed 3 daily logs from 17 routed inbox notes.
 
 ### LGB-016 - Late-Arrival Rebuild
 

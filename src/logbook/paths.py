@@ -72,6 +72,18 @@ def dead_letter_path(vault_root: Path, recorded_at: datetime, job_id: int) -> Pa
     return vault_root / "99 - Dead Letters" / f"{timestamp_part}-job-{job_id:06d}.md"
 
 
+def daily_log_path(vault_root: Path, recorded_at: datetime) -> Path:
+    date_part = recorded_at.strftime("%Y-%m-%d")
+    weekday = recorded_at.strftime("%A")
+    return (
+        vault_root
+        / "06 - Timestamps"
+        / recorded_at.strftime("%Y")
+        / month_folder(recorded_at)
+        / f"{date_part}-{weekday}-Log.md"
+    )
+
+
 def month_folder(value: datetime) -> str:
     return f"{value.month:02d}-{MONTH_NAMES[value.month - 1]}"
 

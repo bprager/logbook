@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tightened vault preflight to verify the configured vault name is registered with `obsidian-cli`.
 - Added single-job routing with `--job-id` for controlled first writes into the real vault.
 - Added `--include-routed` for controlled backfills and Git vault workflow templates for pull, stage, status, commit, and push.
+- Added daily log consolidation into canonical `06 - Timestamps` paths with timestamp-sorted entries and ledger updates.
 
 ## [0.1.0] - 2026-04-27
 

@@ -120,3 +120,14 @@ Obsidian CLI vault workflow around test-vault routing.
   - Added Git vault workflow templates for pull, stage, status, commit, and push.
 - Real vault now has 17 generated Logbook inbox notes committed and pushed; vault status is clean against `origin/main` except for uncommitted `.obsidian/workspace.json`.
 - Verification after steps 1-6: 30 tests OK, `py_compile` OK, `vault-preflight` operational, and `git diff --check` OK.
+- Committed the Logbook ingest/routing implementation in this repo as `c4e59be Implement Logbook ingest and Obsidian routing`.
+- Added `consolidate-logs` and generated canonical daily logs from the 17 real inbox notes.
+- Real vault daily log output:
+  - `06 - Timestamps/2026/04-April/2026-04-27-Monday-Log.md` with 9 entries.
+  - `06 - Timestamps/2026/04-April/2026-04-28-Tuesday-Log.md` with 6 entries.
+  - `06 - Timestamps/2026/04-April/2026-04-29-Wednesday-Log.md` with 2 entries.
+- Verified generated daily logs contain no `.mp3`, local processing path, or recorder path.
+- Ledger now reports `consolidated|17` and records the canonical daily log path for each job.
+- Committed and pushed the daily logs in the Obsidian vault as `db9d42f Add consolidated daily logs`.
+- Vault remains clean against `origin/main` except for uncommitted `.obsidian/workspace.json`.
+- Consolidation verification at 2026-04-29T17:50:44Z: 32 tests OK, `py_compile` OK, and privacy/path scan OK.

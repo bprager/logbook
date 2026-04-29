@@ -34,6 +34,8 @@ class RecordingJob:
     classification: str | None = None
     obsidian_path: str | None = None
     routed_at: str | None = None
+    daily_log_path: str | None = None
+    consolidated_at: str | None = None
 
 
 class Ledger:
@@ -82,7 +84,9 @@ class Ledger:
 	                    asr_model TEXT,
 	                    classification TEXT,
 	                    obsidian_path TEXT,
-	                    routed_at TEXT
+	                    routed_at TEXT,
+	                    daily_log_path TEXT,
+	                    consolidated_at TEXT
 	                )
                 """
             )
@@ -96,6 +100,8 @@ class Ledger:
             self._ensure_column("recording_jobs", "classification", "TEXT")
             self._ensure_column("recording_jobs", "obsidian_path", "TEXT")
             self._ensure_column("recording_jobs", "routed_at", "TEXT")
+            self._ensure_column("recording_jobs", "daily_log_path", "TEXT")
+            self._ensure_column("recording_jobs", "consolidated_at", "TEXT")
             self.connection.execute(
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -111,7 +117,7 @@ class Ledger:
                    size_bytes, modified_at, parsed_recorded_at, status, first_seen_at,
                    last_seen_at, copied_path, copied_at, odin_job_id, submitted_to_odin_at,
                    transcript_path, transcribed_at, asr_model, classification,
-                   obsidian_path, routed_at
+                   obsidian_path, routed_at, daily_log_path, consolidated_at
             FROM recording_jobs
             WHERE checksum_sha256 = ?
             """,
@@ -141,6 +147,8 @@ class Ledger:
             classification=row["classification"],
             obsidian_path=row["obsidian_path"],
             routed_at=row["routed_at"],
+            daily_log_path=row["daily_log_path"],
+            consolidated_at=row["consolidated_at"],
         )
 
     def get_by_id(self, job_id: int) -> RecordingJob | None:
@@ -214,6 +222,32 @@ class Ledger:
             WHERE status = 'copied'
             ORDER BY id
             """
+        ).fetchall()
+        return [
+            job
+            for row in rows
+            if (job := self.get_by_checksum(row["checksum_sha256"])) is not None
+        ]
+
+    def log_jobs_for_consolidation(self, entry_date: str | None = None) -> list[RecordingJob]:
+        params: tuple[str, ...]
+        date_clause = ""
+        if entry_date is not None:
+            date_clause = "AND substr(parsed_recorded_at, 1, 10) = ?"
+            params = (entry_date,)
+        else:
+            params = ()
+        rows = self.connection.execute(
+            f"""
+            SELECT checksum_sha256
+            FROM recording_jobs
+            WHERE status = 'inbox_written'
+              AND classification = 'log'
+              AND parsed_recorded_at IS NOT NULL
+              {date_clause}
+            ORDER BY parsed_recorded_at, id
+            """,
+            params,
         ).fetchall()
         return [
             job
@@ -356,6 +390,35 @@ class Ledger:
         job = self.get_by_checksum(checksum_sha256)
         if job is None:
             raise RuntimeError("routed recording job was not found")
+        return job
+
+    def mark_consolidated(
+        self,
+        checksum_sha256: str,
+        daily_log_path: Path,
+        consolidated_at: str | None = None,
+    ) -> RecordingJob:
+        consolidated_at = consolidated_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET status = 'consolidated',
+                    daily_log_path = ?,
+                    consolidated_at = ?,
+                    last_seen_at = ?
+                WHERE checksum_sha256 = ?
+                """,
+                (
+                    str(daily_log_path),
+                    consolidated_at,
+                    consolidated_at,
+                    checksum_sha256,
+                ),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("consolidated recording job was not found")
         return job
 
     def _ensure_column(self, table_name: str, column_name: str, column_type: str) -> None:
