@@ -450,7 +450,7 @@ Acceptance:
 
 ### LGB-020 - Bounded Action API
 
-Status: Ready
+Status: Completed
 
 Dependencies: LGB-019
 
@@ -460,15 +460,21 @@ Deliverables:
 - `POST /dead-letters/{id}/rescue`
 - `POST /logs/{date}/rebuild`
 - Audit log for every requested action.
+- SQLite `action_audit` table for accepted bounded action intents.
+- Separate action-token auth through `LOGBOOK_ACTION_TOKEN`.
+- Optional per-target action idempotency key for safe OpenClaw retries.
 
 Acceptance:
 
 - Actions are validated, idempotent, and scoped.
 - No endpoint performs arbitrary shell execution or direct hard delete.
+- Action endpoints record auditable intent without mutating job state inline.
+- Invalid targets are rejected before audit creation.
+- Repeated requests with the same idempotency key return the existing audit record.
 
 ### LGB-021 - launchd Packaging
 
-Status: Blocked
+Status: Ready
 
 Dependencies: LGB-006, LGB-019
 

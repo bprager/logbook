@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added category note routing into `20 - Notes/00 - Inbox/{category}` with prefix-stripped content and ledger tracking.
 - Added dead-letter note routing into `99 - Dead Letters` with review status, 28-day `delete_after`, and rescue guidance.
 - Added a read-only FastAPI status API with Swagger UI, OpenAPI metadata, optional bearer-token auth, and endpoints for health, jobs, log inbox, latest consolidated log, and dead letters.
+- Added bounded FastAPI action endpoints for job reprocess, dead-letter rescue, and daily log rebuild requests with `LOGBOOK_ACTION_TOKEN` auth, SQLite audit records, and optional idempotency keys.
 
 ### Fixed
 

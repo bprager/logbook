@@ -13,7 +13,7 @@ from logbook.config import AppConfig
 from logbook.ledger import RecordingJob, open_ledger
 
 
-API_TITLE = "Logbook Status API"
+API_TITLE = "Logbook API"
 API_VERSION = "0.1.0"
 
 
@@ -94,6 +94,27 @@ class DeadLetterResponse(BaseModel):
     items: list[DeadLetterItem]
 
 
+class ActionRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=500)
+    requested_by: str = Field(default="openclaw", max_length=80)
+    idempotency_key: Optional[str] = Field(default=None, max_length=120)
+
+
+class DeadLetterRescueRequest(ActionRequest):
+    target_route_kind: str = Field(default="log", pattern="^(log|category|meeting)$")
+    target_category: Optional[str] = Field(default=None, max_length=80)
+
+
+class ActionAcceptedResponse(BaseModel):
+    audit_id: int
+    action_type: str
+    target_type: str
+    target_id: str
+    idempotency_key: Optional[str]
+    status: str
+    created_at: str
+
+
 @dataclass(frozen=True)
 class LatestLogGroup:
     daily_log_path: str
@@ -113,14 +134,23 @@ def create_app(config: AppConfig) -> FastAPI:
         if credentials is None or credentials.credentials != expected:
             raise HTTPException(status_code=401, detail="missing or invalid read token")
 
+    def require_action_token(
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> None:
+        expected = config.api.action_token if config.api is not None else None
+        if expected is None:
+            raise HTTPException(status_code=503, detail="action token is not configured")
+        if credentials is None or credentials.credentials != expected:
+            raise HTTPException(status_code=401, detail="missing or invalid action token")
+
     app = FastAPI(
         title=API_TITLE,
         version=API_VERSION,
-        summary="Read-only local status API for the Sony recorder to Obsidian Logbook pipeline.",
+        summary="Local status and bounded action API for the Sony recorder to Obsidian pipeline.",
         description=(
             "This API exposes queue, routing, dead-letter, and consolidation status from the "
-            "local SQLite ledger. It intentionally does not expose source audio paths and does "
-            "not mutate processing state."
+            "local SQLite ledger. Bounded action endpoints only record auditable action "
+            "requests; they do not execute shell commands, delete files, or rewrite notes inline."
         ),
         docs_url="/docs",
         redoc_url="/redoc",
@@ -139,10 +169,12 @@ def create_app(config: AppConfig) -> FastAPI:
             {"name": "jobs", "description": "Read-only recording job status."},
             {"name": "logs", "description": "Log inbox and consolidated daily log status."},
             {"name": "dead letters", "description": "Unknown-prefix transcripts awaiting review."},
+            {"name": "actions", "description": "Token-protected bounded action requests."},
         ],
     )
 
     read_dependencies = [Depends(require_read_token)]
+    action_dependencies = [Depends(require_action_token)]
 
     @app.get("/health", tags=["system"], response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -283,6 +315,88 @@ def create_app(config: AppConfig) -> FastAPI:
         ]
         return DeadLetterResponse(count=len(items), items=items)
 
+    @app.post(
+        "/jobs/{job_id}/reprocess",
+        tags=["actions"],
+        response_model=ActionAcceptedResponse,
+        status_code=202,
+        dependencies=action_dependencies,
+    )
+    def request_job_reprocess(job_id: int, request: ActionRequest) -> ActionAcceptedResponse:
+        job = _job_by_id(config.sqlite_path, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return _record_action(
+            config.sqlite_path,
+            action_type="job.reprocess",
+            target_type="recording_job",
+            target_id=str(job.id),
+            requested_by=request.requested_by,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "reason": request.reason,
+                "current_status": job.status,
+                "classification": job.classification,
+            },
+        )
+
+    @app.post(
+        "/dead-letters/{job_id}/rescue",
+        tags=["actions"],
+        response_model=ActionAcceptedResponse,
+        status_code=202,
+        dependencies=action_dependencies,
+    )
+    def request_dead_letter_rescue(
+        job_id: int,
+        request: DeadLetterRescueRequest,
+    ) -> ActionAcceptedResponse:
+        job = _job_by_id(config.sqlite_path, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.status != "dead_letter_written" or job.classification != "dead_letter":
+            raise HTTPException(status_code=409, detail="job is not a dead letter")
+        if request.target_route_kind == "category" and not request.target_category:
+            raise HTTPException(status_code=422, detail="target_category is required")
+        return _record_action(
+            config.sqlite_path,
+            action_type="dead_letter.rescue",
+            target_type="recording_job",
+            target_id=str(job.id),
+            requested_by=request.requested_by,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "reason": request.reason,
+                "target_route_kind": request.target_route_kind,
+                "target_category": request.target_category,
+            },
+        )
+
+    @app.post(
+        "/logs/{entry_date}/rebuild",
+        tags=["actions"],
+        response_model=ActionAcceptedResponse,
+        status_code=202,
+        dependencies=action_dependencies,
+    )
+    def request_log_rebuild(entry_date: str, request: ActionRequest) -> ActionAcceptedResponse:
+        _validate_entry_date(entry_date)
+        jobs_for_date = _log_jobs_for_date(config.sqlite_path, entry_date)
+        if not jobs_for_date:
+            raise HTTPException(status_code=404, detail="log date not found")
+        return _record_action(
+            config.sqlite_path,
+            action_type="log.rebuild",
+            target_type="log_date",
+            target_id=entry_date,
+            requested_by=request.requested_by,
+            idempotency_key=request.idempotency_key,
+            payload={
+                "reason": request.reason,
+                "job_ids": [job.id for job in jobs_for_date],
+            },
+        )
+
     return app
 
 
@@ -407,6 +521,29 @@ def _latest_consolidated_log(sqlite_path: Path) -> Optional[LatestLogGroup]:
         ledger.close()
 
 
+def _log_jobs_for_date(sqlite_path: Path, entry_date: str) -> list[RecordingJob]:
+    ledger = open_ledger(sqlite_path)
+    try:
+        rows = ledger.connection.execute(
+            """
+            SELECT checksum_sha256
+            FROM recording_jobs
+            WHERE classification = 'log'
+              AND status IN ('inbox_written', 'consolidated')
+              AND substr(parsed_recorded_at, 1, 10) = ?
+            ORDER BY parsed_recorded_at, id
+            """,
+            (entry_date,),
+        ).fetchall()
+        return [
+            job
+            for row in rows
+            if (job := ledger.get_by_checksum(row["checksum_sha256"])) is not None
+        ]
+    finally:
+        ledger.close()
+
+
 def _jobs_for_daily_log(ledger, daily_log_path: str) -> list[RecordingJob]:
     rows = ledger.connection.execute(
         """
@@ -464,3 +601,42 @@ def _delete_after(recorded_at: Optional[str]) -> Optional[str]:
     if recorded_at is None:
         return None
     return (datetime.fromisoformat(recorded_at) + timedelta(days=28)).date().isoformat()
+
+
+def _record_action(
+    sqlite_path: Path,
+    action_type: str,
+    target_type: str,
+    target_id: str,
+    requested_by: str,
+    payload: dict,
+    idempotency_key: Optional[str] = None,
+) -> ActionAcceptedResponse:
+    ledger = open_ledger(sqlite_path, initialize=True)
+    try:
+        audit = ledger.record_action(
+            action_type=action_type,
+            target_type=target_type,
+            target_id=target_id,
+            request_payload=payload,
+            requested_by=requested_by,
+            idempotency_key=idempotency_key,
+        )
+    finally:
+        ledger.close()
+    return ActionAcceptedResponse(
+        audit_id=audit.id,
+        action_type=audit.action_type,
+        target_type=audit.target_type,
+        target_id=audit.target_id,
+        idempotency_key=audit.idempotency_key,
+        status=audit.status,
+        created_at=audit.created_at,
+    )
+
+
+def _validate_entry_date(entry_date: str) -> None:
+    try:
+        datetime.strptime(entry_date, "%Y-%m-%d")
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail="entry_date must be YYYY-MM-DD") from error

@@ -26,9 +26,12 @@ class StatusApiTests(TestCase):
 
             self.assertEqual(openapi.status_code, 200)
             schema = openapi.json()
-            self.assertEqual(schema["info"]["title"], "Logbook Status API")
+            self.assertEqual(schema["info"]["title"], "Logbook API")
             self.assertEqual(schema["info"]["version"], "0.1.0")
             self.assertIn("/jobs/{job_id}", schema["paths"])
+            self.assertIn("/jobs/{job_id}/reprocess", schema["paths"])
+            self.assertIn("/dead-letters/{job_id}/rescue", schema["paths"])
+            self.assertIn("/logs/{entry_date}/rebuild", schema["paths"])
             self.assertIn("/logs/open-date", schema["paths"])
             self.assertIn("/logs/consolidated/latest", schema["paths"])
             self.assertIn("HTTPBearer", schema["components"]["securitySchemes"])
@@ -50,6 +53,139 @@ class StatusApiTests(TestCase):
 
             self.assertEqual(unauthorized.status_code, 401)
             self.assertEqual(authorized.status_code, 200)
+
+    def test_action_token_is_required_for_bounded_actions(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp), action_token="action-secret")
+            seeded = _seed_status_fixture(app_config)
+            client = TestClient(create_app(app_config))
+
+            missing = client.post(f"/jobs/{seeded['consolidated_id']}/reprocess", json={})
+            authorized = client.post(
+                f"/jobs/{seeded['consolidated_id']}/reprocess",
+                json={"reason": "retry with real odin"},
+                headers={"Authorization": "Bearer action-secret"},
+            )
+
+            self.assertEqual(missing.status_code, 401)
+            self.assertEqual(authorized.status_code, 202)
+            self.assertEqual(authorized.json()["action_type"], "job.reprocess")
+
+    def test_actions_require_configured_action_token(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp))
+            seeded = _seed_status_fixture(app_config)
+            client = TestClient(create_app(app_config))
+
+            response = client.post(f"/jobs/{seeded['consolidated_id']}/reprocess", json={})
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.json()["detail"], "action token is not configured")
+
+    def test_bounded_actions_create_audit_records_without_mutating_jobs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp), action_token="action-secret")
+            seeded = _seed_status_fixture(app_config)
+            client = TestClient(create_app(app_config))
+            headers = {"Authorization": "Bearer action-secret"}
+
+            reprocess = client.post(
+                f"/jobs/{seeded['consolidated_id']}/reprocess",
+                json={
+                    "reason": "retry transcript",
+                    "requested_by": "openclaw.test",
+                    "idempotency_key": "retry-job-once",
+                },
+                headers=headers,
+            )
+            duplicate_reprocess = client.post(
+                f"/jobs/{seeded['consolidated_id']}/reprocess",
+                json={
+                    "reason": "retry transcript again",
+                    "requested_by": "openclaw.test",
+                    "idempotency_key": "retry-job-once",
+                },
+                headers=headers,
+            )
+            rescue = client.post(
+                f"/dead-letters/{seeded['dead_letter_id']}/rescue",
+                json={
+                    "target_route_kind": "category",
+                    "target_category": "task",
+                    "reason": "spoken prefix was clipped",
+                },
+                headers=headers,
+            )
+            rebuild = client.post(
+                "/logs/2026-04-29/rebuild",
+                json={"reason": "manual consistency check"},
+                headers=headers,
+            )
+
+            self.assertEqual(reprocess.status_code, 202)
+            self.assertEqual(duplicate_reprocess.status_code, 202)
+            self.assertEqual(
+                duplicate_reprocess.json()["audit_id"],
+                reprocess.json()["audit_id"],
+            )
+            self.assertEqual(rescue.status_code, 202)
+            self.assertEqual(rebuild.status_code, 202)
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                rows = ledger.connection.execute(
+                    """
+                    SELECT action_type, target_type, target_id, idempotency_key, requested_by,
+                           request_payload, status
+                    FROM action_audit
+                    ORDER BY id
+                    """
+                ).fetchall()
+                consolidated = ledger.get_by_id(seeded["consolidated_id"])
+                dead_letter = ledger.get_by_id(seeded["dead_letter_id"])
+            finally:
+                ledger.close()
+
+            self.assertEqual([row["action_type"] for row in rows], [
+                "job.reprocess",
+                "dead_letter.rescue",
+                "log.rebuild",
+            ])
+            self.assertEqual(rows[0]["requested_by"], "openclaw.test")
+            self.assertEqual(rows[0]["target_type"], "recording_job")
+            self.assertEqual(rows[0]["idempotency_key"], "retry-job-once")
+            self.assertEqual(rows[1]["target_id"], str(seeded["dead_letter_id"]))
+            self.assertEqual(rows[2]["target_type"], "log_date")
+            self.assertEqual(rows[2]["target_id"], "2026-04-29")
+            self.assertEqual({row["status"] for row in rows}, {"accepted"})
+            self.assertIsNotNone(consolidated)
+            self.assertIsNotNone(dead_letter)
+            self.assertEqual(consolidated.status, "consolidated")
+            self.assertEqual(dead_letter.status, "dead_letter_written")
+
+    def test_action_validation_rejects_unbounded_or_invalid_targets(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp), action_token="action-secret")
+            seeded = _seed_status_fixture(app_config)
+            client = TestClient(create_app(app_config))
+            headers = {"Authorization": "Bearer action-secret"}
+
+            missing_job = client.post("/jobs/999/reprocess", json={}, headers=headers)
+            non_dead_letter = client.post(
+                f"/dead-letters/{seeded['consolidated_id']}/rescue",
+                json={},
+                headers=headers,
+            )
+            missing_category = client.post(
+                f"/dead-letters/{seeded['dead_letter_id']}/rescue",
+                json={"target_route_kind": "category"},
+                headers=headers,
+            )
+            bad_date = client.post("/logs/not-a-date/rebuild", json={}, headers=headers)
+
+            self.assertEqual(missing_job.status_code, 404)
+            self.assertEqual(non_dead_letter.status_code, 409)
+            self.assertEqual(missing_category.status_code, 422)
+            self.assertEqual(bad_date.status_code, 422)
 
     def test_health_and_jobs_are_read_only_and_path_safe(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -203,7 +339,11 @@ def _seed_status_fixture(config: AppConfig) -> dict[str, int]:
     }
 
 
-def _app_config(root: Path, read_token: str | None = None) -> AppConfig:
+def _app_config(
+    root: Path,
+    read_token: str | None = None,
+    action_token: str | None = None,
+) -> AppConfig:
     mount = root / "IC RECORDER"
     recordings_dir = mount / "REC_FILE" / "FOLDER01"
     recordings_dir.mkdir(parents=True)
@@ -228,6 +368,7 @@ def _app_config(root: Path, read_token: str | None = None) -> AppConfig:
             bind_host="127.0.0.1",
             port=8787,
             read_token=read_token,
+            action_token=action_token,
         ),
     )
 

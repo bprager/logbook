@@ -167,6 +167,14 @@ The interactive Swagger UI is available at `/docs`, ReDoc at `/redoc`, and the O
 `/openapi.json`. If `LOGBOOK_READ_TOKEN` is set, use Swagger's **Authorize** control with a bearer
 token before calling status endpoints.
 
+Bounded action endpoints use `LOGBOOK_ACTION_TOKEN` and only record auditable intent in SQLite:
+
+- `POST /jobs/{id}/reprocess`
+- `POST /dead-letters/{id}/rescue`
+- `POST /logs/{date}/rebuild`
+
+Send an `idempotency_key` in the JSON body when OpenClaw may retry an action request.
+
 Run the standard-library test suite:
 
 ```bash

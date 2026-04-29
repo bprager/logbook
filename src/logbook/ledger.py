@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -37,6 +38,23 @@ class RecordingJob:
     daily_log_path: str | None = None
     consolidated_at: str | None = None
     late_arrival_at: str | None = None
+
+
+@dataclass(frozen=True)
+class ActionAudit:
+    id: int
+    action_type: str
+    target_type: str
+    target_id: str
+    idempotency_key: str | None
+    requested_by: str
+    request_payload: str
+    status: str
+    created_at: str
+
+    @property
+    def payload(self) -> dict:
+        return json.loads(self.request_payload) if self.request_payload else {}
 
 
 class Ledger:
@@ -90,6 +108,34 @@ class Ledger:
                     consolidated_at TEXT,
                     late_arrival_at TEXT
                 )
+                """
+            )
+            self.connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS action_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    action_type TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    requested_by TEXT NOT NULL,
+                    request_payload TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            self._ensure_column("action_audit", "idempotency_key", "TEXT")
+            self.connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_action_audit_idempotency
+                ON action_audit (
+                    action_type,
+                    target_type,
+                    target_id,
+                    idempotency_key
+                )
+                WHERE idempotency_key IS NOT NULL
                 """
             )
             self._ensure_column("recording_jobs", "copied_path", "TEXT")
@@ -304,7 +350,13 @@ class Ledger:
             job = self.get_by_id(job_id)
             return [job] if job is not None else []
 
-        statuses = ("transcribed", "inbox_written", "category_written", "meeting_written", "dead_letter_written")
+        statuses = (
+            "transcribed",
+            "inbox_written",
+            "category_written",
+            "meeting_written",
+            "dead_letter_written",
+        )
         status_filter = statuses if include_routed else ("transcribed",)
         placeholders = ", ".join("?" for _ in status_filter)
         rows = self.connection.execute(
@@ -466,6 +518,99 @@ class Ledger:
         if job is None:
             raise RuntimeError("late-arrival recording job was not found")
         return job
+
+    def record_action(
+        self,
+        action_type: str,
+        target_type: str,
+        target_id: str,
+        request_payload: dict,
+        requested_by: str = "api",
+        status: str = "accepted",
+        idempotency_key: str | None = None,
+        created_at: str | None = None,
+    ) -> ActionAudit:
+        created_at = created_at or utc_now_iso()
+        payload = json.dumps(request_payload, sort_keys=True, separators=(",", ":"))
+        if idempotency_key:
+            existing = self.get_action_by_idempotency(
+                action_type=action_type,
+                target_type=target_type,
+                target_id=target_id,
+                idempotency_key=idempotency_key,
+            )
+            if existing is not None:
+                return existing
+        with self.connection:
+            cursor = self.connection.execute(
+                """
+                INSERT INTO action_audit (
+                    action_type, target_type, target_id, idempotency_key,
+                    requested_by, request_payload, status, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    action_type,
+                    target_type,
+                    target_id,
+                    idempotency_key,
+                    requested_by,
+                    payload,
+                    status,
+                    created_at,
+                ),
+            )
+        audit = self.get_action(cursor.lastrowid)
+        if audit is None:
+            raise RuntimeError("action audit record was not written")
+        return audit
+
+    def get_action(self, action_id: int) -> ActionAudit | None:
+        row = self.connection.execute(
+            """
+            SELECT id, action_type, target_type, target_id, idempotency_key, requested_by,
+                   request_payload, status, created_at
+            FROM action_audit
+            WHERE id = ?
+            """,
+            (action_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return ActionAudit(
+            id=row["id"],
+            action_type=row["action_type"],
+            target_type=row["target_type"],
+            target_id=row["target_id"],
+            idempotency_key=row["idempotency_key"],
+            requested_by=row["requested_by"],
+            request_payload=row["request_payload"],
+            status=row["status"],
+            created_at=row["created_at"],
+        )
+
+    def get_action_by_idempotency(
+        self,
+        action_type: str,
+        target_type: str,
+        target_id: str,
+        idempotency_key: str,
+    ) -> ActionAudit | None:
+        row = self.connection.execute(
+            """
+            SELECT id
+            FROM action_audit
+            WHERE action_type = ?
+              AND target_type = ?
+              AND target_id = ?
+              AND idempotency_key = ?
+            """,
+            (action_type, target_type, target_id, idempotency_key),
+        ).fetchone()
+        if row is None:
+            return None
+        return self.get_action(row["id"])
 
     def _ensure_column(self, table_name: str, column_name: str, column_type: str) -> None:
         columns = {

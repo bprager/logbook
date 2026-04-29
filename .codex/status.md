@@ -4,7 +4,7 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-FastAPI read-only status API.
+FastAPI bounded action API.
 
 ## Active Request
 
@@ -14,6 +14,7 @@ FastAPI read-only status API.
 - Preserve the one canonical final daily log path invariant, including late arrivals.
 - Implement LGB-014 Dead-Letter Writer, then LGB-013 Category Note Writer.
 - Implement LGB-019 Status API with correctly configured Swagger UI.
+- Implement LGB-020 Bounded Action API with audit records and action-token auth.
 
 ## Progress
 
@@ -62,6 +63,9 @@ FastAPI read-only status API.
 - [x] Added category note routing coverage for prefix stripping, Obsidian path, and ledger state.
 - [x] Added read-only FastAPI status API with `/health`, `/jobs`, `/jobs/{id}`, `/logs/inbox`, `/logs/open-date`, `/logs/consolidated/latest`, and `/dead-letters`.
 - [x] Configured Swagger UI at `/docs`, ReDoc at `/redoc`, OpenAPI at `/openapi.json`, and optional bearer auth through `LOGBOOK_READ_TOKEN`.
+- [x] Added bounded action endpoints for job reprocess, dead-letter rescue, and daily log rebuild requests.
+- [x] Added SQLite `action_audit` records and `LOGBOOK_ACTION_TOKEN` enforcement for action endpoints.
+- [x] Added optional action idempotency keys so OpenClaw retries can reuse an existing audit record.
 
 ## Notes
 
@@ -147,3 +151,5 @@ FastAPI read-only status API.
 - LGB-014 and LGB-013 are implemented in sequence on 2026-04-29; the Status API is now the next unblocked project slice.
 - Routing verification after LGB-014/LGB-013 passed with 35 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
 - LGB-019 implementation completed on 2026-04-29; full verification passed with 39 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
+- LGB-020 implementation completed on 2026-04-29; action endpoints only record auditable intent and do not execute shell commands, delete files, or mutate job state inline.
+- LGB-020 verification passed with 43 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
