@@ -4,7 +4,7 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-Meeting note renderer.
+Audio retention cleanup.
 
 ## Active Request
 
@@ -18,6 +18,7 @@ Meeting note renderer.
 - Implement LGB-021 launchd Packaging without starting OpenClaw services as `bernd`.
 - Implement LGB-017 Meeting Diarization before meeting note rendering.
 - Implement LGB-018 Meeting Note Renderer.
+- Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
 
 ## Progress
 
@@ -78,6 +79,11 @@ Meeting note renderer.
 - [x] Added speaker-labelled meeting note rendering under `30 - Meetings/YYYY/MM-Month`.
 - [x] Added meeting placeholders for participants, summary, decisions, and action items.
 - [x] Blocked incomplete meeting notes when a meeting transcript has not yet been diarized.
+- [x] Added retention cleanup ledger fields for eligibility, vault sync, cleanup attempts, cleanup statuses, and errors.
+- [x] Added read-only cleanup planning/status with no deletion by default.
+- [x] Added explicit local copied-audio cleanup and separately gated recorder-side cleanup.
+- [x] Added checksum and recorder-directory guards before destructive source cleanup.
+- [x] Added `/cleanup/audio` FastAPI status.
 
 ## Notes
 
@@ -174,3 +180,6 @@ Meeting note renderer.
 - LGB-018 implementation completed on 2026-04-29; meeting notes require diarization, include speaker labels, and omit source audio paths.
 - LGB-018 verification passed with 52 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
 - Live fake diarization plus test-vault routing ran safely against the current ledger with no pending work and no real Obsidian writes.
+- LGB-026 implementation completed on 2026-04-29; cleanup requires finalized processing, `vault_synced_at`, checksum verification, and the 24-hour retention window.
+- LGB-026 verification passed with 57 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
+- Live `retention-status` and `cleanup-plan` ran without execution flags; all 17 current jobs are blocked by missing `vault_synced_at`, so no audio was deleted or eligible.

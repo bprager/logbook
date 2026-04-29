@@ -41,6 +41,15 @@ class RecordingJob:
     diarization_path: str | None = None
     diarized_at: str | None = None
     diarization_model: str | None = None
+    vault_synced_at: str | None = None
+    cleanup_eligible_at: str | None = None
+    local_audio_cleanup_status: str | None = None
+    local_audio_cleaned_at: str | None = None
+    recorder_audio_cleanup_status: str | None = None
+    recorder_audio_cleaned_at: str | None = None
+    cleanup_attempt_count: int = 0
+    cleanup_last_attempt_at: str | None = None
+    cleanup_last_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,7 +121,16 @@ class Ledger:
                     late_arrival_at TEXT,
                     diarization_path TEXT,
                     diarized_at TEXT,
-                    diarization_model TEXT
+                    diarization_model TEXT,
+                    vault_synced_at TEXT,
+                    cleanup_eligible_at TEXT,
+                    local_audio_cleanup_status TEXT,
+                    local_audio_cleaned_at TEXT,
+                    recorder_audio_cleanup_status TEXT,
+                    recorder_audio_cleaned_at TEXT,
+                    cleanup_attempt_count INTEGER NOT NULL DEFAULT 0,
+                    cleanup_last_attempt_at TEXT,
+                    cleanup_last_error TEXT
                 )
                 """
             )
@@ -160,6 +178,19 @@ class Ledger:
             self._ensure_column("recording_jobs", "diarization_path", "TEXT")
             self._ensure_column("recording_jobs", "diarized_at", "TEXT")
             self._ensure_column("recording_jobs", "diarization_model", "TEXT")
+            self._ensure_column("recording_jobs", "vault_synced_at", "TEXT")
+            self._ensure_column("recording_jobs", "cleanup_eligible_at", "TEXT")
+            self._ensure_column("recording_jobs", "local_audio_cleanup_status", "TEXT")
+            self._ensure_column("recording_jobs", "local_audio_cleaned_at", "TEXT")
+            self._ensure_column("recording_jobs", "recorder_audio_cleanup_status", "TEXT")
+            self._ensure_column("recording_jobs", "recorder_audio_cleaned_at", "TEXT")
+            self._ensure_column(
+                "recording_jobs",
+                "cleanup_attempt_count",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            self._ensure_column("recording_jobs", "cleanup_last_attempt_at", "TEXT")
+            self._ensure_column("recording_jobs", "cleanup_last_error", "TEXT")
             self.connection.execute(
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -176,7 +207,11 @@ class Ledger:
                    last_seen_at, copied_path, copied_at, odin_job_id, submitted_to_odin_at,
                    transcript_path, transcribed_at, asr_model, classification,
                    obsidian_path, routed_at, daily_log_path, consolidated_at,
-                   late_arrival_at, diarization_path, diarized_at, diarization_model
+                   late_arrival_at, diarization_path, diarized_at, diarization_model,
+                   vault_synced_at, cleanup_eligible_at, local_audio_cleanup_status,
+                   local_audio_cleaned_at, recorder_audio_cleanup_status,
+                   recorder_audio_cleaned_at, cleanup_attempt_count,
+                   cleanup_last_attempt_at, cleanup_last_error
             FROM recording_jobs
             WHERE checksum_sha256 = ?
             """,
@@ -212,6 +247,15 @@ class Ledger:
             diarization_path=row["diarization_path"],
             diarized_at=row["diarized_at"],
             diarization_model=row["diarization_model"],
+            vault_synced_at=row["vault_synced_at"],
+            cleanup_eligible_at=row["cleanup_eligible_at"],
+            local_audio_cleanup_status=row["local_audio_cleanup_status"],
+            local_audio_cleaned_at=row["local_audio_cleaned_at"],
+            recorder_audio_cleanup_status=row["recorder_audio_cleanup_status"],
+            recorder_audio_cleaned_at=row["recorder_audio_cleaned_at"],
+            cleanup_attempt_count=row["cleanup_attempt_count"],
+            cleanup_last_attempt_at=row["cleanup_last_attempt_at"],
+            cleanup_last_error=row["cleanup_last_error"],
         )
 
     def get_by_id(self, job_id: int) -> RecordingJob | None:
@@ -568,6 +612,102 @@ class Ledger:
         if job is None:
             raise RuntimeError("late-arrival recording job was not found")
         return job
+
+    def mark_vault_synced(
+        self,
+        checksum_sha256: str,
+        vault_synced_at: str | None = None,
+    ) -> RecordingJob:
+        vault_synced_at = vault_synced_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET vault_synced_at = ?,
+                    last_seen_at = ?
+                WHERE checksum_sha256 = ?
+                """,
+                (vault_synced_at, vault_synced_at, checksum_sha256),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("vault-synced recording job was not found")
+        return job
+
+    def mark_cleanup_eligible(
+        self,
+        checksum_sha256: str,
+        cleanup_eligible_at: str,
+    ) -> RecordingJob:
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET cleanup_eligible_at = ?
+                WHERE checksum_sha256 = ?
+                  AND (cleanup_eligible_at IS NULL OR cleanup_eligible_at != ?)
+                """,
+                (cleanup_eligible_at, checksum_sha256, cleanup_eligible_at),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("cleanup-eligible recording job was not found")
+        return job
+
+    def record_cleanup_attempt(
+        self,
+        checksum_sha256: str,
+        local_audio_cleanup_status: str | None = None,
+        recorder_audio_cleanup_status: str | None = None,
+        local_audio_cleaned_at: str | None = None,
+        recorder_audio_cleaned_at: str | None = None,
+        error: str | None = None,
+        attempted_at: str | None = None,
+    ) -> RecordingJob:
+        attempted_at = attempted_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET local_audio_cleanup_status = COALESCE(?, local_audio_cleanup_status),
+                    recorder_audio_cleanup_status = COALESCE(?, recorder_audio_cleanup_status),
+                    local_audio_cleaned_at = COALESCE(?, local_audio_cleaned_at),
+                    recorder_audio_cleaned_at = COALESCE(?, recorder_audio_cleaned_at),
+                    cleanup_attempt_count = cleanup_attempt_count + 1,
+                    cleanup_last_attempt_at = ?,
+                    cleanup_last_error = ?
+                WHERE checksum_sha256 = ?
+                """,
+                (
+                    local_audio_cleanup_status,
+                    recorder_audio_cleanup_status,
+                    local_audio_cleaned_at,
+                    recorder_audio_cleaned_at,
+                    attempted_at,
+                    error,
+                    checksum_sha256,
+                ),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("cleanup-attempt recording job was not found")
+        return job
+
+    def cleanup_candidate_jobs(self) -> list[RecordingJob]:
+        rows = self.connection.execute(
+            """
+            SELECT checksum_sha256
+            FROM recording_jobs
+            WHERE copied_path IS NOT NULL
+               OR source_path IS NOT NULL
+            ORDER BY id
+            """
+        ).fetchall()
+        return [
+            job
+            for row in rows
+            if (job := self.get_by_checksum(row["checksum_sha256"])) is not None
+        ]
 
     def record_action(
         self,

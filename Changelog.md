@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added launchd packaging that renders a keepalive Logbook API service, a read-only `StartOnMount` recorder probe, and an hourly no-delete retention audit job.
 - Added meeting diarization support that resubmits meeting-prefix transcripts to `odin` with `diarize=true`, persists speaker-labelled JSON, and tracks diarization metadata in SQLite.
 - Added speaker-labelled meeting note rendering under `30 - Meetings/YYYY/MM-Month` with participant, summary, decision, action-item, and transcript sections.
+- Added audio retention cleanup planning, explicit local and recorder cleanup execution, SQLite cleanup audit fields, and read-only cleanup API status.
 
 ### Fixed
 

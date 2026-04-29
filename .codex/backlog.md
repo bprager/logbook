@@ -504,7 +504,7 @@ Acceptance:
 
 ### LGB-026 - Audio Retention Cleanup
 
-Status: Ready
+Status: Completed
 
 Dependencies: LGB-003, LGB-006, LGB-009, LGB-012, LGB-013, LGB-014, LGB-018, LGB-025
 
@@ -516,6 +516,10 @@ Deliverables:
 - Delete Sony-recorder source files after 24 hours only after checksum, transcript, derived note, and vault sync are confirmed.
 - Record cleanup attempts, successes, failures, and retry eligibility in SQLite.
 - Provide cleanup status data for the status API.
+- `cleanup-plan` command for read-only eligibility inspection.
+- `cleanup-audio --execute` for explicit local cleanup.
+- `cleanup-audio --execute --include-recorder` for explicit recorder-side cleanup.
+- `GET /cleanup/audio` read-only FastAPI endpoint.
 
 Acceptance:
 
@@ -525,12 +529,14 @@ Acceptance:
 - No audio is deleted if processing or vault sync is incomplete.
 - Reconnecting the recorder after 24 hours cleans eligible source files and leaves ineligible files untouched.
 - Cleanup failures are visible and retryable.
+- Cleanup planning is read-only by default and does not persist eligibility or delete audio.
+- Recorder-side deletion verifies the source path is under the configured recorder folder and checksum matches.
 
 ## Milestone 6: Verification And Refinement
 
 ### LGB-022 - End-To-End Acceptance Tests
 
-Status: Blocked
+Status: Ready
 
 Dependencies: LGB-012, LGB-013, LGB-014, LGB-016, LGB-018, LGB-020, LGB-025, LGB-026
 

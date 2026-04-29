@@ -34,6 +34,7 @@ class StatusApiTests(TestCase):
             self.assertIn("/logs/{entry_date}/rebuild", schema["paths"])
             self.assertIn("/logs/open-date", schema["paths"])
             self.assertIn("/logs/consolidated/latest", schema["paths"])
+            self.assertIn("/cleanup/audio", schema["paths"])
             self.assertIn("HTTPBearer", schema["components"]["securitySchemes"])
             self.assertEqual(docs.status_code, 200)
             self.assertIn("Swagger UI", docs.text)
@@ -244,6 +245,27 @@ class StatusApiTests(TestCase):
             self.assertEqual(dead_letters.json()["items"][0]["job_id"], seeded["dead_letter_id"])
             self.assertEqual(dead_letters.json()["items"][0]["review_status"], "needs_review")
             self.assertEqual(dead_letters.json()["items"][0]["delete_after"], "2026-05-27")
+
+    def test_cleanup_status_reports_retention_gate_without_paths(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp))
+            _seed_status_fixture(app_config)
+            client = TestClient(create_app(app_config))
+
+            response = client.get("/cleanup/audio")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["count"], 3)
+            self.assertEqual(payload["eligible_count"], 0)
+            self.assertEqual(payload["blocked_count"], 3)
+            self.assertIn("missing_vault_sync", payload["items"][0]["blockers"])
+            serialized = str(payload)
+            self.assertNotIn("source_path", serialized)
+            self.assertNotIn("copied_path", serialized)
+            self.assertNotIn("transcript_path", serialized)
+            self.assertNotIn(str(app_config.processing_root), serialized)
+            self.assertNotIn(str(app_config.recorder.mount_path), serialized)
 
 
 def _seed_status_fixture(config: AppConfig) -> dict[str, int]:

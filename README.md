@@ -195,6 +195,27 @@ Bounded action endpoints use `LOGBOOK_ACTION_TOKEN` and only record auditable in
 
 Send an `idempotency_key` in the JSON body when OpenClaw may retry an action request.
 
+Inspect audio retention cleanup eligibility without deleting anything:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli cleanup-plan --env .env
+```
+
+Run eligible local copied-audio cleanup explicitly:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli cleanup-audio --env .env --execute
+```
+
+Recorder-side source deletion is a separate opt-in gate:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli cleanup-audio --env .env --execute --include-recorder
+```
+
+Cleanup requires finalized processing, derived note metadata, a recorded `vault_synced_at`, and the
+24-hour retention window. The API exposes read-only cleanup status at `/cleanup/audio`.
+
 Render launchd plists for the local API, mount probe, and retention audit:
 
 ```bash

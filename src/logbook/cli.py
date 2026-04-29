@@ -12,6 +12,7 @@ from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
 from logbook.odin import HttpOdinClient
 from logbook.recorder import discover_recordings, validate_recorder
+from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied_with_fake_odin
 from logbook.vault import ObsidianVaultWorkflow, VaultWorkflowError
@@ -152,6 +153,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     retention_status_parser.add_argument("--env", type=Path, default=Path(".env"))
 
+    cleanup_plan_parser = subparsers.add_parser(
+        "cleanup-plan",
+        help="plan audio cleanup eligibility without deleting audio",
+    )
+    cleanup_plan_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    cleanup_audio_parser = subparsers.add_parser(
+        "cleanup-audio",
+        help="execute eligible local audio cleanup; recorder cleanup requires --include-recorder",
+    )
+    cleanup_audio_parser.add_argument("--env", type=Path, default=Path(".env"))
+    cleanup_audio_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="perform eligible cleanup actions; without this flag the command is a dry run",
+    )
+    cleanup_audio_parser.add_argument(
+        "--include-recorder",
+        action="store_true",
+        help="also delete eligible checksum-verified recorder source files",
+    )
+
     launchd_render_parser = subparsers.add_parser(
         "launchd-render",
         help="render launchd plists for the Logbook API, mount probe, and retention audit",
@@ -207,6 +230,10 @@ def main(argv: list[str] | None = None) -> int:
         return _serve_api(args.env, args.host, args.port)
     if args.command == "retention-status":
         return _retention_status(args.env)
+    if args.command == "cleanup-plan":
+        return _cleanup_plan(args.env)
+    if args.command == "cleanup-audio":
+        return _cleanup_audio(args.env, execute=args.execute, include_recorder=args.include_recorder)
     if args.command == "launchd-render":
         return _launchd_render(args.env, args.output_dir, args.repo_root, args.python_bin)
 
@@ -625,10 +652,65 @@ def _retention_status(env_path: Path) -> int:
     print(f"env_path={env_path}")
     print(f"retention_hours={config.retention.hours}")
     print(f"cleanup_mode={config.retention.cleanup_mode}")
+    plan = plan_audio_cleanup(config)
     print("cleanup_implementation=LGB-026")
+    print(f"jobs_considered={len(plan.items)}")
+    print(f"eligible_count={plan.eligible_count}")
+    print(f"blocked_count={plan.blocked_count}")
+    print(f"local_pending_count={plan.local_pending_count}")
+    print(f"recorder_pending_count={plan.recorder_pending_count}")
     print("delete_audio=no")
     print("delete_recorder_audio=no")
     return 0
+
+
+def _cleanup_plan(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    plan = plan_audio_cleanup(config)
+    _print_cleanup_plan(env_path, plan, execute=False, include_recorder=False)
+    return 0
+
+
+def _cleanup_audio(env_path: Path, execute: bool, include_recorder: bool) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    if execute:
+        plan = execute_audio_cleanup(config, include_recorder=include_recorder)
+    else:
+        plan = plan_audio_cleanup(config)
+    _print_cleanup_plan(env_path, plan, execute=execute, include_recorder=include_recorder)
+    return 0
+
+
+def _print_cleanup_plan(env_path: Path, plan, execute: bool, include_recorder: bool) -> None:
+    print("Audio cleanup plan")
+    print(f"env_path={env_path}")
+    print(f"retention_hours={plan.retention_hours}")
+    print(f"execute={_yes_no(execute)}")
+    print(f"include_recorder={_yes_no(include_recorder)}")
+    print(f"jobs_considered={len(plan.items)}")
+    print(f"eligible_count={plan.eligible_count}")
+    print(f"blocked_count={plan.blocked_count}")
+    print(f"local_pending_count={plan.local_pending_count}")
+    print(f"recorder_pending_count={plan.recorder_pending_count}")
+    print("cleanup_results:")
+    for item in plan.items:
+        blockers = ",".join(item.blockers) if item.blockers else "-"
+        print(
+            f"- job_id={item.job.id} status={item.job.status} eligible={_yes_no(item.eligible)} "
+            f"cleanup_eligible_at={item.cleanup_eligible_at or '-'} "
+            f"local_action={item.local_action} recorder_action={item.recorder_action} "
+            f"blockers={blockers}"
+        )
 
 
 def _launchd_render(

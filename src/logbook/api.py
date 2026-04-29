@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from logbook.config import AppConfig
 from logbook.ledger import RecordingJob, open_ledger
+from logbook.retention import plan_audio_cleanup
 
 
 API_TITLE = "Logbook API"
@@ -45,6 +46,15 @@ class JobDetail(JobSummary):
     consolidated_at: Optional[str]
     late_arrival_at: Optional[str]
     diarized_at: Optional[str]
+    vault_synced_at: Optional[str]
+    cleanup_eligible_at: Optional[str]
+    local_audio_cleanup_status: Optional[str]
+    local_audio_cleaned_at: Optional[str]
+    recorder_audio_cleanup_status: Optional[str]
+    recorder_audio_cleaned_at: Optional[str]
+    cleanup_attempt_count: int
+    cleanup_last_attempt_at: Optional[str]
+    cleanup_last_error: Optional[str]
     asr_model: Optional[str]
     diarization_model: Optional[str]
 
@@ -94,6 +104,32 @@ class DeadLetterItem(BaseModel):
 class DeadLetterResponse(BaseModel):
     count: int
     items: list[DeadLetterItem]
+
+
+class CleanupStatusItem(BaseModel):
+    job_id: int
+    status: str
+    classification: Optional[str]
+    cleanup_eligible_at: Optional[str]
+    eligible: bool
+    blockers: list[str]
+    local_audio_exists: bool
+    recorder_audio_exists: bool
+    local_action: str
+    recorder_action: str
+    local_audio_cleanup_status: Optional[str]
+    recorder_audio_cleanup_status: Optional[str]
+    cleanup_attempt_count: int
+    cleanup_last_error: Optional[str]
+
+
+class CleanupStatusResponse(BaseModel):
+    count: int
+    eligible_count: int
+    blocked_count: int
+    local_pending_count: int
+    recorder_pending_count: int
+    items: list[CleanupStatusItem]
 
 
 class ActionRequest(BaseModel):
@@ -171,6 +207,7 @@ def create_app(config: AppConfig) -> FastAPI:
             {"name": "jobs", "description": "Read-only recording job status."},
             {"name": "logs", "description": "Log inbox and consolidated daily log status."},
             {"name": "dead letters", "description": "Unknown-prefix transcripts awaiting review."},
+            {"name": "cleanup", "description": "Read-only audio retention cleanup status."},
             {"name": "actions", "description": "Token-protected bounded action requests."},
         ],
     )
@@ -316,6 +353,41 @@ def create_app(config: AppConfig) -> FastAPI:
             for job in loaded
         ]
         return DeadLetterResponse(count=len(items), items=items)
+
+    @app.get(
+        "/cleanup/audio",
+        tags=["cleanup"],
+        response_model=CleanupStatusResponse,
+        dependencies=read_dependencies,
+    )
+    def cleanup_audio_status() -> CleanupStatusResponse:
+        plan = plan_audio_cleanup(config)
+        return CleanupStatusResponse(
+            count=len(plan.items),
+            eligible_count=plan.eligible_count,
+            blocked_count=plan.blocked_count,
+            local_pending_count=plan.local_pending_count,
+            recorder_pending_count=plan.recorder_pending_count,
+            items=[
+                CleanupStatusItem(
+                    job_id=item.job.id,
+                    status=item.job.status,
+                    classification=item.job.classification,
+                    cleanup_eligible_at=item.cleanup_eligible_at,
+                    eligible=item.eligible,
+                    blockers=list(item.blockers),
+                    local_audio_exists=item.local_audio_exists,
+                    recorder_audio_exists=item.recorder_audio_exists,
+                    local_action=item.local_action,
+                    recorder_action=item.recorder_action,
+                    local_audio_cleanup_status=item.job.local_audio_cleanup_status,
+                    recorder_audio_cleanup_status=item.job.recorder_audio_cleanup_status,
+                    cleanup_attempt_count=item.job.cleanup_attempt_count,
+                    cleanup_last_error=item.job.cleanup_last_error,
+                )
+                for item in plan.items
+            ],
+        )
 
     @app.post(
         "/jobs/{job_id}/reprocess",
@@ -596,6 +668,15 @@ def _job_detail(job: RecordingJob) -> JobDetail:
         consolidated_at=job.consolidated_at,
         late_arrival_at=job.late_arrival_at,
         diarized_at=job.diarized_at,
+        vault_synced_at=job.vault_synced_at,
+        cleanup_eligible_at=job.cleanup_eligible_at,
+        local_audio_cleanup_status=job.local_audio_cleanup_status,
+        local_audio_cleaned_at=job.local_audio_cleaned_at,
+        recorder_audio_cleanup_status=job.recorder_audio_cleanup_status,
+        recorder_audio_cleaned_at=job.recorder_audio_cleaned_at,
+        cleanup_attempt_count=job.cleanup_attempt_count,
+        cleanup_last_attempt_at=job.cleanup_last_attempt_at,
+        cleanup_last_error=job.cleanup_last_error,
         asr_model=job.asr_model,
         diarization_model=job.diarization_model,
     )
