@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a dependency-free Python CLI for read-only Sony recorder discovery.
+- Added configuration parsing, recorder validation, Sony filename parsing, sidecar filtering, and unit tests.
+- Added SQLite ledger initialization, SHA-256 checksumming, and checksum-based ingest dry-run planning.
+- Added safe local copy from recorder to `VoiceIngest/inbox` with checksum verification and idempotent ledger updates.
+- Added the `odin` worker contract/client boundary, fake `odin` client, transcript JSON persistence, and ledger transition to `transcribed`.
+- Added deterministic prefix classification, Obsidian-style path builders, atomic Markdown rendering, and test-vault transcript routing.
+- Added Obsidian CLI vault preflight and workflow wrapping with serialized writes, configurable command templates, and a tracked `.env.example`.
+- Added an `obsidian-cli create` note writer option for routed Markdown after a target vault is registered in Obsidian.
+- Tightened vault preflight to verify the configured vault name is registered with `obsidian-cli`.
+- Added single-job routing with `--job-id` for controlled first writes into the real vault.
+- Added `--include-routed` for controlled backfills and Git vault workflow templates for pull, stage, status, commit, and push.
+
 ## [0.1.0] - 2026-04-27
 
 ### Added

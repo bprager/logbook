@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into an Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: planning release `0.1.0`. The architecture, backlog, and operating guardrails are ready; implementation begins next.
+> Status: implementation has started after planning release `0.1.0`. The safe local ingest, fake `odin` boundary, and test-vault routing slices are working.
 
 ## What It Does
 
@@ -78,6 +78,84 @@ Secrets and host-local settings live in `.env`, which is intentionally ignored b
 - `HUGGINGFACE_TOKEN`
 - Obsidian CLI and vault paths
 - Sony recorder mount details
+
+Use [.env.example](.env.example) as the tracked, secret-free template.
+
+## Development
+
+Run the read-only recorder discovery dry run:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli recorder-discover --env .env
+```
+
+Run the checksum-based ingest dry run without writing to the ledger:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli ingest-dry-run --env .env
+```
+
+Record discovered checksums in the local SQLite ledger without copying or deleting audio:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli ingest-dry-run --env .env --record-discovery
+```
+
+Copy discovered recordings into the local processing inbox and verify checksums:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli copy-discovered --env .env
+```
+
+Exercise the `odin` client boundary with fake local transcripts:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli fake-transcribe-copied --env .env
+```
+
+Route transcribed jobs into an explicit test vault without touching the real Obsidian vault:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli route-transcripts --env .env --vault /Users/bernd/VoiceIngest/test-vault
+```
+
+Route exactly one ledger job:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli route-transcripts --env .env --vault /Users/bernd/VoiceIngest/test-vault --job-id 17
+```
+
+Validate the configured Obsidian CLI and vault path without writing files:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli vault-preflight --env .env
+```
+
+This preflight also checks that the configured vault name is registered with `obsidian-cli`.
+
+Wrap routing with the Obsidian workflow after the CLI command templates are configured:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli route-transcripts --env .env --vault /Users/bernd/VoiceIngest/test-vault --vault-workflow obsidian
+```
+
+Write routed notes through `obsidian-cli create` after the target vault is registered in Obsidian:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli route-transcripts --env .env --vault /Users/bernd/Obsidian/obs-vault --writer obsidian-cli --job-id 17
+```
+
+Backfill jobs already marked as routed:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli route-transcripts --env .env --vault /Users/bernd/Obsidian/obs-vault --writer obsidian-cli --include-routed
+```
+
+Run the standard-library test suite:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
 
 ## License
 

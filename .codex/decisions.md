@@ -56,6 +56,24 @@ Do not link source audio from Obsidian. Delete local source audio and recorder-s
 
 Reason: The user explicitly requested deletion after 24 hours, including on the Sony voice recorder. This supersedes the PRD MVP non-goal about avoiding automatic recorder deletion.
 
+### D-010: Audio retention age is based on the ingestion ledger
+
+Use SQLite ledger timestamps such as `copied_at`, `processed_at`, `vault_synced_at`, and `cleanup_eligible_at` to decide when audio may be deleted. Do not use recorder filenames or recorder filesystem modification times for retention eligibility.
+
+Reason: The recorder clock can drift or be corrected after files already exist. Using ledger timestamps prevents filename or filesystem metadata from making fresh files look eligible for cleanup too early.
+
+### D-011: Obsidian CLI commands are configured templates
+
+Keep the vault workflow bound to Obsidian CLI command templates in `.env` instead of hard-coding unconfirmed subcommands.
+
+Reason: `obsidian` is not currently discoverable on `PATH` on this host, and the exact sync/status/commit/push syntax still needs confirmation. Templates let the code enforce preflight, locking, and command ordering without guessing the installed CLI's interface.
+
+### D-012: Obsidian note writes can use `obsidian-cli create`
+
+Support `obsidian-cli create <note> --vault <vault-name> --content <markdown> --overwrite` as an optional writer for routed notes.
+
+Reason: The installed `obsidian-cli` v0.2.3 supports note create/list operations, but it relies on Obsidian's vault registry and URI handling. Direct filesystem writes remain the test/scratch fallback until the target vault is opened or registered in Obsidian.
+
 ## Open Questions
 
 1. Should the current open day have an Obsidian preview note?
@@ -63,6 +81,7 @@ Reason: The user explicitly requested deletion after 24 hours, including on the 
 3. Which category prefixes beyond `idea`, `task`, `research`, `reminder`, and `meeting` should be preconfigured?
 4. Should late arrivals notify OpenClaw instead of silently rebuilding?
 5. Should meeting summaries be generated automatically or only after manual review?
-6. Which exact Obsidian CLI command should be used for sync/status/commit/push on this host?
+6. Which exact Obsidian CLI command templates should be filled into `.env` for sync/status/commit/push on this host?
 7. What is the exact Sony ICD-PX370 mounted volume path/name on `mimir`?
 8. Should 24-hour local cleanup move audio to trash/quarantine first, or hard-delete immediately after confirmed sync?
+9. Should the one-minute timestamp mismatch on `260427_1351.mp3` be treated as expected recorder behavior or corrected manually?
