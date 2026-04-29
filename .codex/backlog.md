@@ -426,7 +426,7 @@ Acceptance:
 
 ### LGB-019 - Status API
 
-Status: Ready
+Status: Completed
 
 Dependencies: LGB-003, LGB-012, LGB-014, LGB-015
 
@@ -439,14 +439,18 @@ Deliverables:
 - `GET /logs/open-date`
 - `GET /logs/consolidated/latest`
 - `GET /dead-letters`
+- FastAPI app factory with Swagger UI at `/docs`, ReDoc at `/redoc`, and OpenAPI at `/openapi.json`.
+- Optional bearer-token read auth through `LOGBOOK_READ_TOKEN`.
 
 Acceptance:
 
 - OpenClaw can observe queue, inbox, latest consolidated log, and dead letters without shell access.
+- Status responses avoid local source audio paths, copied audio paths, and transcript paths.
+- Swagger UI is configured with Logbook API metadata and bearer auth.
 
 ### LGB-020 - Bounded Action API
 
-Status: Blocked
+Status: Ready
 
 Dependencies: LGB-019
 

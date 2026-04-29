@@ -27,6 +27,7 @@ class AppConfig:
     recorder: RecorderConfig
     odin: "OdinConfig"
     obsidian: "ObsidianConfig | None" = None
+    api: "ApiConfig | None" = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,14 @@ class ObsidianConfig:
     status_command: str | None = None
     commit_command: str | None = None
     push_command: str | None = None
+
+
+@dataclass(frozen=True)
+class ApiConfig:
+    bind_host: str
+    port: int
+    read_token: str | None = None
+    action_token: str | None = None
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -91,6 +100,7 @@ def load_app_config(env_path: Path) -> AppConfig:
         recorder=recorder_config_from_values(values),
         odin=odin_config_from_values(values),
         obsidian=obsidian_config_from_values(values),
+        api=api_config_from_values(values),
     )
 
 
@@ -137,6 +147,15 @@ def obsidian_config_from_values(values: dict[str, str]) -> ObsidianConfig:
         status_command=_optional(values, "OBSIDIAN_STATUS_COMMAND"),
         commit_command=_optional(values, "OBSIDIAN_COMMIT_COMMAND"),
         push_command=_optional(values, "OBSIDIAN_PUSH_COMMAND"),
+    )
+
+
+def api_config_from_values(values: dict[str, str]) -> ApiConfig:
+    return ApiConfig(
+        bind_host=values.get("LOGBOOK_API_BIND_HOST") or "127.0.0.1",
+        port=int(values.get("LOGBOOK_API_PORT") or "8765"),
+        read_token=_optional(values, "LOGBOOK_READ_TOKEN"),
+        action_token=_optional(values, "LOGBOOK_ACTION_TOKEN"),
     )
 
 

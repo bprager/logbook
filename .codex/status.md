@@ -4,7 +4,7 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-Dead-letter and category note routing.
+FastAPI read-only status API.
 
 ## Active Request
 
@@ -13,6 +13,7 @@ Dead-letter and category note routing.
 - Keep `.codex/status.md`, `.codex/backlog.md`, and `Changelog.md` current as implementation advances.
 - Preserve the one canonical final daily log path invariant, including late arrivals.
 - Implement LGB-014 Dead-Letter Writer, then LGB-013 Category Note Writer.
+- Implement LGB-019 Status API with correctly configured Swagger UI.
 
 ## Progress
 
@@ -59,6 +60,8 @@ Dead-letter and category note routing.
 - [x] Added regression coverage for late arrivals and rediscovery status preservation.
 - [x] Added dead-letter note metadata with `review_status`, 28-day `delete_after`, and rescue guidance.
 - [x] Added category note routing coverage for prefix stripping, Obsidian path, and ledger state.
+- [x] Added read-only FastAPI status API with `/health`, `/jobs`, `/jobs/{id}`, `/logs/inbox`, `/logs/open-date`, `/logs/consolidated/latest`, and `/dead-letters`.
+- [x] Configured Swagger UI at `/docs`, ReDoc at `/redoc`, OpenAPI at `/openapi.json`, and optional bearer auth through `LOGBOOK_READ_TOKEN`.
 
 ## Notes
 
@@ -143,3 +146,4 @@ Dead-letter and category note routing.
 - Late-arrival verification passed with 34 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
 - LGB-014 and LGB-013 are implemented in sequence on 2026-04-29; the Status API is now the next unblocked project slice.
 - Routing verification after LGB-014/LGB-013 passed with 35 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
+- LGB-019 implementation completed on 2026-04-29; full verification passed with 39 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.

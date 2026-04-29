@@ -123,6 +123,14 @@ def main(argv: list[str] | None = None) -> int:
         help="optional vault root override; defaults to OBSIDIAN_VAULT_LOCAL_PATH",
     )
 
+    serve_api_parser = subparsers.add_parser(
+        "serve-api",
+        help="start the read-only FastAPI status API",
+    )
+    serve_api_parser.add_argument("--env", type=Path, default=Path(".env"))
+    serve_api_parser.add_argument("--host", default=None)
+    serve_api_parser.add_argument("--port", type=int, default=None)
+
     args = parser.parse_args(argv)
 
     if args.command == "recorder-discover":
@@ -147,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
         return _consolidate_logs(args.env, args.vault, args.writer, args.date)
     if args.command == "vault-preflight":
         return _vault_preflight(args.env, args.vault)
+    if args.command == "serve-api":
+        return _serve_api(args.env, args.host, args.port)
 
     parser.error(f"unsupported command: {args.command}")
     return 2
@@ -481,6 +491,29 @@ def _vault_preflight(env_path: Path, vault_root: Path | None) -> int:
     print("run_sync=no")
     _print_vault_preflight(preflight)
     return 0 if preflight.operational else 1
+
+
+def _serve_api(env_path: Path, host: str | None, port: int | None) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    from logbook.api import create_app
+
+    try:
+        import uvicorn
+    except ImportError:
+        print("config_error: uvicorn is required to serve the FastAPI app", file=sys.stderr)
+        return 2
+
+    bind_host = host or (config.api.bind_host if config.api is not None else "127.0.0.1")
+    bind_port = port or (config.api.port if config.api is not None else 8765)
+
+    app = create_app(config)
+    uvicorn.run(app, host=bind_host, port=bind_port)
+    return 0
 
 
 def _print_vault_preflight(preflight) -> None:

@@ -157,6 +157,16 @@ Render canonical daily logs from routed inbox entries:
 PYTHONPATH=src python3 -m logbook.cli consolidate-logs --env .env --vault /Users/bernd/Obsidian/obs-vault --writer obsidian-cli
 ```
 
+Start the read-only FastAPI status API on the configured loopback host and port:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli serve-api --env .env
+```
+
+The interactive Swagger UI is available at `/docs`, ReDoc at `/redoc`, and the OpenAPI schema at
+`/openapi.json`. If `LOGBOOK_READ_TOKEN` is set, use Swagger's **Authorize** control with a bearer
+token before calling status endpoints.
+
 Run the standard-library test suite:
 
 ```bash

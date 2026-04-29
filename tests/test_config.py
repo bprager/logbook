@@ -52,6 +52,9 @@ OBSIDIAN_VAULT_REPO_URL=https://github.com/bprager/obs-vault.git
 OBSIDIAN_VAULT_LOCAL_PATH=/Users/bernd/Obsidian/obs-vault
 OBSIDIAN_SYNC_COMMAND={cli_bin} sync {vault_path}
 OBSIDIAN_STAGE_COMMAND=git -C {vault_path} add 10 - Logs
+LOGBOOK_API_BIND_HOST=127.0.0.1
+LOGBOOK_API_PORT=8787
+LOGBOOK_READ_TOKEN=read-secret
 """.lstrip(),
             encoding="utf-8",
         )
@@ -66,6 +69,10 @@ OBSIDIAN_STAGE_COMMAND=git -C {vault_path} add 10 - Logs
         )
         self.assertEqual(config.obsidian.sync_command, "{cli_bin} sync {vault_path}")
         self.assertEqual(config.obsidian.stage_command, "git -C {vault_path} add 10 - Logs")
+        self.assertIsNotNone(config.api)
+        self.assertEqual(config.api.bind_host, "127.0.0.1")
+        self.assertEqual(config.api.port, 8787)
+        self.assertEqual(config.api.read_token, "read-secret")
 
 
 def _cleanup_tree(path: Path) -> None:
