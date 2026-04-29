@@ -4,7 +4,7 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-Audio retention cleanup.
+End-to-end acceptance testing.
 
 ## Active Request
 
@@ -19,6 +19,7 @@ Audio retention cleanup.
 - Implement LGB-017 Meeting Diarization before meeting note rendering.
 - Implement LGB-018 Meeting Note Renderer.
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
+- Walk through LGB-022 End-To-End Acceptance Tests step by step, waiting for user confirmation before proceeding to the next step or finishing.
 
 ## Progress
 
@@ -183,3 +184,9 @@ Audio retention cleanup.
 - LGB-026 implementation completed on 2026-04-29; cleanup requires finalized processing, `vault_synced_at`, checksum verification, and the 24-hour retention window.
 - LGB-026 verification passed with 57 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
 - Live `retention-status` and `cleanup-plan` ran without execution flags; all 17 current jobs are blocked by missing `vault_synced_at`, so no audio was deleted or eligible.
+- LGB-022 acceptance walkthrough started on 2026-04-29; local project metadata now treats completed dependencies as unblocked and begins with read-only state checks.
+- LGB-022 Step 3 read-only baseline passed: 57 tests OK, `py_compile` OK, `git diff --check` OK, `vault-preflight` operational, and cleanup dry-run/status confirmed 17 jobs blocked only by `missing_vault_sync` with no deletion.
+- LGB-022 Step 4 vault-sync evidence check passed read-only: vault `HEAD` equals `origin/main` at `db9d42f`, all 17 ledger inbox notes and 3 canonical daily logs exist in tracked vault `HEAD`, and only `.obsidian/workspace.json` remains as local app-state drift. Ledger still has `vault_synced_at` unset for all 17 jobs.
+- LGB-022 Step 5 added guarded `mark-vault-synced` support so pushed vault evidence can be checked in dry-run before any ledger `vault_synced_at` updates.
+- LGB-022 Step 5 verification passed: 61 tests OK, `py_compile` OK, `git diff --check` OK, and live `mark-vault-synced --env .env` dry-run reported 17 markable, 0 marked, 0 blocked, with no ledger mutation.
+- LGB-022 vault-sync marker execution completed after approval: live `mark-vault-synced --env .env --execute` marked all 17 jobs, and follow-up `cleanup-plan` showed 17 jobs blocked only by `retention_window_open` with `cleanup_eligible_at=2026-04-30T22:44:10+00:00`.

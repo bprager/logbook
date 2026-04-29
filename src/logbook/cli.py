@@ -16,6 +16,7 @@ from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied_with_fake_odin
 from logbook.vault import ObsidianVaultWorkflow, VaultWorkflowError
+from logbook.vault_sync import mark_vault_synced_jobs
 from logbook.writers import FilesystemNoteWriter, ObsidianCliNoteWriter
 
 
@@ -139,6 +140,17 @@ def main(argv: list[str] | None = None) -> int:
         help="optional vault root override; defaults to OBSIDIAN_VAULT_LOCAL_PATH",
     )
 
+    mark_vault_synced_parser = subparsers.add_parser(
+        "mark-vault-synced",
+        help="prove generated vault files are pushed, then optionally mark ledger jobs synced",
+    )
+    mark_vault_synced_parser.add_argument("--env", type=Path, default=Path(".env"))
+    mark_vault_synced_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="write vault_synced_at for markable jobs; without this flag the command is a dry run",
+    )
+
     serve_api_parser = subparsers.add_parser(
         "serve-api",
         help="start the read-only FastAPI status API",
@@ -226,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
         return _consolidate_logs(args.env, args.vault, args.writer, args.date)
     if args.command == "vault-preflight":
         return _vault_preflight(args.env, args.vault)
+    if args.command == "mark-vault-synced":
+        return _mark_vault_synced(args.env, execute=args.execute)
     if args.command == "serve-api":
         return _serve_api(args.env, args.host, args.port)
     if args.command == "retention-status":
@@ -616,6 +630,44 @@ def _vault_preflight(env_path: Path, vault_root: Path | None) -> int:
     print("run_sync=no")
     _print_vault_preflight(preflight)
     return 0 if preflight.operational else 1
+
+
+def _mark_vault_synced(env_path: Path, execute: bool) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    try:
+        result = mark_vault_synced_jobs(config, dry_run=not execute)
+    except ValueError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    print("Mark vault synced")
+    print(f"env_path={env_path}")
+    print(f"vault_root={result.vault_root}")
+    print(f"execute={_yes_no(execute)}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    print(f"vault_head={result.vault_head or '-'}")
+    print(f"origin_main={result.origin_head or '-'}")
+    _print_vault_preflight(result.preflight)
+    print(f"jobs_considered={len(result.items)}")
+    print(f"markable_count={result.markable_count}")
+    print(f"marked_count={result.marked_count}")
+    print(f"already_synced_count={result.already_synced_count}")
+    print(f"blocked_count={result.blocked_count}")
+    print("vault_sync_results:")
+    for item in result.items:
+        blockers = ",".join(item.blockers) if item.blockers else "-"
+        paths = ",".join(item.paths) if item.paths else "-"
+        print(
+            f"- job_id={item.job.id} status={item.job.status} "
+            f"sync_status={item.status} paths={paths} blockers={blockers}"
+        )
+    return 1 if result.blocked_count else 0
 
 
 def _serve_api(env_path: Path, host: str | None, port: int | None) -> int:

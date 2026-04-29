@@ -431,6 +431,29 @@ class Ledger:
             if (job := self.get_by_checksum(row["checksum_sha256"])) is not None
         ]
 
+    def vault_sync_candidate_jobs(self) -> list[RecordingJob]:
+        statuses = (
+            "consolidated",
+            "category_written",
+            "dead_letter_written",
+            "meeting_written",
+        )
+        placeholders = ", ".join("?" for _ in statuses)
+        rows = self.connection.execute(
+            f"""
+            SELECT checksum_sha256
+            FROM recording_jobs
+            WHERE status IN ({placeholders})
+            ORDER BY id
+            """,
+            statuses,
+        ).fetchall()
+        return [
+            job
+            for row in rows
+            if (job := self.get_by_checksum(row["checksum_sha256"])) is not None
+        ]
+
     def mark_copied(
         self,
         checksum_sha256: str,

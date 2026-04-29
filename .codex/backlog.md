@@ -536,7 +536,7 @@ Acceptance:
 
 ### LGB-022 - End-To-End Acceptance Tests
 
-Status: Ready
+Status: In progress
 
 Dependencies: LGB-012, LGB-013, LGB-014, LGB-016, LGB-018, LGB-020, LGB-025, LGB-026
 
@@ -549,10 +549,12 @@ Deliverables:
 - Offline `odin` queue test.
 - Obsidian CLI vault sync test.
 - 24-hour local and recorder-side audio cleanup test.
+- Guarded `mark-vault-synced` dry-run/execute command that proves generated vault paths are in pushed vault `HEAD` before setting `vault_synced_at`.
 
 Acceptance:
 
 - PRD acceptance criteria are covered by automated tests or explicit manual test scripts.
+- Existing pushed vault notes can be proven and marked as synced without deleting audio.
 
 ### LGB-023 - Optional Open Log Preview
 
