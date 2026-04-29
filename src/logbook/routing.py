@@ -8,7 +8,7 @@ from pathlib import Path
 from logbook.classifier import PrefixClassification, classify_transcript
 from logbook.config import AppConfig
 from logbook.ledger import RecordingJob, open_ledger
-from logbook.markdown import render_routed_note
+from logbook.markdown import render_meeting_note, render_routed_note
 from logbook.paths import (
     category_note_path,
     dead_letter_path,
@@ -139,11 +139,13 @@ def _route_job(
 
     classification = classify_transcript(_transcript_text(transcript_path))
     classification = _without_fake_audio_reference(job, classification)
+    if classification.route_kind == "meeting" and not job.diarization_path:
+        return RoutingItem(job, "failed_missing_diarization", classification, None)
     output_path = _output_path(vault_root, recorded_at, classification, job.id)
     try:
         note_writer.write_note(
             output_path,
-            render_routed_note(job, recorded_at, classification),
+            _render_note(job, recorded_at, classification, transcript_path),
         )
     except NoteWriteError:
         return RoutingItem(job, "failed_note_write", classification, output_path)
@@ -158,6 +160,17 @@ def _route_job(
 def _transcript_text(path: Path) -> str:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return str(payload.get("text") or "")
+
+
+def _render_note(
+    job: RecordingJob,
+    recorded_at: datetime,
+    classification: PrefixClassification,
+    transcript_path: Path,
+) -> str:
+    if classification.route_kind == "meeting":
+        return render_meeting_note(job, recorded_at, classification, transcript_path)
+    return render_routed_note(job, recorded_at, classification)
 
 
 def _preferred_transcript_path(job: RecordingJob) -> Path:

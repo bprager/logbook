@@ -4,7 +4,7 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-Meeting diarization.
+Meeting note renderer.
 
 ## Active Request
 
@@ -17,6 +17,7 @@ Meeting diarization.
 - Implement LGB-020 Bounded Action API with audit records and action-token auth.
 - Implement LGB-021 launchd Packaging without starting OpenClaw services as `bernd`.
 - Implement LGB-017 Meeting Diarization before meeting note rendering.
+- Implement LGB-018 Meeting Note Renderer.
 
 ## Progress
 
@@ -74,6 +75,9 @@ Meeting diarization.
 - [x] Added a meeting diarization pass that resubmits only meeting-prefix transcripts with `diarize=true`.
 - [x] Added SQLite diarization metadata fields and routing support for `diarized` jobs.
 - [x] Added fake diarization CLI coverage with speaker labels `SPEAKER_00` and `SPEAKER_01`.
+- [x] Added speaker-labelled meeting note rendering under `30 - Meetings/YYYY/MM-Month`.
+- [x] Added meeting placeholders for participants, summary, decisions, and action items.
+- [x] Blocked incomplete meeting notes when a meeting transcript has not yet been diarized.
 
 ## Notes
 
@@ -167,3 +171,6 @@ Meeting diarization.
 - LGB-017 implementation completed on 2026-04-29; non-meeting transcripts are skipped, missing speaker labels fail recoverably, and no audio deletion or Obsidian writes occur in this step.
 - LGB-017 verification passed with 50 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
 - Live `fake-diarize-meetings --env .env` ran safely against the current ledger with 0 diarized, 0 skipped, and 0 failed because there are no currently transcribed meeting jobs waiting for diarization.
+- LGB-018 implementation completed on 2026-04-29; meeting notes require diarization, include speaker labels, and omit source audio paths.
+- LGB-018 verification passed with 52 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
+- Live fake diarization plus test-vault routing ran safely against the current ledger with no pending work and no real Obsidian writes.

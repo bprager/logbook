@@ -9,6 +9,7 @@ from unittest import TestCase
 
 from logbook.config import AppConfig, OdinConfig, RecorderConfig
 from logbook.copying import copy_discovered_recordings
+from logbook.diarization import diarize_meetings_with_fake_odin
 from logbook.ledger import open_ledger
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied_with_fake_odin
@@ -141,6 +142,89 @@ class RoutingTests(TestCase):
             self.assertEqual(job.status, "category_written")
             self.assertEqual(job.classification, "category:task")
             self.assertEqual(job.obsidian_path, str(output_path.relative_to(vault_root)))
+
+    def test_routes_diarized_meeting_to_meeting_note_with_speakers(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            _write_recording(app_config.recorder.recordings_dir / "260429_0821.mp3")
+            copy_discovered_recordings(app_config)
+            transcribe_result = transcribe_copied_with_fake_odin(app_config)
+            transcript_path = transcribe_result.items[0].transcript_path
+            self.assertIsNotNone(transcript_path)
+            payload = json.loads(transcript_path.read_text(encoding="utf-8"))
+            payload["text"] = "Meeting weekly planning."
+            transcript_path.write_text(json.dumps(payload), encoding="utf-8")
+            diarize_meetings_with_fake_odin(app_config)
+
+            vault_root = root / "test-vault"
+            result = route_transcripts(app_config, vault_root)
+
+            self.assertEqual(result.routed_count, 1)
+            self.assertEqual(result.items[0].status, "meeting_written")
+            output_path = result.items[0].output_path
+            self.assertIsNotNone(output_path)
+            self.assertEqual(
+                output_path.relative_to(vault_root),
+                Path("30 - Meetings/2026/04-April/2026-04-29T08-21-00-job-000001-meeting.md"),
+            )
+            rendered = output_path.read_text(encoding="utf-8")
+            self.assertIn('type: "meeting"', rendered)
+            self.assertIn('speaker_count: "2"', rendered)
+            self.assertIn('diarization_model: "pyannote/speaker-diarization-3.1"', rendered)
+            self.assertIn("## Participants", rendered)
+            self.assertIn("- SPEAKER_00: ", rendered)
+            self.assertIn("- SPEAKER_01: ", rendered)
+            self.assertIn("## Summary", rendered)
+            self.assertIn("## Decisions", rendered)
+            self.assertIn("## Action Items", rendered)
+            self.assertIn("## Transcript", rendered)
+            self.assertIn("**SPEAKER_00:** Placeholder", rendered)
+            self.assertIn("**SPEAKER_01:** transcript.", rendered)
+            self.assertNotIn("**SPEAKER_00:** meeting", rendered)
+            self.assertNotIn(".mp3", rendered)
+
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                job = ledger.get_by_checksum(result.items[0].job.checksum_sha256)
+            finally:
+                ledger.close()
+
+            self.assertIsNotNone(job)
+            self.assertEqual(job.status, "meeting_written")
+            self.assertEqual(job.classification, "meeting")
+            self.assertEqual(job.obsidian_path, str(output_path.relative_to(vault_root)))
+
+    def test_transcribed_meeting_without_diarization_is_not_written(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            _write_recording(app_config.recorder.recordings_dir / "260429_0821.mp3")
+            copy_discovered_recordings(app_config)
+            transcribe_result = transcribe_copied_with_fake_odin(app_config)
+            transcript_path = transcribe_result.items[0].transcript_path
+            self.assertIsNotNone(transcript_path)
+            payload = json.loads(transcript_path.read_text(encoding="utf-8"))
+            payload["text"] = "Meeting weekly planning."
+            transcript_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            vault_root = root / "test-vault"
+            result = route_transcripts(app_config, vault_root)
+
+            self.assertEqual(result.routed_count, 0)
+            self.assertEqual(result.failed_count, 1)
+            self.assertEqual(result.items[0].status, "failed_missing_diarization")
+            self.assertEqual(list(vault_root.rglob("*.md")), [])
+
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                job = ledger.get_by_checksum(transcribe_result.items[0].job.checksum_sha256)
+            finally:
+                ledger.close()
+
+            self.assertIsNotNone(job)
+            self.assertEqual(job.status, "transcribed")
+            self.assertIsNone(job.obsidian_path)
 
     def test_job_id_routes_one_job_even_after_it_was_routed(self) -> None:
         with TemporaryDirectory() as tmp:

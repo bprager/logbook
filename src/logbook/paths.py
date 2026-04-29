@@ -62,7 +62,8 @@ def meeting_note_path(vault_root: Path, recorded_at: datetime, job_id: int) -> P
     return (
         vault_root
         / "30 - Meetings"
-        / "00 - Inbox"
+        / recorded_at.strftime("%Y")
+        / month_folder(recorded_at)
         / f"{timestamp_part}-job-{job_id:06d}-meeting.md"
     )
 

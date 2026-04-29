@@ -129,6 +129,10 @@ The diarization pass skips non-meeting transcripts, persists speaker-labelled JS
 `LOGBOOK_PROCESSING_ROOT/diarization`, and records `diarized` jobs in SQLite for later meeting
 note rendering.
 
+Meeting notes are rendered by the normal routing command after diarization. They are written under
+`30 - Meetings/YYYY/MM-Month` and include participant placeholders, summary, decisions, action items,
+and a speaker-labelled transcript.
+
 Route transcribed jobs into an explicit test vault without touching the real Obsidian vault:
 
 ```bash

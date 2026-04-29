@@ -370,7 +370,7 @@ class Ledger:
             "meeting_written",
             "dead_letter_written",
         )
-        status_filter = statuses if include_routed else ("transcribed",)
+        status_filter = statuses if include_routed else ("transcribed", "diarized")
         placeholders = ", ".join("?" for _ in status_filter)
         rows = self.connection.execute(
             f"""

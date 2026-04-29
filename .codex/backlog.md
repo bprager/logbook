@@ -411,7 +411,7 @@ Acceptance:
 
 ### LGB-018 - Meeting Note Renderer
 
-Status: Ready
+Status: Completed
 
 Dependencies: LGB-011, LGB-017, LGB-025
 
@@ -421,10 +421,14 @@ Deliverables:
 - Include participant mapping placeholders, summary placeholders, decisions, action items, and transcript.
 - Optionally link meetings into daily timestamp notes after consolidation exists.
 - Write through the local Obsidian vault workflow.
+- Require diarization before rendering meeting notes so speaker labels are available.
+- Strip the spoken `meeting` prefix from the first transcript segment in rendered notes.
 
 Acceptance:
 
 - Speaker labels appear as `SPEAKER_00`, `SPEAKER_01`, etc.
+- Meeting notes do not expose source audio paths or filenames.
+- Transcribed meeting jobs without diarization fail safely without mutating job state.
 
 ## Milestone 5: OpenClaw Observability
 
@@ -500,7 +504,7 @@ Acceptance:
 
 ### LGB-026 - Audio Retention Cleanup
 
-Status: Blocked
+Status: Ready
 
 Dependencies: LGB-003, LGB-006, LGB-009, LGB-012, LGB-013, LGB-014, LGB-018, LGB-025
 
