@@ -44,7 +44,9 @@ class JobDetail(JobSummary):
     routed_at: Optional[str]
     consolidated_at: Optional[str]
     late_arrival_at: Optional[str]
+    diarized_at: Optional[str]
     asr_model: Optional[str]
+    diarization_model: Optional[str]
 
 
 class JobListResponse(BaseModel):
@@ -593,7 +595,9 @@ def _job_detail(job: RecordingJob) -> JobDetail:
         routed_at=job.routed_at,
         consolidated_at=job.consolidated_at,
         late_arrival_at=job.late_arrival_at,
+        diarized_at=job.diarized_at,
         asr_model=job.asr_model,
+        diarization_model=job.diarization_model,
     )
 
 

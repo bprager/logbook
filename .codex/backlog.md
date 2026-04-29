@@ -390,7 +390,7 @@ Acceptance:
 
 ### LGB-017 - Meeting Diarization
 
-Status: Blocked
+Status: Completed
 
 Dependencies: LGB-007, LGB-010
 
@@ -399,15 +399,19 @@ Deliverables:
 - Diarize recordings classified as meetings.
 - Keep model configurable between PRD baseline and newer pyannote options.
 - Persist diarization output and speaker labels.
+- `logbook fake-diarize-meetings` command for local contract validation without GPU services.
+- SQLite fields for diarization path, timestamp, and model metadata.
 
 Acceptance:
 
 - Meeting jobs include transcript segments and diarization turns.
 - Missing Hugging Face token or model access fails clearly and recoverably.
+- Non-meeting transcripts are skipped without mutating job state.
+- Diarization results without speaker labels fail without mutating job state.
 
 ### LGB-018 - Meeting Note Renderer
 
-Status: Blocked
+Status: Ready
 
 Dependencies: LGB-011, LGB-017, LGB-025
 

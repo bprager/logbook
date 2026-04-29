@@ -70,7 +70,36 @@ class FakeOdinClient:
 
     def submit_transcription(self, submit_request: OdinSubmitRequest) -> OdinSubmitResponse:
         odin_job_id = f"fake-{submit_request.job_id}"
-        text = "log entry Placeholder transcript."
+        text = (
+            "meeting Placeholder transcript."
+            if submit_request.diarize
+            else "log entry Placeholder transcript."
+        )
+        segments = (
+            (
+                OdinTranscriptSegment(
+                    start_seconds=0.0,
+                    end_seconds=1.0,
+                    text="meeting Placeholder",
+                    speaker="SPEAKER_00",
+                ),
+                OdinTranscriptSegment(
+                    start_seconds=1.0,
+                    end_seconds=2.0,
+                    text="transcript.",
+                    speaker="SPEAKER_01",
+                ),
+            )
+            if submit_request.diarize
+            else (
+                OdinTranscriptSegment(
+                    start_seconds=0.0,
+                    end_seconds=1.0,
+                    text=text,
+                    speaker=None,
+                ),
+            )
+        )
         result = OdinTranscriptResult(
             odin_job_id=odin_job_id,
             status="succeeded",
@@ -78,14 +107,7 @@ class FakeOdinClient:
             language="en",
             asr_model=f"fake-{self.config.asr_model}",
             diarization_model=self.config.diarization_model if submit_request.diarize else None,
-            segments=(
-                OdinTranscriptSegment(
-                    start_seconds=0.0,
-                    end_seconds=1.0,
-                    text=text,
-                    speaker="SPEAKER_00" if submit_request.diarize else None,
-                ),
-            ),
+            segments=segments,
         )
         self._results[odin_job_id] = result
         return OdinSubmitResponse(odin_job_id=odin_job_id, status="succeeded")

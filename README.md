@@ -113,6 +113,22 @@ Exercise the `odin` client boundary with fake local transcripts:
 PYTHONPATH=src python3 -m logbook.cli fake-transcribe-copied --env .env
 ```
 
+Exercise meeting diarization for transcribed meeting-prefix jobs:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli diarize-meetings --env .env
+```
+
+Exercise the same flow with the fake `odin` client:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli fake-diarize-meetings --env .env
+```
+
+The diarization pass skips non-meeting transcripts, persists speaker-labelled JSON under
+`LOGBOOK_PROCESSING_ROOT/diarization`, and records `diarized` jobs in SQLite for later meeting
+note rendering.
+
 Route transcribed jobs into an explicit test vault without touching the real Obsidian vault:
 
 ```bash

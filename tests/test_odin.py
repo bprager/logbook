@@ -34,6 +34,29 @@ class OdinClientTests(TestCase):
             self.assertNotIn("260429_0821.mp3", result.text)
             self.assertEqual(result.asr_model, "fake-large-v3")
 
+    def test_fake_odin_client_can_return_diarized_meeting_segments(self) -> None:
+        with TemporaryDirectory() as tmp:
+            audio_path = Path(tmp) / "260429_0821.mp3"
+            audio_path.write_bytes(b"audio")
+            client = FakeOdinClient(_odin_config())
+
+            response = client.submit_transcription(
+                OdinSubmitRequest(
+                    job_id="17",
+                    audio_path=audio_path,
+                    checksum_sha256="abc123",
+                    diarize=True,
+                )
+            )
+            result = client.get_result(response.odin_job_id)
+
+            self.assertEqual(result.text, "meeting Placeholder transcript.")
+            self.assertEqual(result.diarization_model, "pyannote/speaker-diarization-3.1")
+            self.assertEqual(
+                tuple(segment.speaker for segment in result.segments),
+                ("SPEAKER_00", "SPEAKER_01"),
+            )
+
     def test_transcript_result_from_json_parses_segments(self) -> None:
         result = transcript_result_from_json(
             {

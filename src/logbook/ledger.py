@@ -38,6 +38,9 @@ class RecordingJob:
     daily_log_path: str | None = None
     consolidated_at: str | None = None
     late_arrival_at: str | None = None
+    diarization_path: str | None = None
+    diarized_at: str | None = None
+    diarization_model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,7 +109,10 @@ class Ledger:
                     routed_at TEXT,
                     daily_log_path TEXT,
                     consolidated_at TEXT,
-                    late_arrival_at TEXT
+                    late_arrival_at TEXT,
+                    diarization_path TEXT,
+                    diarized_at TEXT,
+                    diarization_model TEXT
                 )
                 """
             )
@@ -151,6 +157,9 @@ class Ledger:
             self._ensure_column("recording_jobs", "daily_log_path", "TEXT")
             self._ensure_column("recording_jobs", "consolidated_at", "TEXT")
             self._ensure_column("recording_jobs", "late_arrival_at", "TEXT")
+            self._ensure_column("recording_jobs", "diarization_path", "TEXT")
+            self._ensure_column("recording_jobs", "diarized_at", "TEXT")
+            self._ensure_column("recording_jobs", "diarization_model", "TEXT")
             self.connection.execute(
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -167,7 +176,7 @@ class Ledger:
                    last_seen_at, copied_path, copied_at, odin_job_id, submitted_to_odin_at,
                    transcript_path, transcribed_at, asr_model, classification,
                    obsidian_path, routed_at, daily_log_path, consolidated_at,
-                   late_arrival_at
+                   late_arrival_at, diarization_path, diarized_at, diarization_model
             FROM recording_jobs
             WHERE checksum_sha256 = ?
             """,
@@ -200,6 +209,9 @@ class Ledger:
             daily_log_path=row["daily_log_path"],
             consolidated_at=row["consolidated_at"],
             late_arrival_at=row["late_arrival_at"],
+            diarization_path=row["diarization_path"],
+            diarized_at=row["diarized_at"],
+            diarization_model=row["diarization_model"],
         )
 
     def get_by_id(self, job_id: int) -> RecordingJob | None:
@@ -352,6 +364,7 @@ class Ledger:
 
         statuses = (
             "transcribed",
+            "diarized",
             "inbox_written",
             "category_written",
             "meeting_written",
@@ -433,6 +446,43 @@ class Ledger:
         job = self.get_by_checksum(checksum_sha256)
         if job is None:
             raise RuntimeError("transcribed recording job was not found")
+        return job
+
+    def mark_diarized(
+        self,
+        checksum_sha256: str,
+        odin_job_id: str,
+        diarization_path: Path,
+        diarization_model: str,
+        diarized_at: str | None = None,
+    ) -> RecordingJob:
+        diarized_at = diarized_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET status = 'diarized',
+                    odin_job_id = ?,
+                    submitted_to_odin_at = COALESCE(submitted_to_odin_at, ?),
+                    diarization_path = ?,
+                    diarized_at = ?,
+                    diarization_model = ?,
+                    last_seen_at = ?
+                WHERE checksum_sha256 = ?
+                """,
+                (
+                    odin_job_id,
+                    diarized_at,
+                    str(diarization_path),
+                    diarized_at,
+                    diarization_model,
+                    diarized_at,
+                    checksum_sha256,
+                ),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("diarized recording job was not found")
         return job
 
     def mark_routed(

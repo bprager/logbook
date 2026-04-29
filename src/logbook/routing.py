@@ -128,7 +128,7 @@ def _route_job(
 ) -> RoutingItem:
     if not job.transcript_path:
         return RoutingItem(job, "failed_missing_transcript_path", None, None)
-    transcript_path = Path(job.transcript_path)
+    transcript_path = _preferred_transcript_path(job)
     if not transcript_path.exists():
         return RoutingItem(job, "failed_missing_transcript", None, None)
 
@@ -158,6 +158,14 @@ def _route_job(
 def _transcript_text(path: Path) -> str:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return str(payload.get("text") or "")
+
+
+def _preferred_transcript_path(job: RecordingJob) -> Path:
+    if job.diarization_path:
+        return Path(job.diarization_path)
+    if job.transcript_path:
+        return Path(job.transcript_path)
+    raise ValueError("recording job does not have transcript_path")
 
 
 def _output_path(

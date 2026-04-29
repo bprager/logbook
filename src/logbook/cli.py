@@ -7,8 +7,10 @@ from pathlib import Path
 from logbook.config import ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
+from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
+from logbook.odin import HttpOdinClient
 from logbook.recorder import discover_recordings, validate_recorder
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied_with_fake_odin
@@ -48,6 +50,18 @@ def main(argv: list[str] | None = None) -> int:
         help="exercise the odin client boundary with fake transcripts for copied files",
     )
     fake_transcribe_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    diarize_parser = subparsers.add_parser(
+        "diarize-meetings",
+        help="send transcribed meeting jobs to the configured odin diarization endpoint",
+    )
+    diarize_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    fake_diarize_parser = subparsers.add_parser(
+        "fake-diarize-meetings",
+        help="exercise the odin diarization boundary for transcribed meeting jobs",
+    )
+    fake_diarize_parser.add_argument("--env", type=Path, default=Path(".env"))
 
     route_parser = subparsers.add_parser(
         "route-transcripts",
@@ -171,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
         return _copy_discovered(args.env)
     if args.command == "fake-transcribe-copied":
         return _fake_transcribe_copied(args.env)
+    if args.command == "diarize-meetings":
+        return _diarize_meetings(args.env)
+    if args.command == "fake-diarize-meetings":
+        return _fake_diarize_meetings(args.env)
     if args.command == "route-transcripts":
         return _route_transcripts(
             args.env,
@@ -353,6 +371,52 @@ def _fake_transcribe_copied(env_path: Path) -> int:
         )
 
     return 1 if result.failed_count else 0
+
+
+def _fake_diarize_meetings(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    result = diarize_meetings_with_fake_odin(config)
+    _print_diarization_result(env_path, "fake", result)
+    return 1 if result.failed_count else 0
+
+
+def _diarize_meetings(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    result = diarize_meetings(config=config, client=HttpOdinClient(config.odin))
+    _print_diarization_result(env_path, "http", result)
+    return 1 if result.failed_count else 0
+
+
+def _print_diarization_result(env_path: Path, odin_client: str, result) -> None:
+    print("Diarize meeting recordings")
+    print(f"env_path={env_path}")
+    print(f"odin_client={odin_client}")
+    print("delete_audio=no")
+    print("write_obsidian=no")
+    print(f"diarization_dir={result.diarization_dir}")
+    print(f"diarized_count={result.diarized_count}")
+    print(f"skipped_count={result.skipped_count}")
+    print(f"failed_count={result.failed_count}")
+    print("diarization_results:")
+    for item in result.items:
+        diarization_path = item.diarization_path if item.diarization_path is not None else "-"
+        odin_job_id = item.odin_job_id if item.odin_job_id is not None else "-"
+        speakers = ",".join(item.speaker_labels) if item.speaker_labels else "-"
+        print(
+            f"- filename={item.job.source_filename} status={item.status} "
+            f"job_id={item.job.id} odin_job_id={odin_job_id} "
+            f"speaker_labels={speakers} diarization_path={diarization_path}"
+        )
 
 
 def _route_transcripts(
