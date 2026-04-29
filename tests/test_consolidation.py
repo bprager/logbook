@@ -77,6 +77,68 @@ class ConsolidationTests(TestCase):
                 (vault_root / "06 - Timestamps/2026/04-April/2026-04-28-Tuesday-Log.md").exists()
             )
 
+    def test_late_arrival_rebuilds_existing_daily_log_in_timestamp_order(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            recordings_dir = app_config.recorder.recordings_dir
+            _write_recording(recordings_dir / "260428_0810.mp3", 8, 10)
+            _write_recording(recordings_dir / "260428_1222.mp3", 12, 22)
+            copy_discovered_recordings(app_config)
+            transcribe_copied_with_fake_odin(app_config)
+            vault_root = root / "test-vault"
+            route_transcripts(app_config, vault_root)
+            first = consolidate_daily_logs(app_config, vault_root)
+            output_path = first.items[0].daily_log_path
+            self.assertIsNotNone(output_path)
+
+            _write_recording(recordings_dir / "260428_0900.mp3", 9, 0)
+            copy_discovered_recordings(app_config)
+            transcribe_copied_with_fake_odin(app_config)
+            route_transcripts(app_config, vault_root)
+            rebuilt = consolidate_daily_logs(app_config, vault_root, entry_date="2026-04-28")
+
+            self.assertEqual(rebuilt.consolidated_count, 1)
+            self.assertEqual(rebuilt.items[0].daily_log_path, output_path)
+            rendered = output_path.read_text(encoding="utf-8")
+            self.assertIn('entry_count: "3"', rendered)
+            self.assertLess(
+                rendered.index("_Source: `logbook-job-1`_"),
+                rendered.index("_Source: `logbook-job-3`_"),
+            )
+            self.assertLess(
+                rendered.index("_Source: `logbook-job-3`_"),
+                rendered.index("_Source: `logbook-job-2`_"),
+            )
+            self.assertEqual(
+                len(
+                    list(
+                        (vault_root / "06 - Timestamps/2026/04-April").glob(
+                            "2026-04-28*Log*.md"
+                        )
+                    )
+                ),
+                1,
+            )
+
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                late_jobs = [
+                    job
+                    for job in ledger.log_jobs_for_consolidation(
+                        entry_date="2026-04-28",
+                        include_consolidated=True,
+                    )
+                    if job.source_filename == "260428_0900.mp3"
+                ]
+            finally:
+                ledger.close()
+
+            self.assertEqual(len(late_jobs), 1)
+            late_job = late_jobs[0]
+            self.assertEqual(late_job.status, "consolidated")
+            self.assertIsNotNone(late_job.late_arrival_at)
+
 
 def _app_config(root: Path) -> AppConfig:
     mount = root / "IC RECORDER"

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from logbook.classifier import PrefixClassification, classify_transcript
 from logbook.config import AppConfig
-from logbook.ledger import RecordingJob, open_ledger
+from logbook.ledger import Ledger, RecordingJob, open_ledger
 from logbook.markdown import render_daily_log
 from logbook.paths import daily_log_path, parse_recorded_at
 from logbook.writers import FilesystemNoteWriter, NoteWriteError, NoteWriter
@@ -52,7 +52,22 @@ def consolidate_daily_logs(
     note_writer = note_writer or FilesystemNoteWriter()
     ledger = open_ledger(config.sqlite_path, initialize=True)
     try:
-        jobs = ledger.log_jobs_for_consolidation(entry_date=entry_date)
+        pending_jobs = ledger.log_jobs_for_consolidation(entry_date=entry_date)
+        pending_dates = {
+            parse_recorded_at(job.parsed_recorded_at).strftime("%Y-%m-%d")
+            for job in pending_jobs
+        }
+        late_dates = {
+            date_key
+            for date_key in pending_dates
+            if ledger.has_consolidated_log_for_date(date_key)
+        }
+        for job in pending_jobs:
+            job_date = parse_recorded_at(job.parsed_recorded_at).strftime("%Y-%m-%d")
+            if job_date in late_dates:
+                ledger.mark_late_arrival(job.checksum_sha256)
+
+        jobs = _jobs_for_render(ledger, pending_jobs, late_dates)
         grouped = _group_entries(jobs)
         items: list[ConsolidationItem] = []
         for date_key, entries in grouped.items():
@@ -80,6 +95,24 @@ def consolidate_daily_logs(
         ledger.close()
 
     return ConsolidationResult(vault_root=vault_root, items=tuple(items))
+
+
+def _jobs_for_render(
+    ledger: Ledger,
+    pending_jobs: list[RecordingJob],
+    late_dates: set[str],
+) -> list[RecordingJob]:
+    if not late_dates:
+        return pending_jobs
+
+    jobs_by_checksum = {job.checksum_sha256: job for job in pending_jobs}
+    for entry_date in late_dates:
+        for job in ledger.log_jobs_for_consolidation(
+            entry_date=entry_date,
+            include_consolidated=True,
+        ):
+            jobs_by_checksum[job.checksum_sha256] = job
+    return list(jobs_by_checksum.values())
 
 
 def _group_entries(jobs: list[RecordingJob]) -> dict[str, list[DailyLogEntry]]:

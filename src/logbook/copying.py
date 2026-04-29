@@ -61,7 +61,7 @@ def copy_discovered_recordings(config: AppConfig) -> CopyResult:
             if job is None:
                 job = ledger.record_discovery(candidate, checksum, config.recorder.volume_name)
 
-            if job.status == "copied" and job.copied_path:
+            if job.copied_path:
                 copied_path = Path(job.copied_path)
                 if copied_path.exists() and sha256_file(copied_path) == checksum:
                     items.append(

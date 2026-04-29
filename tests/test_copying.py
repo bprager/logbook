@@ -51,6 +51,35 @@ class CopyingTests(TestCase):
             self.assertEqual(second.skipped_count, 1)
             self.assertEqual(second.items[0].copied_path, first.items[0].copied_path)
 
+    def test_copy_does_not_downgrade_consolidated_job_on_rediscovery(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            _write_recording(app_config.recorder.recordings_dir / "260429_0821.mp3", b"audio")
+
+            first = copy_discovered_recordings(app_config)
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                ledger.mark_consolidated(
+                    first.items[0].checksum_sha256,
+                    Path("06 - Timestamps/2026/04-April/2026-04-29-Wednesday-Log.md"),
+                )
+            finally:
+                ledger.close()
+
+            second = copy_discovered_recordings(app_config)
+
+            self.assertEqual(second.copied_count, 0)
+            self.assertEqual(second.skipped_count, 1)
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                job = ledger.get_by_checksum(first.items[0].checksum_sha256)
+            finally:
+                ledger.close()
+
+            self.assertIsNotNone(job)
+            self.assertEqual(job.status, "consolidated")
+
     def test_copy_uses_checksum_suffix_for_name_collision(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

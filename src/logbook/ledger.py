@@ -36,6 +36,7 @@ class RecordingJob:
     routed_at: str | None = None
     daily_log_path: str | None = None
     consolidated_at: str | None = None
+    late_arrival_at: str | None = None
 
 
 class Ledger:
@@ -79,15 +80,16 @@ class Ledger:
                     copied_at TEXT,
                     odin_job_id TEXT,
                     submitted_to_odin_at TEXT,
-	                    transcript_path TEXT,
-	                    transcribed_at TEXT,
-	                    asr_model TEXT,
-	                    classification TEXT,
-	                    obsidian_path TEXT,
-	                    routed_at TEXT,
-	                    daily_log_path TEXT,
-	                    consolidated_at TEXT
-	                )
+                    transcript_path TEXT,
+                    transcribed_at TEXT,
+                    asr_model TEXT,
+                    classification TEXT,
+                    obsidian_path TEXT,
+                    routed_at TEXT,
+                    daily_log_path TEXT,
+                    consolidated_at TEXT,
+                    late_arrival_at TEXT
+                )
                 """
             )
             self._ensure_column("recording_jobs", "copied_path", "TEXT")
@@ -102,6 +104,7 @@ class Ledger:
             self._ensure_column("recording_jobs", "routed_at", "TEXT")
             self._ensure_column("recording_jobs", "daily_log_path", "TEXT")
             self._ensure_column("recording_jobs", "consolidated_at", "TEXT")
+            self._ensure_column("recording_jobs", "late_arrival_at", "TEXT")
             self.connection.execute(
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -117,7 +120,8 @@ class Ledger:
                    size_bytes, modified_at, parsed_recorded_at, status, first_seen_at,
                    last_seen_at, copied_path, copied_at, odin_job_id, submitted_to_odin_at,
                    transcript_path, transcribed_at, asr_model, classification,
-                   obsidian_path, routed_at, daily_log_path, consolidated_at
+                   obsidian_path, routed_at, daily_log_path, consolidated_at,
+                   late_arrival_at
             FROM recording_jobs
             WHERE checksum_sha256 = ?
             """,
@@ -149,6 +153,7 @@ class Ledger:
             routed_at=row["routed_at"],
             daily_log_path=row["daily_log_path"],
             consolidated_at=row["consolidated_at"],
+            late_arrival_at=row["late_arrival_at"],
         )
 
     def get_by_id(self, job_id: int) -> RecordingJob | None:
@@ -229,7 +234,11 @@ class Ledger:
             if (job := self.get_by_checksum(row["checksum_sha256"])) is not None
         ]
 
-    def log_jobs_for_consolidation(self, entry_date: str | None = None) -> list[RecordingJob]:
+    def log_jobs_for_consolidation(
+        self,
+        entry_date: str | None = None,
+        include_consolidated: bool = False,
+    ) -> list[RecordingJob]:
         params: tuple[str, ...]
         date_clause = ""
         if entry_date is not None:
@@ -237,23 +246,39 @@ class Ledger:
             params = (entry_date,)
         else:
             params = ()
+        statuses = ("inbox_written", "consolidated") if include_consolidated else ("inbox_written",)
+        placeholders = ", ".join("?" for _ in statuses)
         rows = self.connection.execute(
             f"""
             SELECT checksum_sha256
             FROM recording_jobs
-            WHERE status = 'inbox_written'
+            WHERE status IN ({placeholders})
               AND classification = 'log'
               AND parsed_recorded_at IS NOT NULL
               {date_clause}
             ORDER BY parsed_recorded_at, id
             """,
-            params,
+            statuses + params,
         ).fetchall()
         return [
             job
             for row in rows
             if (job := self.get_by_checksum(row["checksum_sha256"])) is not None
         ]
+
+    def has_consolidated_log_for_date(self, entry_date: str) -> bool:
+        row = self.connection.execute(
+            """
+            SELECT 1
+            FROM recording_jobs
+            WHERE status = 'consolidated'
+              AND classification = 'log'
+              AND substr(parsed_recorded_at, 1, 10) = ?
+            LIMIT 1
+            """,
+            (entry_date,),
+        ).fetchone()
+        return row is not None
 
     def transcribed_jobs(self) -> list[RecordingJob]:
         rows = self.connection.execute(
@@ -419,6 +444,27 @@ class Ledger:
         job = self.get_by_checksum(checksum_sha256)
         if job is None:
             raise RuntimeError("consolidated recording job was not found")
+        return job
+
+    def mark_late_arrival(
+        self,
+        checksum_sha256: str,
+        late_arrival_at: str | None = None,
+    ) -> RecordingJob:
+        late_arrival_at = late_arrival_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET late_arrival_at = COALESCE(late_arrival_at, ?),
+                    last_seen_at = ?
+                WHERE checksum_sha256 = ?
+                """,
+                (late_arrival_at, late_arrival_at, checksum_sha256),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("late-arrival recording job was not found")
         return job
 
     def _ensure_column(self, table_name: str, column_name: str, column_type: str) -> None:

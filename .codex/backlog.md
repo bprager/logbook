@@ -1,6 +1,6 @@
 # Backlog
 
-Updated: 2026-04-27
+Updated: 2026-04-29
 
 Project key in memgraph: `logbook`
 
@@ -72,7 +72,7 @@ Acceptance:
 
 ### LGB-003 - SQLite Ledger
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-002
 
@@ -90,10 +90,11 @@ Acceptance:
 - `ingest-dry-run --record-discovery` records discovered recorder files without copying or deleting audio.
 - Duplicate source audio cannot create duplicate jobs.
 - State transitions are validated and recoverable.
+- Ledger tracks copied, transcribed, routed, consolidated, canonical daily log path, and late-arrival timestamps for the implemented workflow.
 
 ### LGB-004 - Path Builders
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-002
 
@@ -108,6 +109,7 @@ Acceptance:
 
 - Tests cover PRD examples exactly.
 - Invalid path variants are rejected for daily logs.
+- Canonical daily log paths render as `06 - Timestamps/YYYY/MM-Month/YYYY-MM-DD-Weekday-Log.md`.
 
 ### LGB-005 - Sony Mount Probe
 
@@ -196,7 +198,7 @@ Acceptance:
 
 ### LGB-009 - Transcript Persistence
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-003, LGB-008
 
@@ -217,7 +219,7 @@ Acceptance:
 
 ### LGB-010 - Prefix Classifier
 
-Status: Blocked
+Status: Completed
 
 Dependencies: LGB-009
 
@@ -236,7 +238,7 @@ Acceptance:
 
 ### LGB-011 - Markdown Renderers
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-004
 
@@ -255,7 +257,7 @@ Acceptance:
 
 ### LGB-025 - Obsidian CLI Vault Workflow
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-002
 
@@ -287,7 +289,7 @@ Acceptance:
 
 ### LGB-012 - Log Inbox Writer
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-003, LGB-010, LGB-011, LGB-025
 
@@ -302,6 +304,7 @@ Acceptance:
 
 - Log entries remain pending until consolidation.
 - Test-vault pilot wrote 17 log inbox notes from fake transcripts with no audio paths exposed.
+- Real-vault pilot wrote and pushed 17 log inbox notes through `obsidian-cli`.
 
 ### LGB-013 - Category Note Writer
 
@@ -341,7 +344,7 @@ Acceptance:
 
 ### LGB-015 - Consolidation Engine
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-003, LGB-004, LGB-011, LGB-012, LGB-025
 
@@ -362,7 +365,7 @@ Acceptance:
 
 ### LGB-016 - Late-Arrival Rebuild
 
-Status: Blocked
+Status: Completed
 
 Dependencies: LGB-015
 
@@ -377,6 +380,7 @@ Acceptance:
 
 - Late entries are inserted in timestamp order.
 - No duplicate daily log variant is created.
+- Consolidation detects a new inbox entry for an already consolidated date, marks it as a late arrival, and atomically rebuilds the existing canonical daily log.
 
 ## Milestone 4: Meetings
 

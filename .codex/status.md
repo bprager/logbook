@@ -4,14 +4,14 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-Obsidian CLI vault workflow around test-vault routing.
+Late-arrival rebuild support for already consolidated daily logs.
 
 ## Active Request
 
 - Keep `.env` local and excluded from the remote repo.
-- Route fake transcripts by spoken prefix into a test vault path without touching the real Obsidian vault.
 - Keep source audio in place; no recorder-side or local audio deletion in this step.
-- Add preflight and workflow boundaries for Obsidian CLI sync/write behavior.
+- Keep `.codex/status.md`, `.codex/backlog.md`, and `Changelog.md` current as implementation advances.
+- Preserve the one canonical final daily log path invariant, including late arrivals.
 
 ## Progress
 
@@ -51,6 +51,11 @@ Obsidian CLI vault workflow around test-vault routing.
 - [x] Added `logbook vault-preflight --env .env`.
 - [x] Added vault workflow locking and configurable sync/status/commit/push command templates.
 - [x] Added optional `--vault-workflow preflight|obsidian` routing wrapper.
+- [x] Pushed Logbook repo changes through daily consolidation to `origin/main` as `688c667 Implement daily log consolidation`.
+- [x] Added late-arrival rebuild support for already consolidated daily logs.
+- [x] Added ledger tracking for `late_arrival_at`.
+- [x] Prevented recorder rediscovery from downgrading already consolidated jobs when copied audio is present and checksum-matched.
+- [x] Added regression coverage for late arrivals and rediscovery status preservation.
 
 ## Notes
 
@@ -131,3 +136,5 @@ Obsidian CLI vault workflow around test-vault routing.
 - Committed and pushed the daily logs in the Obsidian vault as `db9d42f Add consolidated daily logs`.
 - Vault remains clean against `origin/main` except for uncommitted `.obsidian/workspace.json`.
 - Consolidation verification at 2026-04-29T17:50:44Z: 32 tests OK, `py_compile` OK, and privacy/path scan OK.
+- Late-arrival implementation at 2026-04-29 keeps one canonical daily log per date by re-rendering the existing file when a new inbox entry belongs to an already consolidated date.
+- Late-arrival verification passed with 34 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
