@@ -75,7 +75,72 @@ class RoutingTests(TestCase):
             result = route_transcripts(app_config, vault_root)
 
             self.assertEqual(result.dead_letter_count, 1)
-            self.assertIn("99 - Dead Letters", str(result.items[0].output_path))
+            output_path = result.items[0].output_path
+            self.assertIsNotNone(output_path)
+            self.assertEqual(
+                output_path.relative_to(vault_root),
+                Path("99 - Dead Letters/2026-04-29T08-21-00-job-000001.md"),
+            )
+            rendered = output_path.read_text(encoding="utf-8")
+            self.assertIn('type: "dead_letter"', rendered)
+            self.assertIn('review_status: "needs_review"', rendered)
+            self.assertIn('delete_after: "2026-05-27"', rendered)
+            self.assertIn("## Review", rendered)
+            self.assertIn("This has no useful prefix.", rendered)
+            self.assertNotIn(".mp3", rendered)
+
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                job = ledger.get_by_checksum(result.items[0].job.checksum_sha256)
+            finally:
+                ledger.close()
+
+            self.assertIsNotNone(job)
+            self.assertEqual(job.status, "dead_letter_written")
+            self.assertEqual(job.classification, "dead_letter")
+            self.assertEqual(job.obsidian_path, str(output_path.relative_to(vault_root)))
+
+    def test_routes_category_transcript_to_category_note(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            _write_recording(app_config.recorder.recordings_dir / "260429_0821.mp3")
+            copy_discovered_recordings(app_config)
+            transcribe_result = transcribe_copied_with_fake_odin(app_config)
+            transcript_path = transcribe_result.items[0].transcript_path
+            self.assertIsNotNone(transcript_path)
+            payload = json.loads(transcript_path.read_text(encoding="utf-8"))
+            payload["text"] = "To do: add route telemetry later."
+            transcript_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            vault_root = root / "test-vault"
+            result = route_transcripts(app_config, vault_root)
+
+            self.assertEqual(result.routed_count, 1)
+            output_path = result.items[0].output_path
+            self.assertIsNotNone(output_path)
+            self.assertEqual(
+                output_path.relative_to(vault_root),
+                Path("20 - Notes/00 - Inbox/task/2026-04-29T08-21-00-job-000001-task.md"),
+            )
+            rendered = output_path.read_text(encoding="utf-8")
+            self.assertIn('type: "category"', rendered)
+            self.assertIn('category: "task"', rendered)
+            self.assertIn("# Task note 2026-04-29 08:21", rendered)
+            self.assertIn("add route telemetry later.", rendered)
+            self.assertNotIn("To do:", rendered)
+            self.assertNotIn(".mp3", rendered)
+
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                job = ledger.get_by_checksum(result.items[0].job.checksum_sha256)
+            finally:
+                ledger.close()
+
+            self.assertIsNotNone(job)
+            self.assertEqual(job.status, "category_written")
+            self.assertEqual(job.classification, "category:task")
+            self.assertEqual(job.obsidian_path, str(output_path.relative_to(vault_root)))
 
     def test_job_id_routes_one_job_even_after_it_was_routed(self) -> None:
         with TemporaryDirectory() as tmp:

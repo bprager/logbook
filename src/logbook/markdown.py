@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -31,7 +31,19 @@ def render_routed_note(
         "asr_model": job.asr_model or "",
         "audio_retention": "source audio retained outside Obsidian until retention gate",
     }
-    return f"{_frontmatter(frontmatter)}\n# {title}\n\n{classification.content.strip()}\n"
+    if classification.route_kind == "dead_letter":
+        frontmatter["review_status"] = "needs_review"
+        frontmatter["delete_after"] = (recorded_at + timedelta(days=28)).date().isoformat()
+
+    sections = [_frontmatter(frontmatter), f"# {title}", classification.content.strip()]
+    if classification.route_kind == "dead_letter":
+        sections.extend(
+            [
+                "## Review",
+                "- Status: needs_review\n- Rescue action: reroute after assigning a supported prefix",
+            ]
+        )
+    return "\n\n".join(sections).rstrip() + "\n"
 
 
 def render_daily_log(

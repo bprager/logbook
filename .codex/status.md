@@ -4,7 +4,7 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-Late-arrival rebuild support for already consolidated daily logs.
+Dead-letter and category note routing.
 
 ## Active Request
 
@@ -12,6 +12,7 @@ Late-arrival rebuild support for already consolidated daily logs.
 - Keep source audio in place; no recorder-side or local audio deletion in this step.
 - Keep `.codex/status.md`, `.codex/backlog.md`, and `Changelog.md` current as implementation advances.
 - Preserve the one canonical final daily log path invariant, including late arrivals.
+- Implement LGB-014 Dead-Letter Writer, then LGB-013 Category Note Writer.
 
 ## Progress
 
@@ -56,6 +57,8 @@ Late-arrival rebuild support for already consolidated daily logs.
 - [x] Added ledger tracking for `late_arrival_at`.
 - [x] Prevented recorder rediscovery from downgrading already consolidated jobs when copied audio is present and checksum-matched.
 - [x] Added regression coverage for late arrivals and rediscovery status preservation.
+- [x] Added dead-letter note metadata with `review_status`, 28-day `delete_after`, and rescue guidance.
+- [x] Added category note routing coverage for prefix stripping, Obsidian path, and ledger state.
 
 ## Notes
 
@@ -138,3 +141,5 @@ Late-arrival rebuild support for already consolidated daily logs.
 - Consolidation verification at 2026-04-29T17:50:44Z: 32 tests OK, `py_compile` OK, and privacy/path scan OK.
 - Late-arrival implementation at 2026-04-29 keeps one canonical daily log per date by re-rendering the existing file when a new inbox entry belongs to an already consolidated date.
 - Late-arrival verification passed with 34 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
+- LGB-014 and LGB-013 are implemented in sequence on 2026-04-29; the Status API is now the next unblocked project slice.
+- Routing verification after LGB-014/LGB-013 passed with 35 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.

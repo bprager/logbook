@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `--include-routed` for controlled backfills and Git vault workflow templates for pull, stage, status, commit, and push.
 - Added daily log consolidation into canonical `06 - Timestamps` paths with timestamp-sorted entries and ledger updates.
 - Added late-arrival rebuild support for already consolidated daily logs, preserving the single canonical log path and timestamp order.
+- Added category note routing into `20 - Notes/00 - Inbox/{category}` with prefix-stripped content and ledger tracking.
+- Added dead-letter note routing into `99 - Dead Letters` with review status, 28-day `delete_after`, and rescue guidance.
 
 ### Fixed
 

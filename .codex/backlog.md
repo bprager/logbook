@@ -308,7 +308,7 @@ Acceptance:
 
 ### LGB-013 - Category Note Writer
 
-Status: Blocked
+Status: Completed
 
 Dependencies: LGB-010, LGB-011, LGB-025
 
@@ -322,10 +322,12 @@ Deliverables:
 Acceptance:
 
 - `idea`, `task`/`todo`, `research`/`question`, and `reminder` route to expected folders.
+- Category notes are written under `20 - Notes/00 - Inbox/{category}` with the spoken prefix stripped.
+- Ledger records `category_written`, the `category:{name}` classification, and the relative Obsidian path.
 
 ### LGB-014 - Dead-Letter Writer
 
-Status: Blocked
+Status: Completed
 
 Dependencies: LGB-003, LGB-010, LGB-011, LGB-025
 
@@ -339,6 +341,8 @@ Acceptance:
 
 - Unknown prefixes are retained and reviewable.
 - No hard delete occurs as part of MVP.
+- Dead-letter notes are written under `99 - Dead Letters` with `review_status` and a 28-day `delete_after`.
+- Ledger records `dead_letter_written`, the `dead_letter` classification, and the relative Obsidian path.
 
 ## Milestone 3: Log Consolidation
 
@@ -422,7 +426,7 @@ Acceptance:
 
 ### LGB-019 - Status API
 
-Status: Blocked
+Status: Ready
 
 Dependencies: LGB-003, LGB-012, LGB-014, LGB-015
 
