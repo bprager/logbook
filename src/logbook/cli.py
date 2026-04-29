@@ -8,6 +8,7 @@ from logbook.config import ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
 from logbook.ingest import run_ingest_dry_run
+from logbook.launchd import render_launchd_package, write_launchd_package
 from logbook.recorder import discover_recordings, validate_recorder
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied_with_fake_odin
@@ -131,6 +132,35 @@ def main(argv: list[str] | None = None) -> int:
     serve_api_parser.add_argument("--host", default=None)
     serve_api_parser.add_argument("--port", type=int, default=None)
 
+    retention_status_parser = subparsers.add_parser(
+        "retention-status",
+        help="report retention cleanup configuration without deleting audio",
+    )
+    retention_status_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    launchd_render_parser = subparsers.add_parser(
+        "launchd-render",
+        help="render launchd plists for the Logbook API, mount probe, and retention audit",
+    )
+    launchd_render_parser.add_argument("--env", type=Path, default=Path(".env"))
+    launchd_render_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="directory for generated plists; defaults to LOGBOOK_PROCESSING_ROOT/launchd",
+    )
+    launchd_render_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="repository root used as launchd WorkingDirectory",
+    )
+    launchd_render_parser.add_argument(
+        "--python-bin",
+        default=sys.executable,
+        help="Python executable launchd should run",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "recorder-discover":
@@ -157,6 +187,10 @@ def main(argv: list[str] | None = None) -> int:
         return _vault_preflight(args.env, args.vault)
     if args.command == "serve-api":
         return _serve_api(args.env, args.host, args.port)
+    if args.command == "retention-status":
+        return _retention_status(args.env)
+    if args.command == "launchd-render":
+        return _launchd_render(args.env, args.output_dir, args.repo_root, args.python_bin)
 
     parser.error(f"unsupported command: {args.command}")
     return 2
@@ -513,6 +547,60 @@ def _serve_api(env_path: Path, host: str | None, port: int | None) -> int:
 
     app = create_app(config)
     uvicorn.run(app, host=bind_host, port=bind_port)
+    return 0
+
+
+def _retention_status(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    print("Audio retention status")
+    print(f"env_path={env_path}")
+    print(f"retention_hours={config.retention.hours}")
+    print(f"cleanup_mode={config.retention.cleanup_mode}")
+    print("cleanup_implementation=LGB-026")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    return 0
+
+
+def _launchd_render(
+    env_path: Path,
+    output_dir: Path | None,
+    repo_root: Path,
+    python_bin: str,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    target_output_dir = output_dir or config.processing_root / "launchd"
+    package = render_launchd_package(
+        config=config,
+        env_path=env_path,
+        output_dir=target_output_dir,
+        repo_root=repo_root,
+        python_bin=python_bin,
+    )
+    paths = write_launchd_package(package)
+
+    print("Render launchd package")
+    print(f"env_path={env_path}")
+    print(f"repo_root={repo_root}")
+    print(f"output_dir={target_output_dir}")
+    print(f"python_bin={python_bin}")
+    print("load_launchd=no")
+    print("start_openclaw=no")
+    print("mount_trigger_command=recorder-discover")
+    print("retention_delete_audio=no")
+    print("plists:")
+    for path in paths:
+        print(f"- {path}")
     return 0
 
 

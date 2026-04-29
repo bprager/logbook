@@ -55,6 +55,8 @@ OBSIDIAN_STAGE_COMMAND=git -C {vault_path} add 10 - Logs
 LOGBOOK_API_BIND_HOST=127.0.0.1
 LOGBOOK_API_PORT=8787
 LOGBOOK_READ_TOKEN=read-secret
+LOGBOOK_AUDIO_RETENTION_HOURS=24
+LOGBOOK_AUDIO_CLEANUP_MODE=trash_then_delete
 """.lstrip(),
             encoding="utf-8",
         )
@@ -73,6 +75,27 @@ LOGBOOK_READ_TOKEN=read-secret
         self.assertEqual(config.api.bind_host, "127.0.0.1")
         self.assertEqual(config.api.port, 8787)
         self.assertEqual(config.api.read_token, "read-secret")
+        self.assertEqual(config.retention.hours, 24)
+        self.assertEqual(config.retention.cleanup_mode, "trash_then_delete")
+
+    def test_retention_hours_must_be_positive(self) -> None:
+        env_path = Path(self._testMethodName) / ".env"
+        env_path.parent.mkdir(exist_ok=True)
+        self.addCleanup(_cleanup_tree, env_path.parent)
+        env_path.write_text(
+            """
+LOGBOOK_PROCESSING_ROOT=/tmp/logbook
+SONY_RECORDER_VOLUME_NAME=IC RECORDER
+SONY_RECORDER_MOUNT_PATH=/Volumes/IC RECORDER
+SONY_RECORDER_RECORDINGS_PATH=/REC_FILE/FOLDER01
+ODIN_API_BASE_URL=http://odin.test
+LOGBOOK_AUDIO_RETENTION_HOURS=0
+""".lstrip(),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ConfigError, "LOGBOOK_AUDIO_RETENTION_HOURS"):
+            load_app_config(env_path)
 
 
 def _cleanup_tree(path: Path) -> None:

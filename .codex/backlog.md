@@ -474,7 +474,7 @@ Acceptance:
 
 ### LGB-021 - launchd Packaging
 
-Status: Ready
+Status: Completed
 
 Dependencies: LGB-006, LGB-019
 
@@ -484,11 +484,15 @@ Deliverables:
 - Runtime user guidance respecting `clawdbot` OpenClaw ownership.
 - Log paths and graceful shutdown behavior.
 - Cleanup schedule for 24-hour audio retention.
+- `logbook launchd-render` command that writes host-local plists under `LOGBOOK_PROCESSING_ROOT/launchd` by default.
+- `logbook retention-status` command for the scheduled no-delete retention audit placeholder.
 
 Acceptance:
 
 - Mount trigger starts only the lightweight probe.
 - OpenClaw services are not started as `bernd`.
+- API service plist uses launchd keepalive and a bounded shutdown timeout.
+- Retention job runs on schedule but does not delete audio before LGB-026.
 
 ### LGB-026 - Audio Retention Cleanup
 

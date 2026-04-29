@@ -4,7 +4,7 @@ Updated: 2026-04-29
 
 ## Current Focus
 
-FastAPI bounded action API.
+launchd packaging for the Logbook API, mount probe, and retention audit.
 
 ## Active Request
 
@@ -15,6 +15,7 @@ FastAPI bounded action API.
 - Implement LGB-014 Dead-Letter Writer, then LGB-013 Category Note Writer.
 - Implement LGB-019 Status API with correctly configured Swagger UI.
 - Implement LGB-020 Bounded Action API with audit records and action-token auth.
+- Implement LGB-021 launchd Packaging without starting OpenClaw services as `bernd`.
 
 ## Progress
 
@@ -66,6 +67,9 @@ FastAPI bounded action API.
 - [x] Added bounded action endpoints for job reprocess, dead-letter rescue, and daily log rebuild requests.
 - [x] Added SQLite `action_audit` records and `LOGBOOK_ACTION_TOKEN` enforcement for action endpoints.
 - [x] Added optional action idempotency keys so OpenClaw retries can reuse an existing audit record.
+- [x] Added launchd plist rendering for the Logbook API keepalive service.
+- [x] Added a `StartOnMount` launchd probe that runs only read-only recorder discovery.
+- [x] Added an hourly retention audit launchd job that reports config and performs no deletion before LGB-026.
 
 ## Notes
 
@@ -153,3 +157,6 @@ FastAPI bounded action API.
 - LGB-019 implementation completed on 2026-04-29; full verification passed with 39 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
 - LGB-020 implementation completed on 2026-04-29; action endpoints only record auditable intent and do not execute shell commands, delete files, or mutate job state inline.
 - LGB-020 verification passed with 43 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.
+- LGB-021 implementation completed on 2026-04-29; generated launchd plists are written under `LOGBOOK_PROCESSING_ROOT/launchd` by default and are not loaded automatically.
+- Rendered host-local plists to `/Users/bernd/VoiceIngest/launchd` and validated them with `plutil -lint`; no launchd jobs were bootstrapped.
+- LGB-021 verification passed with 46 tests OK, `python3 -m py_compile src/logbook/*.py` OK, and `git diff --check` OK.

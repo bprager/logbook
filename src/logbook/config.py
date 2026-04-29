@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -21,11 +21,23 @@ class RecorderConfig:
 
 
 @dataclass(frozen=True)
+class RetentionConfig:
+    hours: int
+    cleanup_mode: str
+
+
+@dataclass(frozen=True)
 class AppConfig:
     processing_root: Path
     sqlite_path: Path
     recorder: RecorderConfig
     odin: "OdinConfig"
+    retention: "RetentionConfig" = field(
+        default_factory=lambda: RetentionConfig(
+            hours=24,
+            cleanup_mode="trash_then_delete",
+        )
+    )
     obsidian: "ObsidianConfig | None" = None
     api: "ApiConfig | None" = None
 
@@ -99,6 +111,7 @@ def load_app_config(env_path: Path) -> AppConfig:
         sqlite_path=sqlite_path,
         recorder=recorder_config_from_values(values),
         odin=odin_config_from_values(values),
+        retention=retention_config_from_values(values),
         obsidian=obsidian_config_from_values(values),
         api=api_config_from_values(values),
     )
@@ -156,6 +169,16 @@ def api_config_from_values(values: dict[str, str]) -> ApiConfig:
         port=int(values.get("LOGBOOK_API_PORT") or "8765"),
         read_token=_optional(values, "LOGBOOK_READ_TOKEN"),
         action_token=_optional(values, "LOGBOOK_ACTION_TOKEN"),
+    )
+
+
+def retention_config_from_values(values: dict[str, str]) -> RetentionConfig:
+    hours = int(values.get("LOGBOOK_AUDIO_RETENTION_HOURS") or "24")
+    if hours < 1:
+        raise ConfigError("LOGBOOK_AUDIO_RETENTION_HOURS must be at least 1")
+    return RetentionConfig(
+        hours=hours,
+        cleanup_mode=values.get("LOGBOOK_AUDIO_CLEANUP_MODE") or "trash_then_delete",
     )
 
 

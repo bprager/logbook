@@ -175,6 +175,17 @@ Bounded action endpoints use `LOGBOOK_ACTION_TOKEN` and only record auditable in
 
 Send an `idempotency_key` in the JSON body when OpenClaw may retry an action request.
 
+Render launchd plists for the local API, mount probe, and retention audit:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli launchd-render --env .env
+```
+
+The mount-trigger plist uses `StartOnMount` but runs only the read-only `recorder-discover`
+probe. It does not copy, transcribe, route, or delete audio. See
+[docs/launchd.md](docs/launchd.md) for install guidance and the OpenClaw runtime ownership
+guardrail.
+
 Run the standard-library test suite:
 
 ```bash
