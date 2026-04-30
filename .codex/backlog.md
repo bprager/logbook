@@ -202,6 +202,10 @@ Acceptance:
 - Live `odin-health --env .env` succeeds against the actual host.
 - Live `transcribe-copied --env .env` succeeds for at least one copied test recording without using the fake client.
 
+Current note:
+
+- Live `odin-health --env .env` passes against `http://192.168.1.3:8765`; the worker now runs on `odin` as enabled user systemd service `logbook-odin-worker.service`.
+
 ### LGB-009 - Transcript Persistence
 
 Status: Completed
