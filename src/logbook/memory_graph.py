@@ -103,19 +103,33 @@ def build_memory_graph_plan(config: AppConfig, job_id: int | None = None) -> Mem
 
 def apply_memory_graph_plan(plan: MemoryGraphPlan, client: GraphClient) -> MemoryGraphSyncResult:
     try:
-        for node in plan.nodes:
+        for labels, nodes in _nodes_by_labels(plan).items():
             client.run(
-                _merge_node_cypher(node.labels),
-                {"id": node.id, "properties": _safe_properties(node.properties)},
-            )
-        for relationship in plan.relationships:
-            client.run(
-                _merge_relationship_cypher(relationship.type),
+                _merge_nodes_cypher(labels),
                 {
-                    "id": relationship.id,
-                    "start_id": relationship.start_id,
-                    "end_id": relationship.end_id,
-                    "properties": _safe_properties(relationship.properties),
+                    "rows": [
+                        {
+                            "id": node.id,
+                            "properties": _safe_properties(node.properties),
+                        }
+                        for node in nodes
+                    ]
+                },
+            )
+        for signature, relationships in _relationships_by_signature(plan).items():
+            relationship_type, start_label, end_label = signature
+            client.run(
+                _merge_relationships_cypher(relationship_type, start_label, end_label),
+                {
+                    "rows": [
+                        {
+                            "id": relationship.id,
+                            "start_id": relationship.start_id,
+                            "end_id": relationship.end_id,
+                            "properties": _safe_properties(relationship.properties),
+                        }
+                        for relationship in relationships
+                    ]
                 },
             )
     finally:
@@ -198,14 +212,21 @@ class Neo4jMemgraphClient:
         auth = None
         if config.username or config.password:
             auth = (config.username or "", config.password or "")
-        self._driver = GraphDatabase.driver(config.uri, auth=auth)
+        self._driver = GraphDatabase.driver(
+            config.uri,
+            auth=auth,
+            connection_timeout=5.0,
+            keep_alive=False,
+            max_connection_lifetime=30.0,
+        )
         self._database = config.database
+        self._session = self._driver.session(database=self._database)
 
     def run(self, cypher: str, parameters: dict[str, object]) -> None:
-        with self._driver.session(database=self._database) as session:
-            session.run(cypher, parameters)
+        self._session.run(cypher, parameters).consume()
 
     def close(self) -> None:
+        self._session.close()
         self._driver.close()
 
 
@@ -622,6 +643,15 @@ def _merge_node_cypher(labels: tuple[str, ...]) -> str:
     return f"MERGE (n:{safe_labels} {{id: $id}}) SET n += $properties"
 
 
+def _merge_nodes_cypher(labels: tuple[str, ...]) -> str:
+    safe_labels = ":".join(_safe_label(label) for label in labels)
+    return (
+        "UNWIND $rows AS row "
+        f"MERGE (n:{safe_labels} {{id: row.id}}) "
+        "SET n += row.properties"
+    )
+
+
 def _merge_relationship_cypher(relationship_type: str) -> str:
     safe_type = _safe_label(relationship_type)
     return (
@@ -630,6 +660,52 @@ def _merge_relationship_cypher(relationship_type: str) -> str:
         f"MERGE (a)-[r:{safe_type} {{id: $id}}]->(b) "
         "SET r += $properties"
     )
+
+
+def _merge_relationships_cypher(
+    relationship_type: str,
+    start_label: str | None = None,
+    end_label: str | None = None,
+) -> str:
+    safe_type = _safe_label(relationship_type)
+    safe_start = f":{_safe_label(start_label)}" if start_label is not None else ""
+    safe_end = f":{_safe_label(end_label)}" if end_label is not None else ""
+    return (
+        "UNWIND $rows AS row "
+        f"MATCH (a{safe_start} {{id: row.start_id}}) "
+        f"MATCH (b{safe_end} {{id: row.end_id}}) "
+        f"MERGE (a)-[r:{safe_type} {{id: row.id}}]->(b) "
+        "SET r += row.properties"
+    )
+
+
+def _nodes_by_labels(plan: MemoryGraphPlan) -> dict[tuple[str, ...], list[MemoryNode]]:
+    grouped: dict[tuple[str, ...], list[MemoryNode]] = {}
+    for node in plan.nodes:
+        grouped.setdefault(node.labels, []).append(node)
+    return grouped
+
+
+def _relationships_by_type(plan: MemoryGraphPlan) -> dict[str, list[MemoryRelationship]]:
+    grouped: dict[str, list[MemoryRelationship]] = {}
+    for relationship in plan.relationships:
+        grouped.setdefault(relationship.type, []).append(relationship)
+    return grouped
+
+
+def _relationships_by_signature(
+    plan: MemoryGraphPlan,
+) -> dict[tuple[str, str | None, str | None], list[MemoryRelationship]]:
+    labels_by_id = {node.id: _primary_label(node) for node in plan.nodes}
+    grouped: dict[tuple[str, str | None, str | None], list[MemoryRelationship]] = {}
+    for relationship in plan.relationships:
+        signature = (
+            relationship.type,
+            labels_by_id.get(relationship.start_id),
+            labels_by_id.get(relationship.end_id),
+        )
+        grouped.setdefault(signature, []).append(relationship)
+    return grouped
 
 
 def _sanitize_node(node: MemoryNode) -> MemoryNode:
