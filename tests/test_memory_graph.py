@@ -21,6 +21,7 @@ from logbook.ledger import open_ledger
 from logbook.memory_graph import (
     apply_memory_graph_plan,
     build_memory_graph_plan,
+    check_memory_graph_health,
     query_memory_graph_plan,
 )
 from logbook.routing import route_transcripts
@@ -150,6 +151,63 @@ class MemoryGraphTests(TestCase):
             self.assertNotIn(str(app_config.recorder.mount_path), serialized)
             self.assertNotIn(".mp3", serialized)
 
+    def test_memory_graph_health_reports_ok_for_matching_live_counts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config)
+            client = HealthGraphClient(
+                live_nodes=plan.node_count,
+                live_relationships=plan.relationship_count,
+                label_counts=plan.counts_by_label,
+                relationship_counts=plan.counts_by_relationship,
+            )
+
+            health = check_memory_graph_health(app_config, client=client)
+
+            self.assertEqual(health.status, "ok")
+            self.assertTrue(health.reachable)
+            self.assertEqual(health.live_nodes, plan.node_count)
+            self.assertEqual(health.live_relationships, plan.relationship_count)
+            self.assertTrue(all(value == 0 for value in health.drift_by_label.values()))
+            self.assertTrue(
+                all(value == 0 for value in health.drift_by_relationship.values())
+            )
+
+    def test_memory_graph_health_reports_drift_for_mismatched_live_counts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config)
+            relationship_counts = dict(plan.counts_by_relationship)
+            relationship_counts["SUPPORTED_BY"] -= 1
+            client = HealthGraphClient(
+                live_nodes=plan.node_count,
+                live_relationships=plan.relationship_count - 1,
+                label_counts=plan.counts_by_label,
+                relationship_counts=relationship_counts,
+            )
+
+            health = check_memory_graph_health(app_config, client=client)
+
+            self.assertEqual(health.status, "drift")
+            self.assertTrue(health.reachable)
+            self.assertEqual(health.drift_by_relationship["SUPPORTED_BY"], -1)
+
+    def test_memory_graph_health_is_not_configured_without_memgraph(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            client = TestClient(create_app(app_config))
+
+            health = check_memory_graph_health(app_config)
+            response = client.get("/memory/graph-health")
+
+            self.assertEqual(health.status, "not_configured")
+            self.assertFalse(health.reachable)
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["status"], "not_configured")
+            self.assertIn("planned_nodes", payload)
+            self.assertEqual(payload["live_nodes"], None)
+
     def test_memory_action_resolution_removes_action_from_open_loops(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -264,6 +322,43 @@ class RecordingGraphClient:
 
     def close(self) -> None:
         self.closed = True
+
+
+class HealthGraphClient:
+    def __init__(
+        self,
+        live_nodes: int,
+        live_relationships: int,
+        label_counts: dict[str, int],
+        relationship_counts: dict[str, int],
+    ) -> None:
+        self.live_nodes = live_nodes
+        self.live_relationships = live_relationships
+        self.label_counts = label_counts
+        self.relationship_counts = relationship_counts
+
+    def query(
+        self,
+        cypher: str,
+        parameters: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
+        del parameters
+        if "UNWIND labels(n) AS label" in cypher:
+            return [
+                {"label": label, "count": count}
+                for label, count in self.label_counts.items()
+            ]
+        if "RETURN type(r) AS type" in cypher:
+            return [
+                {"type": relationship_type, "count": count}
+                for relationship_type, count in self.relationship_counts.items()
+            ]
+        if "MATCH (a)-[r]->(b)" in cypher:
+            return [{"count": self.live_relationships}]
+        return [{"count": self.live_nodes}]
+
+    def close(self) -> None:
+        pass
 
 
 def _seed_memory_fixture(root: Path) -> AppConfig:

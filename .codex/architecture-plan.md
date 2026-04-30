@@ -265,3 +265,5 @@ Operating constraints:
 Status: baseline implemented in LGB-027 on 2026-04-30. The sync path is dry-run by default, Memgraph writes require explicit `--execute`, and `/memory/*` API endpoints expose bounded read-only memory queries for OpenClaw without shell access.
 
 Follow-on status: LGB-028 adds durable action-candidate resolution state in SQLite, dry-run-first CLI resolution, and a token-protected API endpoint so resolved promises disappear from open-loop memory queries without mutating transcripts or generated notes.
+
+Health status: LGB-029 adds a read-only graph drift check through CLI and FastAPI so local planned memory counts can be compared against live Memgraph before relying on graph-backed memory.

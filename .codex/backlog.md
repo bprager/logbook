@@ -30,6 +30,7 @@ LGB-003 + LGB-006 + LGB-009 + LGB-012 + LGB-013 + LGB-014 + LGB-018 + LGB-025 ->
 LGB-012 + LGB-013 + LGB-014 + LGB-016 + LGB-018 + LGB-020 + LGB-025 + LGB-026 -> LGB-022 End-to-end acceptance tests
 LGB-003 + LGB-009 + LGB-017 + LGB-018 + LGB-019 + LGB-024 -> LGB-027 Proof-carrying memory graph
 LGB-027 -> LGB-028 Action candidate resolution
+LGB-027 -> LGB-029 Memory graph health and drift check
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -665,3 +666,25 @@ Acceptance:
 - Resolved action candidates disappear from `/memory/open-loops` and `memory-graph-query --query open-loops`.
 - Resolution writes are durable in SQLite and visible on the next graph build.
 - Resolution endpoints remain bounded by action-token auth in the API and dry-run-first behavior in the CLI.
+
+### LGB-029 - Memory Graph Health And Drift Check
+
+Status: Completed
+
+Priority: P0
+
+Dependencies: LGB-027
+
+Deliverables:
+
+- Read-only local-vs-live Memgraph comparison for Logbook-owned graph nodes and relationships.
+- `logbook memory-graph-health --env .env` CLI command that reports plan counts, live counts, drift by label/type, and Memgraph reachability.
+- FastAPI `GET /memory/graph-health` endpoint registered in Swagger/OpenAPI.
+- Tests for matching counts, drift detection, missing Memgraph config, and OpenAPI registration.
+
+Acceptance:
+
+- The health check never writes to Memgraph, SQLite, generated notes, source audio, or recorder audio.
+- A freshly synced graph reports `status=ok` when live counts match the local plan.
+- Missing or unreachable Memgraph is reported explicitly without blocking local plan generation.
+- Count drift is visible by node label and relationship type so the next operator action is clear.

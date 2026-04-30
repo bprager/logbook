@@ -11,7 +11,12 @@ from pydantic import BaseModel, Field
 
 from logbook.config import AppConfig
 from logbook.ledger import MemoryActionReview, RecordingJob, open_ledger
-from logbook.memory_graph import build_memory_graph_plan, query_memory_graph_plan
+from logbook.memory_graph import (
+    MemoryGraphHealth,
+    build_memory_graph_plan,
+    check_memory_graph_health,
+    query_memory_graph_plan,
+)
 from logbook.retention import plan_audio_cleanup
 
 
@@ -150,6 +155,27 @@ class MemoryQueryResponse(BaseModel):
     query: str
     count: int
     items: list[MemoryQueryItem]
+
+
+class MemoryGraphCountItem(BaseModel):
+    name: str
+    planned: int
+    live: Optional[int]
+    drift: Optional[int]
+
+
+class MemoryGraphHealthResponse(BaseModel):
+    status: str = Field(
+        description="ok when live Memgraph counts match the local plan; drift otherwise."
+    )
+    reachable: bool
+    detail: Optional[str]
+    planned_nodes: int
+    live_nodes: Optional[int]
+    planned_relationships: int
+    live_relationships: Optional[int]
+    labels: list[MemoryGraphCountItem]
+    relationships: list[MemoryGraphCountItem]
 
 
 class MemoryActionReviewResponse(BaseModel):
@@ -464,6 +490,15 @@ def create_app(config: AppConfig) -> FastAPI:
     def memory_weekly_diff() -> MemoryQueryResponse:
         return _memory_query_response(config, "weekly-diff")
 
+    @app.get(
+        "/memory/graph-health",
+        tags=["memory"],
+        response_model=MemoryGraphHealthResponse,
+        dependencies=read_dependencies,
+    )
+    def memory_graph_health() -> MemoryGraphHealthResponse:
+        return _memory_graph_health_response(check_memory_graph_health(config))
+
     @app.post(
         "/memory/actions/{action_id}/resolve",
         tags=["memory", "actions"],
@@ -570,6 +605,48 @@ def _memory_query_response(config: AppConfig, query: str) -> MemoryQueryResponse
         count=len(rows),
         items=[MemoryQueryItem(**row) for row in rows],
     )
+
+
+def _memory_graph_health_response(
+    health: MemoryGraphHealth,
+) -> MemoryGraphHealthResponse:
+    labels = _graph_count_items(
+        health.planned_counts_by_label,
+        health.live_counts_by_label,
+        health.drift_by_label,
+    )
+    relationships = _graph_count_items(
+        health.planned_counts_by_relationship,
+        health.live_counts_by_relationship,
+        health.drift_by_relationship,
+    )
+    return MemoryGraphHealthResponse(
+        status=health.status,
+        reachable=health.reachable,
+        detail=health.detail,
+        planned_nodes=health.planned_nodes,
+        live_nodes=health.live_nodes,
+        planned_relationships=health.planned_relationships,
+        live_relationships=health.live_relationships,
+        labels=labels,
+        relationships=relationships,
+    )
+
+
+def _graph_count_items(
+    planned: dict[str, int],
+    live: dict[str, int],
+    drift: dict[str, int],
+) -> list[MemoryGraphCountItem]:
+    return [
+        MemoryGraphCountItem(
+            name=name,
+            planned=planned.get(name, 0),
+            live=live.get(name),
+            drift=drift.get(name),
+        )
+        for name in sorted(set(planned) | set(live))
+    ]
 
 
 def _resolve_memory_action(

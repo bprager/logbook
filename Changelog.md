@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added high-priority roadmap/backlog entry for a proof-carrying Memgraph memory layer over Logbook evidence.
 - Added LGB-027 proof-carrying memory graph sync/query support with dry-run-first CLI, optional Memgraph execution, and bounded FastAPI `/memory/*` read endpoints.
 - Added LGB-028 action candidate resolution with durable SQLite review state, dry-run-first CLI, and token-protected FastAPI resolve endpoint.
+- Added LGB-029 memory graph health/drift checks through CLI and FastAPI/OpenAPI.
 
 ### Fixed
 

@@ -75,8 +75,38 @@ class MemoryGraphSyncResult:
     relationships_written: int = 0
 
 
+@dataclass(frozen=True)
+class MemoryGraphHealth:
+    plan: MemoryGraphPlan
+    status: str
+    reachable: bool
+    detail: str | None
+    planned_nodes: int
+    live_nodes: int | None
+    planned_relationships: int
+    live_relationships: int | None
+    planned_counts_by_label: dict[str, int]
+    live_counts_by_label: dict[str, int]
+    planned_counts_by_relationship: dict[str, int]
+    live_counts_by_relationship: dict[str, int]
+    drift_by_label: dict[str, int]
+    drift_by_relationship: dict[str, int]
+
+
 class GraphClient(Protocol):
     def run(self, cypher: str, parameters: dict[str, object]) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+
+class GraphQueryClient(Protocol):
+    def query(
+        self,
+        cypher: str,
+        parameters: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
         raise NotImplementedError
 
     def close(self) -> None:
@@ -139,6 +169,120 @@ def apply_memory_graph_plan(plan: MemoryGraphPlan, client: GraphClient) -> Memor
         execute=True,
         nodes_written=plan.node_count,
         relationships_written=plan.relationship_count,
+    )
+
+
+def check_memory_graph_health(
+    config: AppConfig,
+    client: GraphQueryClient | None = None,
+) -> MemoryGraphHealth:
+    plan = build_memory_graph_plan(config)
+    planned_labels = plan.counts_by_label
+    planned_relationships = plan.counts_by_relationship
+    if config.memgraph is None and client is None:
+        return MemoryGraphHealth(
+            plan=plan,
+            status="not_configured",
+            reachable=False,
+            detail="missing MEMGRAPH_URI",
+            planned_nodes=plan.node_count,
+            live_nodes=None,
+            planned_relationships=plan.relationship_count,
+            live_relationships=None,
+            planned_counts_by_label=planned_labels,
+            live_counts_by_label={},
+            planned_counts_by_relationship=planned_relationships,
+            live_counts_by_relationship={},
+            drift_by_label={},
+            drift_by_relationship={},
+        )
+
+    owns_client = client is None
+    if client is None:
+        assert config.memgraph is not None
+        try:
+            graph: GraphQueryClient = Neo4jMemgraphClient(config.memgraph)
+        except Exception as error:
+            return MemoryGraphHealth(
+                plan=plan,
+                status="unavailable",
+                reachable=False,
+                detail=str(error),
+                planned_nodes=plan.node_count,
+                live_nodes=None,
+                planned_relationships=plan.relationship_count,
+                live_relationships=None,
+                planned_counts_by_label=planned_labels,
+                live_counts_by_label={},
+                planned_counts_by_relationship=planned_relationships,
+                live_counts_by_relationship={},
+                drift_by_label={},
+                drift_by_relationship={},
+            )
+    else:
+        graph = client
+    try:
+        live_nodes = _single_count(
+            graph.query(_live_node_count_cypher(), {"id_prefixes": _id_prefixes()})
+        )
+        live_labels = _count_rows(
+            graph.query(_live_label_counts_cypher(), {"id_prefixes": _id_prefixes()}),
+            key_name="label",
+        )
+        live_relationship_count = _single_count(
+            graph.query(_live_relationship_count_cypher(), {"id_prefixes": _id_prefixes()})
+        )
+        live_relationships = _count_rows(
+            graph.query(
+                _live_relationship_counts_cypher(),
+                {"id_prefixes": _id_prefixes()},
+            ),
+            key_name="type",
+        )
+    except Exception as error:
+        return MemoryGraphHealth(
+            plan=plan,
+            status="unavailable",
+            reachable=False,
+            detail=str(error),
+            planned_nodes=plan.node_count,
+            live_nodes=None,
+            planned_relationships=plan.relationship_count,
+            live_relationships=None,
+            planned_counts_by_label=planned_labels,
+            live_counts_by_label={},
+            planned_counts_by_relationship=planned_relationships,
+            live_counts_by_relationship={},
+            drift_by_label={},
+            drift_by_relationship={},
+        )
+    finally:
+        if owns_client:
+            graph.close()
+
+    drift_by_label = _drift(planned_labels, live_labels)
+    drift_by_relationship = _drift(planned_relationships, live_relationships)
+    has_drift = (
+        live_nodes != plan.node_count
+        or live_relationship_count != plan.relationship_count
+        or any(value != 0 for value in drift_by_label.values())
+        or any(value != 0 for value in drift_by_relationship.values())
+    )
+    return MemoryGraphHealth(
+        plan=plan,
+        status="drift" if has_drift else "ok",
+        reachable=True,
+        detail=None,
+        planned_nodes=plan.node_count,
+        live_nodes=live_nodes,
+        planned_relationships=plan.relationship_count,
+        live_relationships=live_relationship_count,
+        planned_counts_by_label=planned_labels,
+        live_counts_by_label=live_labels,
+        planned_counts_by_relationship=planned_relationships,
+        live_counts_by_relationship=live_relationships,
+        drift_by_label=drift_by_label,
+        drift_by_relationship=drift_by_relationship,
     )
 
 
@@ -224,6 +368,14 @@ class Neo4jMemgraphClient:
 
     def run(self, cypher: str, parameters: dict[str, object]) -> None:
         self._session.run(cypher, parameters).consume()
+
+    def query(
+        self,
+        cypher: str,
+        parameters: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
+        result = self._session.run(cypher, parameters or {})
+        return [dict(record) for record in result]
 
     def close(self) -> None:
         self._session.close()
@@ -706,6 +858,73 @@ def _relationships_by_signature(
         )
         grouped.setdefault(signature, []).append(relationship)
     return grouped
+
+
+def _id_prefixes() -> list[str]:
+    return [
+        f"{PROJECT}:job:",
+        f"{PROJECT}:topic:",
+        f"{PROJECT}:person:",
+        f"{PROJECT}:project:",
+    ]
+
+
+def _live_node_count_cypher() -> str:
+    return (
+        "MATCH (n) "
+        "WHERE any(prefix IN $id_prefixes WHERE n.id STARTS WITH prefix) "
+        "RETURN count(n) AS count"
+    )
+
+
+def _live_label_counts_cypher() -> str:
+    return (
+        "MATCH (n) "
+        "WHERE any(prefix IN $id_prefixes WHERE n.id STARTS WITH prefix) "
+        "UNWIND labels(n) AS label "
+        "RETURN label, count(n) AS count "
+        "ORDER BY label"
+    )
+
+
+def _live_relationship_count_cypher() -> str:
+    return (
+        "MATCH (a)-[r]->(b) "
+        "WHERE any(prefix IN $id_prefixes WHERE "
+        "a.id STARTS WITH prefix OR b.id STARTS WITH prefix) "
+        "RETURN count(r) AS count"
+    )
+
+
+def _live_relationship_counts_cypher() -> str:
+    return (
+        "MATCH (a)-[r]->(b) "
+        "WHERE any(prefix IN $id_prefixes WHERE "
+        "a.id STARTS WITH prefix OR b.id STARTS WITH prefix) "
+        "RETURN type(r) AS type, count(r) AS count "
+        "ORDER BY type"
+    )
+
+
+def _single_count(rows: list[dict[str, object]]) -> int:
+    if not rows:
+        return 0
+    return int(rows[0].get("count") or 0)
+
+
+def _count_rows(rows: list[dict[str, object]], key_name: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        name = str(row.get(key_name) or "")
+        if not name:
+            continue
+        counts[name] = int(row.get("count") or 0)
+    return dict(sorted(counts.items()))
+
+
+def _drift(planned: dict[str, int], live: dict[str, int]) -> dict[str, int]:
+    names = sorted(set(planned) | set(live))
+    return {name: live.get(name, 0) - planned.get(name, 0) for name in names}
 
 
 def _sanitize_node(node: MemoryNode) -> MemoryNode:

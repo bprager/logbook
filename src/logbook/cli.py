@@ -16,6 +16,7 @@ from logbook.memory_graph import (
     Neo4jMemgraphClient,
     apply_memory_graph_plan,
     build_memory_graph_plan,
+    check_memory_graph_health,
     query_memory_graph_plan,
 )
 from logbook.odin import HttpOdinClient
@@ -274,6 +275,12 @@ def main(argv: list[str] | None = None) -> int:
         help="query exactly one ledger job; defaults to all jobs",
     )
 
+    memory_health_parser = subparsers.add_parser(
+        "memory-graph-health",
+        help="compare the local memory graph plan with live Memgraph counts without writing",
+    )
+    memory_health_parser.add_argument("--env", type=Path, default=Path(".env"))
+
     memory_resolve_parser = subparsers.add_parser(
         "memory-action-resolve",
         help="dry-run or mark a memory action candidate resolved in SQLite",
@@ -403,6 +410,8 @@ def main(argv: list[str] | None = None) -> int:
         return _memory_graph_sync(args.env, args.job_id, execute=args.execute)
     if args.command == "memory-graph-query":
         return _memory_graph_query(args.env, args.query, args.job_id)
+    if args.command == "memory-graph-health":
+        return _memory_graph_health(args.env)
     if args.command == "memory-action-resolve":
         return _memory_action_resolve(
             args.env,
@@ -1094,6 +1103,57 @@ def _memory_graph_query(env_path: Path, query: str, job_id: int | None) -> int:
         )
         print(f"- {rendered}")
     return 0
+
+
+def _memory_graph_health(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    health = check_memory_graph_health(config)
+    print("Memory graph health")
+    print(f"env_path={env_path}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    print(f"memgraph_uri={config.memgraph.uri if config.memgraph is not None else '-'}")
+    print(f"status={health.status}")
+    print(f"reachable={_yes_no(health.reachable)}")
+    print(f"detail={health.detail or '-'}")
+    print(f"planned_nodes={health.planned_nodes}")
+    print(f"live_nodes={health.live_nodes if health.live_nodes is not None else '-'}")
+    print(f"planned_relationships={health.planned_relationships}")
+    print(
+        "live_relationships="
+        f"{health.live_relationships if health.live_relationships is not None else '-'}"
+    )
+    print("counts_by_label:")
+    for label in sorted(
+        set(health.planned_counts_by_label) | set(health.live_counts_by_label)
+    ):
+        planned = health.planned_counts_by_label.get(label, 0)
+        live = health.live_counts_by_label.get(label)
+        drift = health.drift_by_label.get(label)
+        print(
+            f"- label={label} planned={planned} "
+            f"live={live if live is not None else '-'} "
+            f"drift={drift if drift is not None else '-'}"
+        )
+    print("counts_by_relationship:")
+    for relationship_type in sorted(
+        set(health.planned_counts_by_relationship)
+        | set(health.live_counts_by_relationship)
+    ):
+        planned = health.planned_counts_by_relationship.get(relationship_type, 0)
+        live = health.live_counts_by_relationship.get(relationship_type)
+        drift = health.drift_by_relationship.get(relationship_type)
+        print(
+            f"- type={relationship_type} planned={planned} "
+            f"live={live if live is not None else '-'} "
+            f"drift={drift if drift is not None else '-'}"
+        )
+    return 1 if health.status in {"drift", "unavailable"} else 0
 
 
 def _memory_action_resolve(

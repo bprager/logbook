@@ -38,6 +38,7 @@ class StatusApiTests(TestCase):
             self.assertIn("/memory/open-loops", schema["paths"])
             self.assertIn("/memory/recent-decisions", schema["paths"])
             self.assertIn("/memory/topic-trails", schema["paths"])
+            self.assertIn("/memory/graph-health", schema["paths"])
             self.assertIn("/memory/actions/{action_id}/resolve", schema["paths"])
             self.assertIn("HTTPBearer", schema["components"]["securitySchemes"])
             self.assertEqual(docs.status_code, 200)
