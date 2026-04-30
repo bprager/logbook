@@ -181,7 +181,7 @@ Acceptance:
 
 ### LGB-008 - ASR Worker
 
-Status: Completed
+Status: In progress
 
 Dependencies: LGB-007
 
@@ -190,11 +190,17 @@ Deliverables:
 - faster-whisper worker on `odin`.
 - Configurable model, device, compute type, VAD, and language.
 - Complete consumption of lazy segment results before success.
+- Deployable FastAPI worker app with `/health`, `POST /jobs`, and `GET /jobs/{odin_job_id}/result`.
+- `serve-odin-worker` command for starting the worker on the target host.
+- Client-side `odin-health` probe for the configured worker health endpoint.
+- Client-side `transcribe-copied` command that submits copied recordings through the HTTP `odin` client.
 
 Acceptance:
 
 - A test audio file returns text, segments, timestamps, and ASR metadata.
 - Health endpoint reports model readiness and GPU availability.
+- Live `odin-health --env .env` succeeds against the actual host.
+- Live `transcribe-copied --env .env` succeeds for at least one copied test recording without using the fake client.
 
 ### LGB-009 - Transcript Persistence
 

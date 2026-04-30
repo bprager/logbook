@@ -55,6 +55,13 @@ class OdinTranscriptResult:
         }
 
 
+@dataclass(frozen=True)
+class OdinHealth:
+    healthy: bool
+    detail: str | None
+    payload: dict[str, object]
+
+
 class OdinClient(Protocol):
     def submit_transcription(self, submit_request: OdinSubmitRequest) -> OdinSubmitResponse:
         raise NotImplementedError
@@ -120,6 +127,29 @@ class HttpOdinClient:
     def __init__(self, config: OdinConfig, timeout_seconds: float = 30.0) -> None:
         self.config = config
         self.timeout_seconds = timeout_seconds
+
+    def health(self) -> OdinHealth:
+        headers = {"Accept": "application/json"}
+        if self.config.api_token:
+            headers["Authorization"] = f"Bearer {self.config.api_token}"
+        http_request = request.Request(
+            f"{self.config.api_base_url}/health",
+            headers=headers,
+            method="GET",
+        )
+        with request.urlopen(http_request, timeout=self.timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            return OdinHealth(False, "health response was not a JSON object", {})
+        healthy = bool(
+            payload.get("healthy", payload.get("ok", payload.get("ready", False)))
+        )
+        detail = payload.get("detail") or payload.get("status")
+        return OdinHealth(
+            healthy=healthy,
+            detail=str(detail) if detail is not None else None,
+            payload=payload,
+        )
 
     def submit_transcription(self, submit_request: OdinSubmitRequest) -> OdinSubmitResponse:
         boundary = f"----logbook-{uuid.uuid4().hex}"

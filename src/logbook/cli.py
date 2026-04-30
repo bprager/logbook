@@ -11,10 +11,11 @@ from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odi
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
 from logbook.odin import HttpOdinClient
+from logbook.odin_worker import OdinWorkerConfig, create_odin_worker_app
 from logbook.recorder import discover_recordings, validate_recorder
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
 from logbook.routing import route_transcripts
-from logbook.transcription import transcribe_copied_with_fake_odin
+from logbook.transcription import transcribe_copied, transcribe_copied_with_fake_odin
 from logbook.vault import ObsidianVaultWorkflow, VaultWorkflowError
 from logbook.vault_sync import mark_vault_synced_jobs
 from logbook.writers import FilesystemNoteWriter, ObsidianCliNoteWriter
@@ -52,6 +53,32 @@ def main(argv: list[str] | None = None) -> int:
         help="exercise the odin client boundary with fake transcripts for copied files",
     )
     fake_transcribe_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    transcribe_parser = subparsers.add_parser(
+        "transcribe-copied",
+        help="send copied recordings to the configured odin transcription endpoint",
+    )
+    transcribe_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    odin_health_parser = subparsers.add_parser(
+        "odin-health",
+        help="check the configured odin worker health endpoint without submitting audio",
+    )
+    odin_health_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    serve_odin_parser = subparsers.add_parser(
+        "serve-odin-worker",
+        help="start the internal FastAPI odin ASR worker on the configured host",
+    )
+    serve_odin_parser.add_argument("--env", type=Path, default=Path(".env"))
+    serve_odin_parser.add_argument("--host", default="127.0.0.1")
+    serve_odin_parser.add_argument("--port", type=int, default=8765)
+    serve_odin_parser.add_argument(
+        "--worker-root",
+        type=Path,
+        default=None,
+        help="directory for worker audio staging; defaults to LOGBOOK_PROCESSING_ROOT/odin-worker",
+    )
 
     diarize_parser = subparsers.add_parser(
         "diarize-meetings",
@@ -220,6 +247,12 @@ def main(argv: list[str] | None = None) -> int:
         return _copy_discovered(args.env)
     if args.command == "fake-transcribe-copied":
         return _fake_transcribe_copied(args.env)
+    if args.command == "transcribe-copied":
+        return _transcribe_copied(args.env)
+    if args.command == "odin-health":
+        return _odin_health(args.env)
+    if args.command == "serve-odin-worker":
+        return _serve_odin_worker(args.env, args.host, args.port, args.worker_root)
     if args.command == "diarize-meetings":
         return _diarize_meetings(args.env)
     if args.command == "fake-diarize-meetings":
@@ -412,6 +445,90 @@ def _fake_transcribe_copied(env_path: Path) -> int:
         )
 
     return 1 if result.failed_count else 0
+
+
+def _transcribe_copied(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    try:
+        result = transcribe_copied(config=config, client=HttpOdinClient(config.odin))
+    except Exception as error:
+        print(f"odin_error: {error}", file=sys.stderr)
+        return 1
+    print("Transcribe copied recordings")
+    print(f"env_path={env_path}")
+    print("odin_client=http")
+    print("delete_audio=no")
+    print("write_obsidian=no")
+    print(f"odin_api_base_url={config.odin.api_base_url}")
+    print(f"transcript_dir={result.transcript_dir}")
+    print(f"transcribed_count={result.transcribed_count}")
+    print(f"skipped_count={result.skipped_count}")
+    print(f"failed_count={result.failed_count}")
+    print("transcription_results:")
+    for item in result.items:
+        transcript_path = item.transcript_path if item.transcript_path is not None else "-"
+        odin_job_id = item.odin_job_id if item.odin_job_id is not None else "-"
+        print(
+            f"- filename={item.job.source_filename} status={item.status} "
+            f"job_id={item.job.id} odin_job_id={odin_job_id} transcript_path={transcript_path}"
+        )
+
+    return 1 if result.failed_count else 0
+
+
+def _odin_health(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    try:
+        health = HttpOdinClient(config.odin, timeout_seconds=5.0).health()
+    except Exception as error:
+        print("Odin health")
+        print(f"env_path={env_path}")
+        print(f"odin_api_base_url={config.odin.api_base_url}")
+        print("healthy=no")
+        print(f"detail={error}")
+        return 1
+
+    print("Odin health")
+    print(f"env_path={env_path}")
+    print(f"odin_api_base_url={config.odin.api_base_url}")
+    print(f"healthy={_yes_no(health.healthy)}")
+    print(f"detail={health.detail or '-'}")
+    print(f"payload_keys={','.join(sorted(health.payload.keys()))}")
+    return 0 if health.healthy else 1
+
+
+def _serve_odin_worker(
+    env_path: Path,
+    host: str,
+    port: int,
+    worker_root: Path | None,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    try:
+        import uvicorn
+    except ImportError:
+        print("config_error: uvicorn is required to serve the odin worker", file=sys.stderr)
+        return 2
+
+    root = worker_root or config.processing_root / "odin-worker"
+    app = create_odin_worker_app(OdinWorkerConfig(root=root, odin=config.odin))
+    uvicorn.run(app, host=host, port=port)
+    return 0
 
 
 def _fake_diarize_meetings(env_path: Path) -> int:

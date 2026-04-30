@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added SQLite ledger initialization, SHA-256 checksumming, and checksum-based ingest dry-run planning.
 - Added safe local copy from recorder to `VoiceIngest/inbox` with checksum verification and idempotent ledger updates.
 - Added the `odin` worker contract/client boundary, fake `odin` client, transcript JSON persistence, and ledger transition to `transcribed`.
+- Added a deployable FastAPI `odin` worker app with health, job submission, result retrieval, and lazy faster-whisper loading.
+- Added client-side `odin-health` and real `transcribe-copied` commands for validating the configured HTTP `odin` worker.
 - Added deterministic prefix classification, Obsidian-style path builders, atomic Markdown rendering, and test-vault transcript routing.
 - Added Obsidian CLI vault preflight and workflow wrapping with serialized writes, configurable command templates, and a tracked `.env.example`.
 - Added an `obsidian-cli create` note writer option for routed Markdown after a target vault is registered in Obsidian.

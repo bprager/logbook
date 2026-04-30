@@ -49,6 +49,8 @@ End-to-end acceptance testing.
 - [x] Added typed `odin` submit/result models.
 - [x] Added fake `odin` client and HTTP client boundary.
 - [x] Added `logbook fake-transcribe-copied --env .env`.
+- [x] Added deployable FastAPI `odin` worker app and `logbook serve-odin-worker`.
+- [x] Added `logbook odin-health --env .env` and `logbook transcribe-copied --env .env` for the real configured HTTP `odin` worker path.
 - [x] Wrote 17 fake transcript JSON files under `/Users/bernd/VoiceIngest/transcripts`.
 - [x] Updated ledger status to `transcribed|17`.
 - [x] Added deterministic prefix classifier, Obsidian path builders, Markdown renderers, and test-vault routing.
@@ -113,7 +115,7 @@ End-to-end acceptance testing.
 - Recorder still contains 17 MP3 files; no recorder-side deletion was performed.
 - Fake `odin` pass wrote local placeholder transcripts and updated the ledger to `transcribed|17`.
 - Test-vault routing updated the ledger to `inbox_written|17`.
-- Current implementation still does not call real `odin`, delete audio, or write to the real Obsidian vault.
+- Current live ledger was populated with fake `odin` transcripts; the client-side real `odin` HTTP path now exists, but the actual `odin` ASR worker still needs live health and transcription validation before LGB-008 can be completed.
 - Routing implementation started at 2026-04-29T16:38:17Z; target output is `/Users/bernd/VoiceIngest/test-vault`, not the real Obsidian vault.
 - Test-vault route command completed with `routed_count=17`, `log_count=17`, `dead_letter_count=0`, and `failed_count=0`.
 - Obsidian workflow implementation started at 2026-04-29T16:46:05Z.
@@ -190,3 +192,5 @@ End-to-end acceptance testing.
 - LGB-022 Step 5 added guarded `mark-vault-synced` support so pushed vault evidence can be checked in dry-run before any ledger `vault_synced_at` updates.
 - LGB-022 Step 5 verification passed: 61 tests OK, `py_compile` OK, `git diff --check` OK, and live `mark-vault-synced --env .env` dry-run reported 17 markable, 0 marked, 0 blocked, with no ledger mutation.
 - LGB-022 vault-sync marker execution completed after approval: live `mark-vault-synced --env .env --execute` marked all 17 jobs, and follow-up `cleanup-plan` showed 17 jobs blocked only by `retention_window_open` with `cleanup_eligible_at=2026-04-30T22:44:10+00:00`.
+- LGB-008 metadata reconciled on 2026-04-29: local backlog now marks the real ASR worker path as in progress, matching the unresolved need for live `odin` health/transcription validation.
+- LGB-008 implementation path advanced on 2026-04-29 with a deployable FastAPI worker app, `serve-odin-worker`, `odin-health`, and real HTTP `transcribe-copied`; live `odin-health --env .env` currently fails with connection refused at the configured `odin` endpoint, so host deployment/startup remains the blocker.
