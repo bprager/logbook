@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-04-29
+Updated: 2026-04-30
 
 ## Current Focus
 
@@ -20,6 +20,8 @@ End-to-end acceptance testing.
 - Implement LGB-018 Meeting Note Renderer.
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
 - Walk through LGB-022 End-To-End Acceptance Tests step by step, waiting for user confirmation before proceeding to the next step or finishing.
+- Implement LGB-027 Proof-Carrying Memory Graph as the next non-cleanup work item.
+- Implement LGB-028 Action Candidate Resolution as the follow-on memory workflow.
 
 ## Progress
 
@@ -203,3 +205,8 @@ End-to-end acceptance testing.
 - LGB-024 implementation completed on 2026-04-29 with deterministic summary/action extraction, JSON artifacts under `/Users/bernd/VoiceIngest/insights`, and non-canonical review notes under `40 - Reviews/Logbook Insights`.
 - Live test-vault insight run wrote a review note for job 17 with `canonical=false`, `review_status=needs_review`, and no audio paths; source/canonical notes were not modified.
 - Roadmap updated on 2026-04-30 with high-priority LGB-027 Proof-Carrying Memory Graph: a dry-run-first Memgraph sync that turns jobs, transcript segments, generated notes, action candidates, decisions, topics, people, projects, and source evidence into an auditable local memory layer.
+- LGB-027 implementation completed on 2026-04-30 with `logbook memory-graph-sync`, `logbook memory-graph-query`, optional Memgraph `--execute` support, and read-only FastAPI `/memory/*` endpoints for OpenClaw-safe memory access.
+- LGB-027 verification passed: 73 tests OK and `ruff check .` OK in the local `.venv`; tests cover dry-run safety, stable IDs, evidence edges, idempotent `MERGE` Cypher, Swagger/OpenAPI registration, and path privacy.
+- Live `memory-graph-sync --env .env` dry-run planned 89 nodes and 170 relationships from the current local ledger, wrote 0 nodes/relationships, and performed no audio deletion.
+- LGB-028 implementation completed on 2026-04-30 with durable SQLite memory action reviews, dry-run-first `logbook memory-action-resolve`, token-protected `POST /memory/actions/{action_id}/resolve`, and graph overlay logic that removes resolved actions from open-loop queries.
+- LGB-028 verification passed: 75 tests OK, `ruff check .` OK, and `git diff --check` OK. Live `memory-graph-query --env .env --query open-loops` reported 0 current open loops, so no live resolution write was needed.

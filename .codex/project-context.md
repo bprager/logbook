@@ -18,6 +18,7 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 - Route meetings to `30 - Meetings` with speaker labels.
 - Route unknown prefixes to `99 - Dead Letters` with 28-day retention.
 - Expose a narrow OpenClaw-facing API for health, status, rescue, reprocess, and rebuild actions.
+- Expose proof-carrying memory queries through bounded read-only `/memory/*` API endpoints backed by local ledger/artifact state.
 
 ## Non-Negotiable Invariants
 

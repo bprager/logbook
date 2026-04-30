@@ -40,6 +40,7 @@ class AppConfig:
     )
     obsidian: "ObsidianConfig | None" = None
     api: "ApiConfig | None" = None
+    memgraph: "MemgraphConfig | None" = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,14 @@ class ApiConfig:
     port: int
     read_token: str | None = None
     action_token: str | None = None
+
+
+@dataclass(frozen=True)
+class MemgraphConfig:
+    uri: str
+    username: str | None = None
+    password: str | None = None
+    database: str | None = None
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -114,6 +123,7 @@ def load_app_config(env_path: Path) -> AppConfig:
         retention=retention_config_from_values(values),
         obsidian=obsidian_config_from_values(values),
         api=api_config_from_values(values),
+        memgraph=memgraph_config_from_values(values),
     )
 
 
@@ -169,6 +179,21 @@ def api_config_from_values(values: dict[str, str]) -> ApiConfig:
         port=int(values.get("LOGBOOK_API_PORT") or "8765"),
         read_token=_optional(values, "LOGBOOK_READ_TOKEN"),
         action_token=_optional(values, "LOGBOOK_ACTION_TOKEN"),
+    )
+
+
+def memgraph_config_from_values(values: dict[str, str]) -> MemgraphConfig | None:
+    uri = values.get("MEMGRAPH_URI") or values.get("LOGBOOK_MEMGRAPH_URI")
+    if not uri:
+        return None
+    return MemgraphConfig(
+        uri=uri,
+        username=_optional(values, "MEMGRAPH_USERNAME")
+        or _optional(values, "LOGBOOK_MEMGRAPH_USERNAME"),
+        password=_optional(values, "MEMGRAPH_PASSWORD")
+        or _optional(values, "LOGBOOK_MEMGRAPH_PASSWORD"),
+        database=_optional(values, "MEMGRAPH_DATABASE")
+        or _optional(values, "LOGBOOK_MEMGRAPH_DATABASE"),
     )
 
 

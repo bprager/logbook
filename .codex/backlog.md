@@ -29,6 +29,7 @@ LGB-006 + LGB-019 -> LGB-021 launchd packaging
 LGB-003 + LGB-006 + LGB-009 + LGB-012 + LGB-013 + LGB-014 + LGB-018 + LGB-025 -> LGB-026 Audio retention cleanup
 LGB-012 + LGB-013 + LGB-014 + LGB-016 + LGB-018 + LGB-020 + LGB-025 + LGB-026 -> LGB-022 End-to-end acceptance tests
 LGB-003 + LGB-009 + LGB-017 + LGB-018 + LGB-019 + LGB-024 -> LGB-027 Proof-carrying memory graph
+LGB-027 -> LGB-028 Action candidate resolution
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -611,7 +612,7 @@ Acceptance:
 
 ### LGB-027 - Proof-Carrying Memory Graph
 
-Status: Ready
+Status: Completed
 
 Priority: P0
 
@@ -635,3 +636,32 @@ Acceptance:
 - The graph can answer "what did I promise?", "what remains unresolved?", and "what changed this week?" using only local data.
 - SQLite remains the processing source of truth; Memgraph is the query/memory layer.
 - OpenClaw can consume graph-backed memory through bounded read APIs without shell access.
+
+Implementation notes:
+
+- Added `logbook memory-graph-sync` dry-run planner and explicit `--execute` Memgraph upsert path with stable `MERGE` IDs.
+- Added `logbook memory-graph-query` and FastAPI `/memory/*` read endpoints for open loops, unresolved actions, recent decisions, topic trails, and weekly diffs.
+- Added path-privacy and evidence-completeness tests proving source audio paths do not leave the ledger/transcript artifacts.
+
+### LGB-028 - Action Candidate Resolution
+
+Status: Completed
+
+Priority: P0
+
+Dependencies: LGB-027
+
+Deliverables:
+
+- Durable SQLite review table for memory action candidate resolution state.
+- Dry-run-first `logbook memory-action-resolve` command with explicit `--execute` write mode.
+- Token-protected FastAPI `POST /memory/actions/{action_id}/resolve` endpoint.
+- Memory graph overlay that marks resolved `ActionCandidate` nodes and excludes them from open-loop queries.
+- Audit records for API and CLI resolution writes.
+
+Acceptance:
+
+- Resolving an action candidate does not mutate transcripts, generated notes, canonical logs, source audio, or recorder audio.
+- Resolved action candidates disappear from `/memory/open-loops` and `memory-graph-query --query open-loops`.
+- Resolution writes are durable in SQLite and visible on the next graph build.
+- Resolution endpoints remain bounded by action-token auth in the API and dry-run-first behavior in the CLI.

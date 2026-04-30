@@ -69,6 +69,16 @@ class ActionAudit:
         return json.loads(self.request_payload) if self.request_payload else {}
 
 
+@dataclass(frozen=True)
+class MemoryActionReview:
+    action_id: str
+    review_status: str
+    resolved_at: str | None
+    resolved_by: str
+    resolution_note: str | None
+    updated_at: str
+
+
 class Ledger:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -146,6 +156,18 @@ class Ledger:
                     request_payload TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                )
+                """
+            )
+            self.connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_action_reviews (
+                    action_id TEXT PRIMARY KEY,
+                    review_status TEXT NOT NULL,
+                    resolved_at TEXT,
+                    resolved_by TEXT NOT NULL,
+                    resolution_note TEXT,
+                    updated_at TEXT NOT NULL
                 )
                 """
             )
@@ -270,6 +292,71 @@ class Ledger:
         if row is None:
             return None
         return self.get_by_checksum(row["checksum_sha256"])
+
+    def all_jobs(self) -> list[RecordingJob]:
+        rows = self.connection.execute(
+            """
+            SELECT checksum_sha256
+            FROM recording_jobs
+            ORDER BY id
+            """
+        ).fetchall()
+        return [
+            job
+            for row in rows
+            if (job := self.get_by_checksum(row["checksum_sha256"])) is not None
+        ]
+
+    def memory_action_reviews(self) -> dict[str, MemoryActionReview]:
+        rows = self.connection.execute(
+            """
+            SELECT action_id, review_status, resolved_at, resolved_by,
+                   resolution_note, updated_at
+            FROM memory_action_reviews
+            ORDER BY action_id
+            """
+        ).fetchall()
+        return {
+            row["action_id"]: MemoryActionReview(
+                action_id=row["action_id"],
+                review_status=row["review_status"],
+                resolved_at=row["resolved_at"],
+                resolved_by=row["resolved_by"],
+                resolution_note=row["resolution_note"],
+                updated_at=row["updated_at"],
+            )
+            for row in rows
+        }
+
+    def resolve_memory_action(
+        self,
+        action_id: str,
+        resolved_by: str,
+        resolution_note: str | None = None,
+        resolved_at: str | None = None,
+    ) -> MemoryActionReview:
+        resolved_at = resolved_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                INSERT INTO memory_action_reviews (
+                    action_id, review_status, resolved_at, resolved_by,
+                    resolution_note, updated_at
+                )
+                VALUES (?, 'resolved', ?, ?, ?, ?)
+                ON CONFLICT(action_id) DO UPDATE SET
+                    review_status = 'resolved',
+                    resolved_at = excluded.resolved_at,
+                    resolved_by = excluded.resolved_by,
+                    resolution_note = excluded.resolution_note,
+                    updated_at = excluded.updated_at
+                """,
+                (action_id, resolved_at, resolved_by, resolution_note, resolved_at),
+            )
+        review = self.memory_action_reviews().get(action_id)
+        if review is None:
+            raise RuntimeError("memory action review was not written")
+        return review
 
     def record_discovery(
         self,

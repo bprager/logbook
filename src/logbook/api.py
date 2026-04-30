@@ -10,7 +10,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from logbook.config import AppConfig
-from logbook.ledger import RecordingJob, open_ledger
+from logbook.ledger import MemoryActionReview, RecordingJob, open_ledger
+from logbook.memory_graph import build_memory_graph_plan, query_memory_graph_plan
 from logbook.retention import plan_audio_cleanup
 
 
@@ -132,6 +133,34 @@ class CleanupStatusResponse(BaseModel):
     items: list[CleanupStatusItem]
 
 
+class MemoryQueryItem(BaseModel):
+    id: str
+    label: Optional[str] = None
+    name: Optional[str] = None
+    text: Optional[str] = None
+    job_id: Optional[int] = None
+    review_status: Optional[str] = None
+    recorded_at: Optional[str] = None
+    resolved_at: Optional[str] = None
+    resolved_by: Optional[str] = None
+    resolution_note: Optional[str] = None
+
+
+class MemoryQueryResponse(BaseModel):
+    query: str
+    count: int
+    items: list[MemoryQueryItem]
+
+
+class MemoryActionReviewResponse(BaseModel):
+    action_id: str
+    review_status: str
+    resolved_at: Optional[str]
+    resolved_by: str
+    resolution_note: Optional[str]
+    audit_id: int
+
+
 class ActionRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
     requested_by: str = Field(default="openclaw", max_length=80)
@@ -208,6 +237,7 @@ def create_app(config: AppConfig) -> FastAPI:
             {"name": "logs", "description": "Log inbox and consolidated daily log status."},
             {"name": "dead letters", "description": "Unknown-prefix transcripts awaiting review."},
             {"name": "cleanup", "description": "Read-only audio retention cleanup status."},
+            {"name": "memory", "description": "Proof-carrying local memory graph queries."},
             {"name": "actions", "description": "Token-protected bounded action requests."},
         ],
     )
@@ -389,6 +419,64 @@ def create_app(config: AppConfig) -> FastAPI:
             ],
         )
 
+    @app.get(
+        "/memory/open-loops",
+        tags=["memory"],
+        response_model=MemoryQueryResponse,
+        dependencies=read_dependencies,
+    )
+    def memory_open_loops() -> MemoryQueryResponse:
+        return _memory_query_response(config, "open-loops")
+
+    @app.get(
+        "/memory/unresolved-actions",
+        tags=["memory"],
+        response_model=MemoryQueryResponse,
+        dependencies=read_dependencies,
+    )
+    def memory_unresolved_actions() -> MemoryQueryResponse:
+        return _memory_query_response(config, "unresolved-actions")
+
+    @app.get(
+        "/memory/recent-decisions",
+        tags=["memory"],
+        response_model=MemoryQueryResponse,
+        dependencies=read_dependencies,
+    )
+    def memory_recent_decisions() -> MemoryQueryResponse:
+        return _memory_query_response(config, "recent-decisions")
+
+    @app.get(
+        "/memory/topic-trails",
+        tags=["memory"],
+        response_model=MemoryQueryResponse,
+        dependencies=read_dependencies,
+    )
+    def memory_topic_trails() -> MemoryQueryResponse:
+        return _memory_query_response(config, "topic-trails")
+
+    @app.get(
+        "/memory/weekly-diff",
+        tags=["memory"],
+        response_model=MemoryQueryResponse,
+        dependencies=read_dependencies,
+    )
+    def memory_weekly_diff() -> MemoryQueryResponse:
+        return _memory_query_response(config, "weekly-diff")
+
+    @app.post(
+        "/memory/actions/{action_id}/resolve",
+        tags=["memory", "actions"],
+        response_model=MemoryActionReviewResponse,
+        status_code=202,
+        dependencies=action_dependencies,
+    )
+    def resolve_memory_action(
+        action_id: str,
+        request: ActionRequest,
+    ) -> MemoryActionReviewResponse:
+        return _resolve_memory_action(config, action_id, request)
+
     @app.post(
         "/jobs/{job_id}/reprocess",
         tags=["actions"],
@@ -472,6 +560,71 @@ def create_app(config: AppConfig) -> FastAPI:
         )
 
     return app
+
+
+def _memory_query_response(config: AppConfig, query: str) -> MemoryQueryResponse:
+    plan = build_memory_graph_plan(config)
+    rows = query_memory_graph_plan(plan, query)
+    return MemoryQueryResponse(
+        query=query,
+        count=len(rows),
+        items=[MemoryQueryItem(**row) for row in rows],
+    )
+
+
+def _resolve_memory_action(
+    config: AppConfig,
+    action_id: str,
+    request: ActionRequest,
+) -> MemoryActionReviewResponse:
+    plan = build_memory_graph_plan(config)
+    candidate = next(
+        (
+            node
+            for node in plan.nodes
+            if node.id == action_id and "ActionCandidate" in node.labels
+        ),
+        None,
+    )
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="memory action candidate not found")
+
+    ledger = open_ledger(config.sqlite_path, initialize=True)
+    try:
+        review = ledger.resolve_memory_action(
+            action_id=action_id,
+            resolved_by=request.requested_by,
+            resolution_note=request.reason,
+        )
+        audit = ledger.record_action(
+            action_type="memory.action.resolve",
+            target_type="memory_action",
+            target_id=action_id,
+            requested_by=request.requested_by,
+            idempotency_key=request.idempotency_key,
+            request_payload={
+                "reason": request.reason,
+                "job_id": candidate.properties.get("job_id"),
+                "text": candidate.properties.get("text"),
+            },
+        )
+    finally:
+        ledger.close()
+    return _memory_action_review_response(review, audit_id=audit.id)
+
+
+def _memory_action_review_response(
+    review: MemoryActionReview,
+    audit_id: int,
+) -> MemoryActionReviewResponse:
+    return MemoryActionReviewResponse(
+        action_id=review.action_id,
+        review_status=review.review_status,
+        resolved_at=review.resolved_at,
+        resolved_by=review.resolved_by,
+        resolution_note=review.resolution_note,
+        audit_id=audit_id,
+    )
 
 
 def _all_jobs(sqlite_path: Path) -> list[RecordingJob]:

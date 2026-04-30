@@ -11,6 +11,13 @@ from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odi
 from logbook.insights import extract_insights
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
+from logbook.ledger import open_ledger
+from logbook.memory_graph import (
+    Neo4jMemgraphClient,
+    apply_memory_graph_plan,
+    build_memory_graph_plan,
+    query_memory_graph_plan,
+)
 from logbook.odin import HttpOdinClient
 from logbook.odin_worker import OdinWorkerConfig, create_odin_worker_app
 from logbook.preview import write_open_log_preview
@@ -227,6 +234,72 @@ def main(argv: list[str] | None = None) -> int:
         help="extract insights for exactly one ledger job",
     )
 
+    memory_sync_parser = subparsers.add_parser(
+        "memory-graph-sync",
+        help="plan or execute proof-carrying memory graph sync into Memgraph",
+    )
+    memory_sync_parser.add_argument("--env", type=Path, default=Path(".env"))
+    memory_sync_parser.add_argument(
+        "--job-id",
+        type=int,
+        default=None,
+        help="sync exactly one ledger job; defaults to all jobs",
+    )
+    memory_sync_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="upsert planned nodes and relationships into configured Memgraph",
+    )
+
+    memory_query_parser = subparsers.add_parser(
+        "memory-graph-query",
+        help="answer bounded memory questions from the local proof-carrying graph plan",
+    )
+    memory_query_parser.add_argument("--env", type=Path, default=Path(".env"))
+    memory_query_parser.add_argument(
+        "--query",
+        choices=(
+            "open-loops",
+            "unresolved-actions",
+            "recent-decisions",
+            "topic-trails",
+            "weekly-diff",
+        ),
+        required=True,
+    )
+    memory_query_parser.add_argument(
+        "--job-id",
+        type=int,
+        default=None,
+        help="query exactly one ledger job; defaults to all jobs",
+    )
+
+    memory_resolve_parser = subparsers.add_parser(
+        "memory-action-resolve",
+        help="dry-run or mark a memory action candidate resolved in SQLite",
+    )
+    memory_resolve_parser.add_argument("--env", type=Path, default=Path(".env"))
+    memory_resolve_parser.add_argument(
+        "--action-id",
+        required=True,
+        help="stable ActionCandidate ID from memory-graph-query open-loops",
+    )
+    memory_resolve_parser.add_argument(
+        "--resolved-by",
+        default="operator",
+        help="actor recorded in the durable action review row",
+    )
+    memory_resolve_parser.add_argument(
+        "--note",
+        default=None,
+        help="optional resolution note stored with the review row",
+    )
+    memory_resolve_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="write the resolution; without this flag the command is a dry run",
+    )
+
     serve_api_parser = subparsers.add_parser(
         "serve-api",
         help="start the read-only FastAPI status API",
@@ -326,6 +399,18 @@ def main(argv: list[str] | None = None) -> int:
         return _mark_vault_synced(args.env, execute=args.execute)
     if args.command == "extract-insights":
         return _extract_insights(args.env, args.vault, args.writer, args.job_id)
+    if args.command == "memory-graph-sync":
+        return _memory_graph_sync(args.env, args.job_id, execute=args.execute)
+    if args.command == "memory-graph-query":
+        return _memory_graph_query(args.env, args.query, args.job_id)
+    if args.command == "memory-action-resolve":
+        return _memory_action_resolve(
+            args.env,
+            action_id=args.action_id,
+            resolved_by=args.resolved_by,
+            note=args.note,
+            execute=args.execute,
+        )
     if args.command == "serve-api":
         return _serve_api(args.env, args.host, args.port)
     if args.command == "retention-status":
@@ -943,6 +1028,139 @@ def _extract_insights(
             f"artifact_path={artifact_path} review_note_path={review_note_path}"
         )
     return 1 if result.failed_count else 0
+
+
+def _memory_graph_sync(env_path: Path, job_id: int | None, execute: bool) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    plan = build_memory_graph_plan(config, job_id=job_id)
+    result = None
+    if execute:
+        if config.memgraph is None:
+            print("config_error: missing MEMGRAPH_URI", file=sys.stderr)
+            return 2
+        try:
+            result = apply_memory_graph_plan(plan, Neo4jMemgraphClient(config.memgraph))
+        except RuntimeError as error:
+            print(f"config_error: {error}", file=sys.stderr)
+            return 2
+
+    print("Memory graph sync")
+    print(f"env_path={env_path}")
+    print(f"job_id={job_id if job_id is not None else '-'}")
+    print(f"execute={_yes_no(execute)}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    print(f"memgraph_uri={config.memgraph.uri if config.memgraph is not None else '-'}")
+    print(f"nodes_planned={plan.node_count}")
+    print(f"relationships_planned={plan.relationship_count}")
+    print(f"nodes_written={result.nodes_written if result is not None else 0}")
+    print(
+        "relationships_written="
+        f"{result.relationships_written if result is not None else 0}"
+    )
+    print("counts_by_label:")
+    for label, count in plan.counts_by_label.items():
+        print(f"- label={label} count={count}")
+    print("counts_by_relationship:")
+    for relationship_type, count in plan.counts_by_relationship.items():
+        print(f"- type={relationship_type} count={count}")
+    return 0
+
+
+def _memory_graph_query(env_path: Path, query: str, job_id: int | None) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    plan = build_memory_graph_plan(config, job_id=job_id)
+    rows = query_memory_graph_plan(plan, query)
+    print("Memory graph query")
+    print(f"env_path={env_path}")
+    print(f"job_id={job_id if job_id is not None else '-'}")
+    print(f"query={query}")
+    print(f"result_count={len(rows)}")
+    print("results:")
+    for row in rows:
+        rendered = " ".join(
+            f"{key}={value if value not in (None, '') else '-'}"
+            for key, value in sorted(row.items())
+        )
+        print(f"- {rendered}")
+    return 0
+
+
+def _memory_action_resolve(
+    env_path: Path,
+    action_id: str,
+    resolved_by: str,
+    note: str | None,
+    execute: bool,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    plan = build_memory_graph_plan(config)
+    candidate = next(
+        (
+            node
+            for node in plan.nodes
+            if node.id == action_id and "ActionCandidate" in node.labels
+        ),
+        None,
+    )
+    if candidate is None:
+        print("memory_action_error: action candidate not found", file=sys.stderr)
+        return 1
+
+    review_status = str(candidate.properties.get("review_status") or "needs_review")
+    resolved_at = "-"
+    if execute:
+        ledger = open_ledger(config.sqlite_path, initialize=True)
+        try:
+            review = ledger.resolve_memory_action(
+                action_id=action_id,
+                resolved_by=resolved_by,
+                resolution_note=note,
+            )
+            ledger.record_action(
+                action_type="memory.action.resolve",
+                target_type="memory_action",
+                target_id=action_id,
+                request_payload={
+                    "reason": note,
+                    "job_id": candidate.properties.get("job_id"),
+                    "text": candidate.properties.get("text"),
+                },
+                requested_by=resolved_by,
+            )
+        finally:
+            ledger.close()
+        review_status = review.review_status
+        resolved_at = review.resolved_at or "-"
+
+    print("Memory action resolve")
+    print(f"env_path={env_path}")
+    print(f"action_id={action_id}")
+    print(f"execute={_yes_no(execute)}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    print(f"job_id={candidate.properties.get('job_id') or '-'}")
+    print(f"previous_review_status={candidate.properties.get('review_status') or '-'}")
+    print(f"review_status={review_status if execute else 'would_resolve'}")
+    print(f"resolved_by={resolved_by}")
+    print(f"resolved_at={resolved_at}")
+    print(f"text={candidate.properties.get('text') or '-'}")
+    return 0
 
 
 def _serve_api(env_path: Path, host: str | None, port: int | None) -> int:

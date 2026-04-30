@@ -57,6 +57,10 @@ LOGBOOK_API_PORT=8787
 LOGBOOK_READ_TOKEN=read-secret
 LOGBOOK_AUDIO_RETENTION_HOURS=24
 LOGBOOK_AUDIO_CLEANUP_MODE=trash_then_delete
+MEMGRAPH_URI=bolt://odin:7697
+MEMGRAPH_USERNAME=logbook
+MEMGRAPH_PASSWORD=secret
+MEMGRAPH_DATABASE=memgraph
 """.lstrip(),
             encoding="utf-8",
         )
@@ -77,6 +81,11 @@ LOGBOOK_AUDIO_CLEANUP_MODE=trash_then_delete
         self.assertEqual(config.api.read_token, "read-secret")
         self.assertEqual(config.retention.hours, 24)
         self.assertEqual(config.retention.cleanup_mode, "trash_then_delete")
+        self.assertIsNotNone(config.memgraph)
+        self.assertEqual(config.memgraph.uri, "bolt://odin:7697")
+        self.assertEqual(config.memgraph.username, "logbook")
+        self.assertEqual(config.memgraph.password, "secret")
+        self.assertEqual(config.memgraph.database, "memgraph")
 
     def test_retention_hours_must_be_positive(self) -> None:
         env_path = Path(self._testMethodName) / ".env"

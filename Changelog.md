@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an optional generated Open Log Preview note with a clear non-canonical marker and CLI rendering command.
 - Added deterministic summary and action candidate extraction into human-review artifacts without modifying canonical notes.
 - Added high-priority roadmap/backlog entry for a proof-carrying Memgraph memory layer over Logbook evidence.
+- Added LGB-027 proof-carrying memory graph sync/query support with dry-run-first CLI, optional Memgraph execution, and bounded FastAPI `/memory/*` read endpoints.
+- Added LGB-028 action candidate resolution with durable SQLite review state, dry-run-first CLI, and token-protected FastAPI resolve endpoint.
 
 ### Fixed
 
