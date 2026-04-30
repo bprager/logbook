@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `odin` worker contract/client boundary, fake `odin` client, transcript JSON persistence, and ledger transition to `transcribed`.
 - Added a deployable FastAPI `odin` worker app with health, job submission, result retrieval, and lazy faster-whisper loading.
 - Added client-side `odin-health` and real `transcribe-copied` commands for validating the configured HTTP `odin` worker.
+- Validated the live `odin` ASR worker on `192.168.1.3` with an isolated real `transcribe-copied` run through CUDA-backed `large-v3`.
 - Added deterministic prefix classification, Obsidian-style path builders, atomic Markdown rendering, and test-vault transcript routing.
 - Added Obsidian CLI vault preflight and workflow wrapping with serialized writes, configurable command templates, and a tracked `.env.example`.
 - Added an `obsidian-cli create` note writer option for routed Markdown after a target vault is registered in Obsidian.

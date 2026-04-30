@@ -195,4 +195,5 @@ End-to-end acceptance testing.
 - LGB-008 metadata reconciled on 2026-04-29: local backlog now marks the real ASR worker path as in progress, matching the unresolved need for live `odin` health/transcription validation.
 - LGB-008 `odin` worker deployment was fixed on 2026-04-29 by connecting over the LAN route (`192.168.1.3`), installing the repo and `faster-whisper` in `/home/bernd/Projects/Logbook/.venv`, creating `/home/bernd/Projects/Logbook/.env.odin-worker`, and running `logbook serve-odin-worker` on `0.0.0.0:8765`.
 - The `odin` worker now runs as enabled user systemd service `logbook-odin-worker.service`; live `logbook odin-health --env .env` succeeds against `http://192.168.1.3:8765` with `large-v3`, CUDA, and `float16`.
-- The remaining LGB-008 blocker is a controlled real transcription validation without the fake client.
+- LGB-008 live transcription validation completed on 2026-04-29 using an isolated generated recording and ledger under `/Users/bernd/VoiceIngest/odin-live-validation-20260429-190415`; `transcribe-copied` used the real HTTP `odin` client, produced transcript text, one timestamped segment, language `en`, and ASR model `large-v3`, then marked the validation ledger job `transcribed`.
+- LGB-008 is complete; production ledger/audio and Sony recorder cleanup paths were not touched during the validation.

@@ -181,7 +181,7 @@ Acceptance:
 
 ### LGB-008 - ASR Worker
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-007
 
@@ -205,6 +205,7 @@ Acceptance:
 Current note:
 
 - Live `odin-health --env .env` passes against `http://192.168.1.3:8765`; the worker now runs on `odin` as enabled user systemd service `logbook-odin-worker.service`.
+- Live `transcribe-copied` validation passed on 2026-04-29 against an isolated copied test recording in `/Users/bernd/VoiceIngest/odin-live-validation-20260429-190415`; transcript JSON included text, segment timestamps, language, and `large-v3` ASR metadata.
 
 ### LGB-009 - Transcript Persistence
 
