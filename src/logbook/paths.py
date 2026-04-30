@@ -85,6 +85,10 @@ def daily_log_path(vault_root: Path, recorded_at: datetime) -> Path:
     )
 
 
+def open_log_preview_path(vault_root: Path) -> Path:
+    return vault_root / "10 - Logs" / "00 - Inbox" / "Open-Log-Preview.md"
+
+
 def month_folder(value: datetime) -> str:
     return f"{value.month:02d}-{MONTH_NAMES[value.month - 1]}"
 

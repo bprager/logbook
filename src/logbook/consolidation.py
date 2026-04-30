@@ -139,6 +139,14 @@ def _group_entries(jobs: list[RecordingJob]) -> dict[str, list[DailyLogEntry]]:
     return dict(sorted(grouped.items()))
 
 
+def group_log_entries(jobs: list[RecordingJob]) -> dict[str, list[DailyLogEntry]]:
+    return _group_entries(jobs)
+
+
+def source_inbox_dir(recorded_at: datetime) -> str:
+    return _source_dir(recorded_at)
+
+
 def _transcript_text(path: Path) -> str:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return str(payload.get("text") or "")

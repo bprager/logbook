@@ -569,7 +569,7 @@ Acceptance:
 
 ### LGB-023 - Optional Open Log Preview
 
-Status: Later
+Status: Completed
 
 Dependencies: LGB-015
 
@@ -577,10 +577,13 @@ Deliverables:
 
 - Optional `10 - Logs/00 - Inbox/Open-Log-Preview.md`.
 - Clear marker that the note is generated and non-canonical.
+- `logbook open-log-preview` command with filesystem and `obsidian-cli` writer support.
+- Date override for testing or explicitly previewing a selected day.
 
 Acceptance:
 
 - Current-day visibility improves without violating the one-final-log invariant.
+- Preview note renders entries from routed or already consolidated log jobs without creating another canonical daily log.
 
 ### LGB-024 - Summaries And Action Extraction
 

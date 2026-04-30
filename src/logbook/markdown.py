@@ -129,6 +129,42 @@ def render_daily_log(
     return "\n\n".join(sections).rstrip() + "\n"
 
 
+def render_open_log_preview(
+    entry_date: str,
+    entries: list[DailyLogEntryLike],
+    generated_from: str,
+    canonical_daily_log: str,
+) -> str:
+    frontmatter = {
+        "type": "open_log_preview",
+        "date": entry_date,
+        "source": "voice_ingest",
+        "entry_count": str(len(entries)),
+        "generated_from": generated_from,
+        "canonical": "false",
+        "canonical_daily_log": canonical_daily_log,
+    }
+    sections = [
+        _frontmatter(frontmatter),
+        "# Open Log Preview",
+        (
+            "This is a generated, non-canonical preview. "
+            f"The canonical daily log remains `{canonical_daily_log}`."
+        ),
+    ]
+    if not entries:
+        sections.append("No log entries are currently staged for this date.")
+    for entry in entries:
+        sections.extend(
+            [
+                f"## {entry.recorded_at:%H:%M}",
+                entry.content.strip(),
+                f"_Source: `logbook-job-{entry.job.id}`_",
+            ]
+        )
+    return "\n\n".join(sections).rstrip() + "\n"
+
+
 def atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(f"{path.suffix}.tmp")

@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added speaker-labelled meeting note rendering under `30 - Meetings/YYYY/MM-Month` with participant, summary, decision, action-item, and transcript sections.
 - Added audio retention cleanup planning, explicit local and recorder cleanup execution, SQLite cleanup audit fields, and read-only cleanup API status.
 - Added guarded vault-sync marking that proves generated notes exist in pushed vault `HEAD` before setting ledger `vault_synced_at`.
+- Added an optional generated Open Log Preview note with a clear non-canonical marker and CLI rendering command.
 
 ### Fixed
 

@@ -12,6 +12,7 @@ from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
 from logbook.odin import HttpOdinClient
 from logbook.odin_worker import OdinWorkerConfig, create_odin_worker_app
+from logbook.preview import write_open_log_preview
 from logbook.recorder import discover_recordings, validate_recorder
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
 from logbook.routing import route_transcripts
@@ -155,6 +156,29 @@ def main(argv: list[str] | None = None) -> int:
         help="optional YYYY-MM-DD date to consolidate",
     )
 
+    preview_parser = subparsers.add_parser(
+        "open-log-preview",
+        help="render the generated non-canonical open log preview note",
+    )
+    preview_parser.add_argument("--env", type=Path, default=Path(".env"))
+    preview_parser.add_argument(
+        "--vault",
+        type=Path,
+        required=True,
+        help="vault root to write the open log preview",
+    )
+    preview_parser.add_argument(
+        "--writer",
+        choices=("filesystem", "obsidian-cli"),
+        default="filesystem",
+        help="write the preview directly or through obsidian-cli create",
+    )
+    preview_parser.add_argument(
+        "--date",
+        default=None,
+        help="optional YYYY-MM-DD date to preview; defaults to today",
+    )
+
     vault_parser = subparsers.add_parser(
         "vault-preflight",
         help="validate configured Obsidian CLI and vault paths without writing",
@@ -269,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "consolidate-logs":
         return _consolidate_logs(args.env, args.vault, args.writer, args.date)
+    if args.command == "open-log-preview":
+        return _open_log_preview(args.env, args.vault, args.writer, args.date)
     if args.command == "vault-preflight":
         return _vault_preflight(args.env, args.vault)
     if args.command == "mark-vault-synced":
@@ -721,6 +747,53 @@ def _consolidate_logs(
         )
 
     return 1 if result.failed_count else 0
+
+
+def _open_log_preview(
+    env_path: Path,
+    vault_root: Path,
+    writer_mode: str,
+    entry_date: str | None,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    if writer_mode == "obsidian-cli":
+        if config.obsidian is None:
+            print("config_error: missing Obsidian configuration", file=sys.stderr)
+            return 2
+        workflow = ObsidianVaultWorkflow(
+            config=config.obsidian,
+            vault_root=vault_root,
+            lock_root=config.processing_root,
+        )
+        preflight = workflow.preflight()
+        if not preflight.operational:
+            _print_vault_preflight(preflight)
+            return 1
+        note_writer = ObsidianCliNoteWriter(config=config.obsidian, vault_root=vault_root)
+    else:
+        note_writer = FilesystemNoteWriter()
+
+    result = write_open_log_preview(
+        config=config,
+        vault_root=vault_root,
+        note_writer=note_writer,
+        entry_date=entry_date,
+    )
+    print("Open log preview")
+    print(f"env_path={env_path}")
+    print(f"vault_root={result.vault_root}")
+    print("delete_audio=no")
+    print(f"writer={writer_mode}")
+    print(f"date={result.entry_date}")
+    print(f"status={result.status}")
+    print(f"entry_count={result.entry_count}")
+    print(f"preview_path={result.preview_path}")
+    return 1 if result.status.startswith("failed") else 0
 
 
 def _vault_preflight(env_path: Path, vault_root: Path | None) -> int:
