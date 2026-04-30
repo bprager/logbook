@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added guarded vault-sync marking that proves generated notes exist in pushed vault `HEAD` before setting ledger `vault_synced_at`.
 - Added an optional generated Open Log Preview note with a clear non-canonical marker and CLI rendering command.
 - Added deterministic summary and action candidate extraction into human-review artifacts without modifying canonical notes.
+- Added high-priority roadmap/backlog entry for a proof-carrying Memgraph memory layer over Logbook evidence.
 
 ### Fixed
 

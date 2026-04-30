@@ -1,6 +1,6 @@
 # Backlog
 
-Updated: 2026-04-29
+Updated: 2026-04-30
 
 Project key in memgraph: `logbook`
 
@@ -28,6 +28,7 @@ LGB-003 + LGB-012 + LGB-014 + LGB-015 -> LGB-019 Status API -> LGB-020 Bounded a
 LGB-006 + LGB-019 -> LGB-021 launchd packaging
 LGB-003 + LGB-006 + LGB-009 + LGB-012 + LGB-013 + LGB-014 + LGB-018 + LGB-025 -> LGB-026 Audio retention cleanup
 LGB-012 + LGB-013 + LGB-014 + LGB-016 + LGB-018 + LGB-020 + LGB-025 + LGB-026 -> LGB-022 End-to-end acceptance tests
+LGB-003 + LGB-009 + LGB-017 + LGB-018 + LGB-019 + LGB-024 -> LGB-027 Proof-carrying memory graph
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -605,3 +606,32 @@ Acceptance:
 - Generated summaries never overwrite raw transcript or staged source content.
 - Review artifacts are marked `needs_review` and `canonical=false`.
 - Source notes and canonical daily logs are not modified by extraction.
+
+## Milestone 7: Proof-Carrying Memory
+
+### LGB-027 - Proof-Carrying Memory Graph
+
+Status: Ready
+
+Priority: P0
+
+Dependencies: LGB-003, LGB-009, LGB-017, LGB-018, LGB-019, LGB-024
+
+Deliverables:
+
+- `logbook memory-graph-sync --env .env` dry-run planner that reads SQLite, transcripts, diarization artifacts, generated notes, and insight artifacts without writing.
+- Explicit `--execute` mode that idempotently upserts proof-carrying memory nodes and relationships into Memgraph.
+- Stable graph IDs for `LogbookJob`, `TranscriptSegment`, `GeneratedNote`, `ActionCandidate`, `Decision`, `Topic`, `Person`, `Project`, and `SourceEvidence`.
+- Evidence model that links every derived action, decision, topic, person, and project back to job ID, transcript segment offsets, generated note path, artifact checksum, and source timestamp.
+- No source audio paths or recorder paths in graph nodes, relationships, API responses, or generated notes.
+- Initial read-only query set for open loops, unresolved action candidates, recent decisions, topic trails, and weekly memory diffs.
+- Test fixtures proving idempotent sync, dry-run safety, evidence completeness, and path privacy.
+
+Acceptance:
+
+- Dry-run reports planned node and relationship changes without mutating Memgraph.
+- Re-running `--execute` against the same ledger/artifacts is idempotent.
+- Every generated memory object has at least one `SUPPORTED_BY`/`DERIVED_FROM` evidence path back to a Logbook job and source artifact.
+- The graph can answer "what did I promise?", "what remains unresolved?", and "what changed this week?" using only local data.
+- SQLite remains the processing source of truth; Memgraph is the query/memory layer.
+- OpenClaw can consume graph-backed memory through bounded read APIs without shell access.

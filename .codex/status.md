@@ -202,3 +202,4 @@ End-to-end acceptance testing.
 - Live test-vault preview run wrote `/Users/bernd/VoiceIngest/test-vault/10 - Logs/00 - Inbox/Open-Log-Preview.md` for `2026-04-29` with 2 entries and no audio deletion.
 - LGB-024 implementation completed on 2026-04-29 with deterministic summary/action extraction, JSON artifacts under `/Users/bernd/VoiceIngest/insights`, and non-canonical review notes under `40 - Reviews/Logbook Insights`.
 - Live test-vault insight run wrote a review note for job 17 with `canonical=false`, `review_status=needs_review`, and no audio paths; source/canonical notes were not modified.
+- Roadmap updated on 2026-04-30 with high-priority LGB-027 Proof-Carrying Memory Graph: a dry-run-first Memgraph sync that turns jobs, transcript segments, generated notes, action candidates, decisions, topics, people, projects, and source evidence into an auditable local memory layer.

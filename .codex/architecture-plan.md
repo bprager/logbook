@@ -1,6 +1,6 @@
 # Architecture Plan
 
-Updated: 2026-04-27
+Updated: 2026-04-30
 
 ## Infrastructure Findings From `prager.ws`
 
@@ -158,6 +158,43 @@ Keep active state local:
 
 Back up to `saga` after state changes using SQLite backup semantics, not raw copies of a live WAL-mode database.
 
+## Proof-Carrying Memory Graph
+
+Strategic addition: turn Logbook from a recorder-to-Obsidian pipeline into a local, auditable memory engine.
+
+Use Memgraph as a proof-carrying memory layer fed by the SQLite ledger, transcripts, diarization segments, routed notes, consolidated logs, and insight-review artifacts. The graph should store derived memory objects only when each object carries evidence back to the exact Logbook job, transcript segment, note path, timestamp, and source artifact that produced it.
+
+Core graph objects:
+
+- `LogbookJob`
+- `TranscriptSegment`
+- `GeneratedNote`
+- `ActionCandidate`
+- `Decision`
+- `Topic`
+- `Person`
+- `Project`
+- `SourceEvidence`
+
+Core relationships:
+
+- `(LogbookJob)-[:HAS_SEGMENT]->(TranscriptSegment)`
+- `(LogbookJob)-[:GENERATED]->(GeneratedNote)`
+- `(ActionCandidate)-[:SUPPORTED_BY]->(SourceEvidence)`
+- `(Decision)-[:SUPPORTED_BY]->(SourceEvidence)`
+- `(Topic)-[:MENTIONED_IN]->(SourceEvidence)`
+- `(ActionCandidate)-[:RELATES_TO]->(Topic|Project|Person)`
+- `(Decision)-[:SUPERSEDES|BLOCKS|ENABLES]->(Decision|ActionCandidate|Topic)`
+
+Operating constraints:
+
+- Dry-run by default; write to Memgraph only with explicit `--execute`.
+- Do not store source audio paths in the graph.
+- Store evidence references as job IDs, transcript segment offsets, generated note paths, and content checksums.
+- Keep SQLite as the source of truth for processing state; Memgraph is the relational memory/query layer.
+- Make graph sync idempotent by stable IDs derived from project, job ID, artifact type, and segment/action index.
+- Query endpoints must be read-only first: open loops, unresolved actions, recent decisions, topic trail, and weekly change summary.
+
 ## Architecture Decisions To Confirm
 
 1. Should `odin` expose the GPU API on an internal port directly, or behind an internal reverse proxy on `odin`?
@@ -217,3 +254,10 @@ Back up to `saga` after state changes using SQLite backup semantics, not raw cop
 - Replay synthetic and real sample recordings.
 - Verify backup/restore.
 - Only then point at the real vault.
+
+### Phase H: Proof-Carrying Memory Graph
+
+- Add dry-run-first Memgraph sync for ledger jobs, transcript segments, generated notes, action candidates, decisions, topics, people, projects, and source evidence.
+- Add idempotent graph upserts with stable IDs and source checksums.
+- Add read-only graph queries for open loops, unresolved action candidates, decision trails, topic trails, and weekly memory diffs.
+- Expose graph-backed memory status through the existing API only after the sync path is covered by tests.
