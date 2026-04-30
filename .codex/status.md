@@ -200,3 +200,5 @@ End-to-end acceptance testing.
 - LGB-022 Step 6 retention recheck ran read-only on host clock `2026-04-29T19:07:40-0700`; `retention-status` and `cleanup-plan` still report 17 blocked jobs, 0 eligible, and blocker `retention_window_open` until `2026-04-30T22:44:10+00:00`. No cleanup was executed.
 - LGB-023 implementation completed on 2026-04-29 with `logbook open-log-preview`, a generated non-canonical `10 - Logs/00 - Inbox/Open-Log-Preview.md`, and tests proving the preview does not create a duplicate canonical daily log.
 - Live test-vault preview run wrote `/Users/bernd/VoiceIngest/test-vault/10 - Logs/00 - Inbox/Open-Log-Preview.md` for `2026-04-29` with 2 entries and no audio deletion.
+- LGB-024 implementation completed on 2026-04-29 with deterministic summary/action extraction, JSON artifacts under `/Users/bernd/VoiceIngest/insights`, and non-canonical review notes under `40 - Reviews/Logbook Insights`.
+- Live test-vault insight run wrote a review note for job 17 with `canonical=false`, `review_status=needs_review`, and no audio paths; source/canonical notes were not modified.

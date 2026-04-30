@@ -8,6 +8,7 @@ from logbook.config import ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
 from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
+from logbook.insights import extract_insights
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
 from logbook.odin import HttpOdinClient
@@ -202,6 +203,30 @@ def main(argv: list[str] | None = None) -> int:
         help="write vault_synced_at for markable jobs; without this flag the command is a dry run",
     )
 
+    insights_parser = subparsers.add_parser(
+        "extract-insights",
+        help="write non-canonical summary and action review notes",
+    )
+    insights_parser.add_argument("--env", type=Path, default=Path(".env"))
+    insights_parser.add_argument(
+        "--vault",
+        type=Path,
+        required=True,
+        help="vault root to write insight review notes",
+    )
+    insights_parser.add_argument(
+        "--writer",
+        choices=("filesystem", "obsidian-cli"),
+        default="filesystem",
+        help="write review notes directly or through obsidian-cli create",
+    )
+    insights_parser.add_argument(
+        "--job-id",
+        type=int,
+        default=None,
+        help="extract insights for exactly one ledger job",
+    )
+
     serve_api_parser = subparsers.add_parser(
         "serve-api",
         help="start the read-only FastAPI status API",
@@ -299,6 +324,8 @@ def main(argv: list[str] | None = None) -> int:
         return _vault_preflight(args.env, args.vault)
     if args.command == "mark-vault-synced":
         return _mark_vault_synced(args.env, execute=args.execute)
+    if args.command == "extract-insights":
+        return _extract_insights(args.env, args.vault, args.writer, args.job_id)
     if args.command == "serve-api":
         return _serve_api(args.env, args.host, args.port)
     if args.command == "retention-status":
@@ -858,6 +885,64 @@ def _mark_vault_synced(env_path: Path, execute: bool) -> int:
             f"sync_status={item.status} paths={paths} blockers={blockers}"
         )
     return 1 if result.blocked_count else 0
+
+
+def _extract_insights(
+    env_path: Path,
+    vault_root: Path,
+    writer_mode: str,
+    job_id: int | None,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    if writer_mode == "obsidian-cli":
+        if config.obsidian is None:
+            print("config_error: missing Obsidian configuration", file=sys.stderr)
+            return 2
+        workflow = ObsidianVaultWorkflow(
+            config=config.obsidian,
+            vault_root=vault_root,
+            lock_root=config.processing_root,
+        )
+        preflight = workflow.preflight()
+        if not preflight.operational:
+            _print_vault_preflight(preflight)
+            return 1
+        note_writer = ObsidianCliNoteWriter(config=config.obsidian, vault_root=vault_root)
+    else:
+        note_writer = FilesystemNoteWriter()
+
+    result = extract_insights(
+        config=config,
+        vault_root=vault_root,
+        note_writer=note_writer,
+        job_id=job_id,
+    )
+    print("Extract insights")
+    print(f"env_path={env_path}")
+    print(f"vault_root={result.vault_root}")
+    print("delete_audio=no")
+    print("write_canonical_notes=no")
+    print(f"writer={writer_mode}")
+    print(f"job_id={job_id if job_id is not None else '-'}")
+    print(f"artifact_dir={result.artifact_dir}")
+    print(f"extracted_count={result.extracted_count}")
+    print(f"skipped_count={result.skipped_count}")
+    print(f"failed_count={result.failed_count}")
+    print("insight_results:")
+    for item in result.items:
+        artifact_path = item.artifact_path if item.artifact_path is not None else "-"
+        review_note_path = item.review_note_path if item.review_note_path is not None else "-"
+        print(
+            f"- filename={item.job.source_filename} status={item.status} "
+            f"job_id={item.job.id} action_count={len(item.action_items)} "
+            f"artifact_path={artifact_path} review_note_path={review_note_path}"
+        )
+    return 1 if result.failed_count else 0
 
 
 def _serve_api(env_path: Path, host: str | None, port: int | None) -> int:

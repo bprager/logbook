@@ -165,6 +165,45 @@ def render_open_log_preview(
     return "\n\n".join(sections).rstrip() + "\n"
 
 
+def render_insight_review(
+    *,
+    job: RecordingJob,
+    recorded_at: datetime,
+    route_kind: str,
+    category: str | None,
+    summary: str,
+    action_items: list[str],
+    source_note_path: str,
+) -> str:
+    frontmatter = {
+        "type": "logbook_insight_review",
+        "review_status": "needs_review",
+        "canonical": "false",
+        "recorded_at": recorded_at.isoformat(timespec="seconds"),
+        "source": "voice_ingest",
+        "job_id": str(job.id),
+        "route_kind": route_kind,
+        "category": category,
+        "source_note_path": source_note_path,
+    }
+    sections = [
+        _frontmatter(frontmatter),
+        f"# Insight Review {recorded_at:%Y-%m-%d %H:%M}",
+        (
+            "Generated summary and action candidates for human review. "
+            "This note is non-canonical and does not update the source note."
+        ),
+        "## Summary",
+        summary or "- ",
+        "## Action Candidates",
+        _render_action_candidates(action_items),
+        "## Review",
+        "- Status: needs_review\n- Approved canonical write: no",
+        f"_Source: `logbook-job-{job.id}`_",
+    ]
+    return "\n\n".join(sections).rstrip() + "\n"
+
+
 def atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(f"{path.suffix}.tmp")
@@ -206,6 +245,12 @@ def _render_meeting_transcript(segments: list[dict], matched_alias: str) -> str:
             continue
         lines.append(f"- `{_format_timestamp(start_seconds)}` **{speaker}:** {text}")
     return "\n".join(lines)
+
+
+def _render_action_candidates(action_items: list[str]) -> str:
+    if not action_items:
+        return "- None detected"
+    return "\n".join(f"- [ ] {item}" for item in action_items)
 
 
 def _strip_meeting_prefix(text: str, matched_alias: str) -> str:

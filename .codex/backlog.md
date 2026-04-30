@@ -587,7 +587,7 @@ Acceptance:
 
 ### LGB-024 - Summaries And Action Extraction
 
-Status: Later
+Status: Completed
 
 Dependencies: LGB-018, LGB-020
 
@@ -596,7 +596,12 @@ Deliverables:
 - Optional summaries for meetings and notes.
 - Optional action item extraction.
 - Human-review workflow before writing derived content into canonical notes.
+- `logbook extract-insights` command that writes JSON artifacts under `LOGBOOK_PROCESSING_ROOT/insights`.
+- Non-canonical review notes under `40 - Reviews/Logbook Insights`.
+- Deterministic first-pass summary and action candidate extraction for task/category notes, logs, and diarized meetings.
 
 Acceptance:
 
 - Generated summaries never overwrite raw transcript or staged source content.
+- Review artifacts are marked `needs_review` and `canonical=false`.
+- Source notes and canonical daily logs are not modified by extraction.

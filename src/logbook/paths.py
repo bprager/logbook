@@ -73,6 +73,18 @@ def dead_letter_path(vault_root: Path, recorded_at: datetime, job_id: int) -> Pa
     return vault_root / "99 - Dead Letters" / f"{timestamp_part}-job-{job_id:06d}.md"
 
 
+def insight_review_path(vault_root: Path, recorded_at: datetime, job_id: int) -> Path:
+    timestamp_part = recorded_at.strftime("%Y-%m-%dT%H-%M-%S")
+    return (
+        vault_root
+        / "40 - Reviews"
+        / "Logbook Insights"
+        / recorded_at.strftime("%Y")
+        / month_folder(recorded_at)
+        / f"{timestamp_part}-job-{job_id:06d}-insights.md"
+    )
+
+
 def daily_log_path(vault_root: Path, recorded_at: datetime) -> Path:
     date_part = recorded_at.strftime("%Y-%m-%d")
     weekday = recorded_at.strftime("%A")
