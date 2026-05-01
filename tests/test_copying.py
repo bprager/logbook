@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from logbook.config import AppConfig, OdinConfig, RecorderConfig
 from logbook.copying import copy_discovered_recordings
@@ -95,6 +96,20 @@ class CopyingTests(TestCase):
             self.assertEqual(result.copied_count, 1)
             self.assertNotEqual(result.items[0].copied_path, inbox / "260429_0821.mp3")
             self.assertIn("260429_0821-", result.items[0].copied_path.name)
+
+    def test_copy_does_not_preserve_recorder_metadata(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            source = app_config.recorder.recordings_dir / "260429_0821.mp3"
+            _write_recording(source, b"audio")
+
+            with patch("logbook.copying.shutil.copy2", side_effect=PermissionError("chflags")):
+                result = copy_discovered_recordings(app_config)
+
+            self.assertEqual(result.copied_count, 1)
+            self.assertEqual(result.failed_count, 0)
+            self.assertEqual(result.items[0].copied_path.read_bytes(), b"audio")
 
 
 def _app_config(root: Path) -> AppConfig:

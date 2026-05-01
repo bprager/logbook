@@ -1,10 +1,10 @@
 # Status
 
-Updated: 2026-04-30
+Updated: 2026-05-01
 
 ## Current Focus
 
-End-to-end acceptance testing.
+Production hardening backlog opened; retention watch for the next cleanup gate.
 
 ## Active Request
 
@@ -19,9 +19,9 @@ End-to-end acceptance testing.
 - Implement LGB-017 Meeting Diarization before meeting note rendering.
 - Implement LGB-018 Meeting Note Renderer.
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
-- Walk through LGB-022 End-To-End Acceptance Tests step by step, waiting for user confirmation before proceeding to the next step or finishing.
-- Implement LGB-027 Proof-Carrying Memory Graph as the next non-cleanup work item.
-- Implement LGB-028 Action Candidate Resolution as the follow-on memory workflow.
+- Keep the completed LGB-022 acceptance evidence current.
+- Recheck second-batch cleanup eligibility after `2026-05-02T09:52:11+00:00`.
+- Start production hardening with LGB-030 launchd rollout, LGB-031 metrics, LGB-032 backups, LGB-033 graph pruning, and LGB-034 release readiness.
 
 ## Progress
 
@@ -215,3 +215,25 @@ End-to-end acceptance testing.
 - LGB-029 implementation completed on 2026-04-30 with read-only memory graph health/drift checks through `logbook memory-graph-health --env .env` and FastAPI `GET /memory/graph-health`. The check compares local planned Logbook-owned graph counts with live Memgraph counts by node label and relationship type without writing or deleting anything.
 - LGB-029 verification passed: 78 tests OK, `ruff check .` OK, `git diff --check` OK, and live `memory-graph-health --env .env` reported `status=ok` with 89 planned/live nodes and 170 planned/live relationships. `mypy` was not available in the local `.venv`.
 - LGB-022 acceptance path resumed on 2026-04-30 at host clock `2026-04-30T15:01:53-0700`. Read-only gate passed: 78 tests OK, `ruff check .` OK, vault `main...origin/main` is clean except `.obsidian/workspace.json`, vault-sync proof reports 17 already synced jobs, and memory graph health reports `status=ok`. Cleanup remains blocked for all 17 jobs by `retention_window_open` until `2026-04-30T22:44:10+00:00`; no local or recorder audio was deleted.
+- LGB-022 retention gate reopened on 2026-05-01 at host clock `2026-05-01T02:44:28-0700`; read-only `cleanup-plan` reported 17 eligible jobs, 0 blocked, 17 local pending, and 0 recorder pending before execution.
+- Local audio cleanup executed with `cleanup-audio --env .env --execute`, clearing local copied-audio cleanup for all 17 eligible consolidated jobs.
+- Recorder-side cleanup then executed with `cleanup-audio --env .env --execute --include-recorder`, clearing recorder cleanup for the same 17 eligible jobs after checksum and recorder-folder guards.
+- Post-cleanup verification on 2026-05-01 passed: `retention-status` and `cleanup-plan` report 17 eligible, 0 blocked, 0 local pending, and 0 recorder pending; recorder discovery now reports 7 newer MP3 files remaining; 78 tests OK; `ruff check .` OK; and live `memory-graph-health --env .env` reports `status=ok` with 89 planned/live nodes and 170 planned/live relationships.
+- LGB-022 End-To-End Acceptance Tests are complete for the first production batch. The next operational batch is the 7 newer recorder files dated 2026-04-29 and 2026-04-30 still present on the Sony recorder.
+- Second production batch started on 2026-05-01: dry-run discovery found 7 new recorder MP3s and recorded them as jobs 18-24; live `odin-health --env .env` reported healthy with the model loaded.
+- Initial second-batch copy exposed a macOS/Sony-volume metadata issue: `shutil.copy2` failed while preserving recorder file flags. The copy path now uses byte-only `shutil.copyfile`, with regression coverage proving recorder metadata preservation is not required.
+- Second-batch local processing completed on 2026-05-01: `copy-discovered` copied all 7 files, live `transcribe-copied` transcribed all 7 through the HTTP `odin` worker, and `route-transcripts` wrote all 7 as log inbox notes for jobs 18-24.
+- The Obsidian stage-command template now quotes `10 - Logs`; the generated second-batch inbox notes were committed and pushed to the vault as `8b06459 Add Logbook inbox entries for second batch`.
+- Canonical daily logs were rebuilt/written for the affected dates and pushed to the vault as `d09f180 Update Logbook daily logs for second batch`: 2026-04-29 now has 7 entries and 2026-04-30 has 2 entries.
+- `mark-vault-synced --env .env --execute` marked jobs 18-24 after proving their inbox and canonical daily log paths were present in pushed vault `HEAD`.
+- Live `memory-graph-sync --env .env --execute` refreshed the Logbook proof graph to 213 nodes and 384 relationships; follow-up `memory-graph-health --env .env` reported `status=ok`, 0 drift, 24 live/planned jobs, 48 generated notes, and 37 transcript segments.
+- Post-second-batch verification passed: 79 tests OK, `ruff check .` OK, `memory-graph-query --query open-loops` returned 0 results, and a vault path/privacy scan found no `.mp3`, `VoiceIngest`, `/Volumes`, or `REC_FILE` references in the affected generated notes and daily logs.
+- Current cleanup posture after the second batch: `cleanup-plan` considers 24 jobs, with jobs 18-24 blocked only by `retention_window_open` until `2026-05-02T09:52:11+00:00`; no cleanup was executed for the second batch.
+- Placeholder cleanup completed on 2026-05-01 after user request: jobs 1-17 were reprocessed from quarantined local audio under `/Users/bernd/VoiceIngest/trash/local-audio`, transcribed through live `odin` with `large-v3`, and rerouted into the vault.
+- Real-transcript routing for jobs 1-17 produced 15 log inbox notes and 2 dead letters. Stale placeholder inbox notes for jobs 3 and 7 were removed from `10 - Logs/00 - Inbox` and replaced by dead-letter notes under `99 - Dead Letters`.
+- Canonical daily logs for 2026-04-27, 2026-04-28, and 2026-04-29 were rebuilt from real transcript content and pushed to the vault. The old placeholder transcript JSON files were moved to `/Users/bernd/VoiceIngest/trash/placeholder-transcripts-20260501`.
+- The Obsidian stage-command template now stages all generated Logbook note roots: `06 - Timestamps`, `10 - Logs`, `20 - Notes`, `30 - Meetings`, `40 - Reviews`, and `99 - Dead Letters`.
+- Memgraph was refreshed after the cleanup by resetting only the Logbook memory namespace prefixes (`logbook:job:`, `logbook:topic:`, `logbook:person:`, `logbook:project:`) and reapplying the current proof graph. Live `memory-graph-health --env .env` now reports `status=ok` with 289 planned/live nodes and 526 planned/live relationships.
+- Post-cleanup verification passed: 79 tests OK, `ruff check .` OK, `memory-graph-query --query open-loops` returned 0 results, and scans of active transcripts plus generated vault notes found no `Placeholder transcript`, `fake-large-v3`, or `fake-` markers.
+- Backlog metadata normalized on 2026-05-01: LGB-001 Foundations and LGB-002 Configuration are now marked completed, matching the implemented repo/tooling/config state.
+- Production hardening backlog opened with LGB-030 Production launchd Rollout, LGB-031 Prometheus Metrics And Scrape Integration, LGB-032 Saga Backups And Restore Drill, LGB-033 Memory Graph Prune And Drift Repair, and LGB-034 0.2.0 Release Readiness.

@@ -102,7 +102,9 @@ def _copy_with_checksum(source: Path, inbox_dir: Path, checksum: str) -> Path:
 
     tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
     try:
-        shutil.copy2(source, tmp)
+        # Copy bytes only. Some recorder volumes expose flags that macOS refuses
+        # to apply to the destination, which makes shutil.copy2 fail in copystat.
+        shutil.copyfile(source, tmp)
         copied_checksum = sha256_file(tmp)
         if copied_checksum != checksum:
             raise ChecksumMismatchError(

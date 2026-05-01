@@ -41,10 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added LGB-027 proof-carrying memory graph sync/query support with dry-run-first CLI, optional Memgraph execution, and bounded FastAPI `/memory/*` read endpoints.
 - Added LGB-028 action candidate resolution with durable SQLite review state, dry-run-first CLI, and token-protected FastAPI resolve endpoint.
 - Added LGB-029 memory graph health/drift checks through CLI and FastAPI/OpenAPI.
+- Completed LGB-022 end-to-end acceptance for the first production batch, including guarded local copied-audio cleanup, guarded recorder-side cleanup, post-cleanup recorder discovery, test/lint verification, and memory graph health verification.
+- Processed the second production batch of 7 Sony recorder files through discovery, local copy, live `odin` transcription, Obsidian inbox routing, canonical daily log consolidation, pushed vault sync marking, and Memgraph proof-graph sync.
+- Replaced the original placeholder/fake transcript vault entries with real `odin` transcripts from quarantined local audio, moved two non-log recordings to dead letters, rebuilt affected daily logs, and refreshed the Memgraph proof graph.
+- Added the production hardening backlog for launchd rollout, Prometheus metrics, `saga` backups, memory graph pruning, and `0.2.0` release readiness.
 
 ### Fixed
 
 - Prevented recorder rediscovery from downgrading already consolidated jobs when the copied audio is still present and checksum-matched.
+- Fixed local inbox copying from the Sony recorder by copying audio bytes without preserving recorder filesystem flags that macOS may reject.
+- Fixed the Obsidian vault stage-command template so generated `10 - Logs` paths with spaces can be staged by the vault workflow.
+- Expanded the Obsidian vault stage-command template to include all generated Logbook note roots, including daily logs, reviews, meetings, category notes, and dead letters.
 
 ## [0.1.0] - 2026-04-27
 

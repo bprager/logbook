@@ -1,6 +1,6 @@
 # Backlog
 
-Updated: 2026-04-30
+Updated: 2026-05-01
 
 Project key in memgraph: `logbook`
 
@@ -31,13 +31,18 @@ LGB-012 + LGB-013 + LGB-014 + LGB-016 + LGB-018 + LGB-020 + LGB-025 + LGB-026 ->
 LGB-003 + LGB-009 + LGB-017 + LGB-018 + LGB-019 + LGB-024 -> LGB-027 Proof-carrying memory graph
 LGB-027 -> LGB-028 Action candidate resolution
 LGB-027 -> LGB-029 Memory graph health and drift check
+LGB-021 + LGB-022 -> LGB-030 Production launchd rollout
+LGB-019 + LGB-021 -> LGB-031 Prometheus metrics and scrape integration
+LGB-003 + LGB-026 -> LGB-032 Saga backups and restore drill
+LGB-027 + LGB-029 -> LGB-033 Memory graph prune and drift repair
+LGB-022 + LGB-030 + LGB-031 + LGB-032 + LGB-033 -> LGB-034 0.2.0 release readiness
 ```
 
 ## Milestone 0: Repo And Product Foundations
 
 ### LGB-001 - Foundations
 
-Status: Ready
+Status: Completed
 
 Dependencies: none
 
@@ -53,9 +58,13 @@ Acceptance:
 - A new Codex session can find context, decisions, backlog, and PRD quickly.
 - Repo has clear instructions for safe local-first development.
 
+Completion note:
+
+- Completed as part of the `0.1.0` planning release and subsequent MVP implementation. The repo now has project context, decisions, backlog, PRD, README, tests, lint tooling, ignored local secrets, and repeatable development commands.
+
 ### LGB-002 - Configuration
 
-Status: Ready after LGB-001
+Status: Completed
 
 Dependencies: LGB-001
 
@@ -70,6 +79,10 @@ Acceptance:
 
 - App can validate config and print redacted effective settings.
 - Missing vault, processing root, and `odin` endpoint errors are actionable.
+
+Completion note:
+
+- Completed through the typed `.env`/`AppConfig` implementation, tracked `.env.example`, recorder/vault/`odin`/retention/OpenClaw token settings, Memgraph URI support, and live validation against the configured host-local `.env`.
 
 ## Milestone 1: Safe Ingestion And Transcription
 
@@ -550,7 +563,7 @@ Acceptance:
 
 ### LGB-022 - End-To-End Acceptance Tests
 
-Status: In progress
+Status: Completed
 
 Dependencies: LGB-012, LGB-013, LGB-014, LGB-016, LGB-018, LGB-020, LGB-025, LGB-026
 
@@ -569,6 +582,10 @@ Acceptance:
 
 - PRD acceptance criteria are covered by automated tests or explicit manual test scripts.
 - Existing pushed vault notes can be proven and marked as synced without deleting audio.
+
+Completion note:
+
+- First production batch acceptance completed on 2026-05-01. Guarded local cleanup and recorder-side cleanup both reached 0 pending actions for the 17 consolidated, vault-synced jobs. Follow-up recorder discovery showed 7 newer MP3 files remaining for the next ingest batch, and verification passed with 78 tests OK, `ruff check .` OK, and memory graph health `status=ok`.
 
 ### LGB-023 - Optional Open Log Preview
 
@@ -688,3 +705,110 @@ Acceptance:
 - A freshly synced graph reports `status=ok` when live counts match the local plan.
 - Missing or unreachable Memgraph is reported explicitly without blocking local plan generation.
 - Count drift is visible by node label and relationship type so the next operator action is clear.
+
+## Milestone 8: Production Hardening
+
+### LGB-030 - Production launchd Rollout
+
+Status: Ready
+
+Priority: P0
+
+Dependencies: LGB-021, LGB-022
+
+Deliverables:
+
+- Install or document the exact launchd bootstrap commands for the Logbook API, mount probe, and retention audit on `mimir`.
+- Verify rendered plist paths, labels, logs, environment file references, and restart behavior.
+- Keep OpenClaw runtime ownership separate: do not start OpenClaw gateway or node services as `bernd`.
+- Add an operational check command sequence for launchd status, API health, mount probe dry run, and retention audit output.
+
+Acceptance:
+
+- A fresh operator can install, inspect, stop, and rollback the Logbook launchd jobs without reading implementation code.
+- The launchd rollout does not start OpenClaw services under `bernd`.
+- Status/API and recorder probe behavior are verified after bootstrap.
+
+### LGB-031 - Prometheus Metrics And Scrape Integration
+
+Status: Ready
+
+Priority: P0
+
+Dependencies: LGB-019, LGB-021
+
+Deliverables:
+
+- Add `/metrics` endpoints for the Logbook recorder/status API and the `odin` worker.
+- Expose queue depth, job status counts, failed jobs, dead letters, latest consolidation age, cleanup pending counts, `odin` health, and graph health status.
+- Document Prometheus scrape targets on `odin` without reverse-proxying the transcription path through `fenrir`.
+- Add alert candidates for stale consolidation, failed transcription, cleanup failures, API down, `odin` down, and graph drift.
+
+Acceptance:
+
+- Metrics are path-safe and do not expose source audio, transcript paths, bearer tokens, or local vault paths.
+- Prometheus can scrape the configured endpoints over the trusted LAN or loopback path.
+- Alert candidates map to clear operator actions.
+
+### LGB-032 - Saga Backups And Restore Drill
+
+Status: Ready
+
+Priority: P0
+
+Dependencies: LGB-003, LGB-026
+
+Deliverables:
+
+- Define SQLite backup semantics that work with WAL mode and avoid raw copying of a live database.
+- Back up the SQLite ledger, configuration templates, generated operational artifacts, and selected non-audio state to `saga`.
+- Decide whether quarantined local audio is backed up, excluded, or expired before backup.
+- Add a restore drill that validates a copied ledger can be opened and queried without mutating production state.
+
+Acceptance:
+
+- A backup run produces a timestamped, restorable artifact set on `saga`.
+- The restore drill proves ledger integrity and expected job counts from a backup copy.
+- Secrets and raw source audio are handled according to the documented policy.
+
+### LGB-033 - Memory Graph Prune And Drift Repair
+
+Status: Ready
+
+Priority: P0
+
+Dependencies: LGB-027, LGB-029
+
+Deliverables:
+
+- Add a dry-run-first graph prune command that identifies Logbook-owned nodes and relationships present in Memgraph but absent from the current local plan.
+- Scope pruning to the Logbook memory namespace only, preserving backlog/project/host graph data.
+- Add explicit `--execute` mode with count reporting and before/after health checks.
+- Add tests for stale generated notes, rerouted dead letters, and removed evidence relationships.
+
+Acceptance:
+
+- Drift caused by reroutes or removed generated notes can be repaired without resetting unrelated Memgraph data.
+- Dry run shows exactly what would be pruned.
+- Health reports `status=ok` after prune plus sync.
+
+### LGB-034 - 0.2.0 Release Readiness
+
+Status: Ready after LGB-030, LGB-031, LGB-032, LGB-033
+
+Priority: P1
+
+Dependencies: LGB-022, LGB-030, LGB-031, LGB-032, LGB-033
+
+Deliverables:
+
+- Prepare `0.2.0` release notes covering live `odin` transcription, real vault operation, retention cleanup, memory graph, placeholder cleanup, and production hardening.
+- Update README status from implementation-started language to operational MVP language.
+- Confirm final verification commands, vault state, Memgraph health, and retention posture.
+- Tag and push the release only after explicit operator approval.
+
+Acceptance:
+
+- The release candidate has a clean working tree except approved local-only files.
+- README and changelog accurately describe the live operational surface.
+- No release tag is created without explicit approval.
