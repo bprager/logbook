@@ -42,7 +42,17 @@ class LaunchdPackagingTests(TestCase):
             self.assertEqual(retention["StartCalendarInterval"], [{"Minute": 17}])
             self.assertIn("retention-status", retention["ProgramArguments"])
 
-            for plist in (api, mount_probe, retention):
+            entity_linker = _loads(package.entity_linker.content)
+            self.assertEqual(entity_linker["Label"], "local.logbook.entity-linker")
+            self.assertEqual(
+                entity_linker["StartCalendarInterval"],
+                [{"Hour": 3, "Minute": 37}],
+            )
+            self.assertIn("link-daily-log-entities", entity_linker["ProgramArguments"])
+            self.assertIn("--execute", entity_linker["ProgramArguments"])
+            self.assertIn("--months", entity_linker["ProgramArguments"])
+
+            for plist in (api, mount_probe, retention, entity_linker):
                 self.assertEqual(plist["WorkingDirectory"], str(root / "repo"))
                 self.assertEqual(
                     plist["EnvironmentVariables"],
@@ -66,7 +76,7 @@ class LaunchdPackagingTests(TestCase):
 
             paths = write_launchd_package(package)
 
-            self.assertEqual(len(paths), 3)
+            self.assertEqual(len(paths), 4)
             self.assertTrue(package.logs_dir.exists())
             for path in paths:
                 self.assertTrue(path.exists())

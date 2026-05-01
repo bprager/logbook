@@ -31,6 +31,7 @@ LGB-012 + LGB-013 + LGB-014 + LGB-016 + LGB-018 + LGB-020 + LGB-025 + LGB-026 ->
 LGB-003 + LGB-009 + LGB-017 + LGB-018 + LGB-019 + LGB-024 -> LGB-027 Proof-carrying memory graph
 LGB-027 -> LGB-028 Action candidate resolution
 LGB-027 -> LGB-029 Memory graph health and drift check
+LGB-015 + LGB-021 + LGB-025 -> LGB-035 Daily log entity linker
 LGB-021 + LGB-022 -> LGB-030 Production launchd rollout
 LGB-019 + LGB-021 -> LGB-031 Prometheus metrics and scrape integration
 LGB-003 + LGB-026 -> LGB-032 Saga backups and restore drill
@@ -812,3 +813,26 @@ Acceptance:
 - The release candidate has a clean working tree except approved local-only files.
 - README and changelog accurately describe the live operational surface.
 - No release tag is created without explicit approval.
+
+### LGB-035 - Daily Log Entity Linker
+
+Status: Completed
+
+Priority: P1
+
+Dependencies: LGB-015, LGB-021, LGB-025
+
+Deliverables:
+
+- Add a dry-run-first CLI that scans canonical daily logs from the last configurable number of calendar months.
+- Discover linkable Obsidian entities from `04 - People`, `03 - Objects`, and `06 - Timestamps/Meetings`.
+- Link unlinked mentions to existing people, event, and object notes while preserving frontmatter, code blocks, existing wiki links, and Markdown links.
+- Add a scheduled launchd job that runs the entity linker daily against the last 3 months.
+- Backfill the current last-3-month daily logs in the real vault.
+
+Acceptance:
+
+- The command reports files scanned, links inserted, and matched targets before writing.
+- `--execute` is required for vault mutation.
+- Scheduled launchd rendering includes the bounded entity-linking command and does not start OpenClaw services.
+- The real-vault backfill is committed without staging Obsidian workspace state.

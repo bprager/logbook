@@ -11,6 +11,7 @@ from logbook.config import AppConfig
 DEFAULT_API_LABEL = "local.logbook.api"
 DEFAULT_MOUNT_PROBE_LABEL = "local.logbook.recorder.mount-probe"
 DEFAULT_RETENTION_AUDIT_LABEL = "local.logbook.retention-audit"
+DEFAULT_ENTITY_LINKER_LABEL = "local.logbook.entity-linker"
 
 
 @dataclass(frozen=True)
@@ -27,10 +28,16 @@ class LaunchdPackage:
     api_service: LaunchdPlist
     mount_probe: LaunchdPlist
     retention_audit: LaunchdPlist
+    entity_linker: LaunchdPlist
 
     @property
-    def plists(self) -> tuple[LaunchdPlist, LaunchdPlist, LaunchdPlist]:
-        return (self.api_service, self.mount_probe, self.retention_audit)
+    def plists(self) -> tuple[LaunchdPlist, ...]:
+        return (
+            self.api_service,
+            self.mount_probe,
+            self.retention_audit,
+            self.entity_linker,
+        )
 
 
 def render_launchd_package(
@@ -43,6 +50,7 @@ def render_launchd_package(
     api_label: str = DEFAULT_API_LABEL,
     mount_probe_label: str = DEFAULT_MOUNT_PROBE_LABEL,
     retention_audit_label: str = DEFAULT_RETENTION_AUDIT_LABEL,
+    entity_linker_label: str = DEFAULT_ENTITY_LINKER_LABEL,
 ) -> LaunchdPackage:
     python_executable = python_bin or sys.executable
     src_path = repo_root / "src"
@@ -106,6 +114,25 @@ def render_launchd_package(
         "StandardErrorPath": str(logs_dir / "logbook-retention-audit.err.log"),
         **common,
     }
+    entity_linker_plist = {
+        "Label": entity_linker_label,
+        "ProgramArguments": [
+            python_executable,
+            "-m",
+            "logbook.cli",
+            "link-daily-log-entities",
+            "--env",
+            str(env_path),
+            "--months",
+            "3",
+            "--execute",
+        ],
+        "RunAtLoad": False,
+        "StartCalendarInterval": [{"Hour": 3, "Minute": 37}],
+        "StandardOutPath": str(logs_dir / "logbook-entity-linker.out.log"),
+        "StandardErrorPath": str(logs_dir / "logbook-entity-linker.err.log"),
+        **common,
+    }
 
     return LaunchdPackage(
         output_dir=output_dir,
@@ -113,10 +140,11 @@ def render_launchd_package(
         api_service=_render_plist(api_label, api_plist),
         mount_probe=_render_plist(mount_probe_label, mount_probe_plist),
         retention_audit=_render_plist(retention_audit_label, retention_audit_plist),
+        entity_linker=_render_plist(entity_linker_label, entity_linker_plist),
     )
 
 
-def write_launchd_package(package: LaunchdPackage) -> tuple[Path, Path, Path]:
+def write_launchd_package(package: LaunchdPackage) -> tuple[Path, ...]:
     package.output_dir.mkdir(parents=True, exist_ok=True)
     package.logs_dir.mkdir(parents=True, exist_ok=True)
     written_paths: list[Path] = []
@@ -124,7 +152,7 @@ def write_launchd_package(package: LaunchdPackage) -> tuple[Path, Path, Path]:
         path = package.output_dir / plist.filename
         path.write_text(plist.content, encoding="utf-8")
         written_paths.append(path)
-    return (written_paths[0], written_paths[1], written_paths[2])
+    return tuple(written_paths)
 
 
 def _render_plist(label: str, data: dict) -> LaunchdPlist:

@@ -8,6 +8,7 @@ from logbook.config import ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
 from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
+from logbook.entity_linker import link_daily_log_entities
 from logbook.insights import extract_insights
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
@@ -186,6 +187,29 @@ def main(argv: list[str] | None = None) -> int:
         "--date",
         default=None,
         help="optional YYYY-MM-DD date to preview; defaults to today",
+    )
+
+    entity_link_parser = subparsers.add_parser(
+        "link-daily-log-entities",
+        help="link known people, event, and object entity mentions in canonical daily logs",
+    )
+    entity_link_parser.add_argument("--env", type=Path, default=Path(".env"))
+    entity_link_parser.add_argument(
+        "--vault",
+        type=Path,
+        default=None,
+        help="vault root to update; defaults to OBSIDIAN_VAULT_LOCAL_PATH",
+    )
+    entity_link_parser.add_argument(
+        "--months",
+        type=int,
+        default=3,
+        help="calendar months of daily logs to scan, counting back from today",
+    )
+    entity_link_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="write links into daily logs; without this flag the command is a dry run",
     )
 
     vault_parser = subparsers.add_parser(
@@ -400,6 +424,8 @@ def main(argv: list[str] | None = None) -> int:
         return _consolidate_logs(args.env, args.vault, args.writer, args.date)
     if args.command == "open-log-preview":
         return _open_log_preview(args.env, args.vault, args.writer, args.date)
+    if args.command == "link-daily-log-entities":
+        return _link_daily_log_entities(args.env, args.vault, args.months, args.execute)
     if args.command == "vault-preflight":
         return _vault_preflight(args.env, args.vault)
     if args.command == "mark-vault-synced":
@@ -915,6 +941,61 @@ def _open_log_preview(
     print(f"entry_count={result.entry_count}")
     print(f"preview_path={result.preview_path}")
     return 1 if result.status.startswith("failed") else 0
+
+
+def _link_daily_log_entities(
+    env_path: Path,
+    vault_root: Path | None,
+    months: int,
+    execute: bool,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+    if config.obsidian is None and vault_root is None:
+        print("config_error: missing Obsidian vault path", file=sys.stderr)
+        return 2
+
+    target_vault = vault_root or config.obsidian.vault_local_path
+    try:
+        result = link_daily_log_entities(
+            vault_root=target_vault,
+            months=months,
+            execute=execute,
+        )
+    except ValueError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    print("Link daily log entities")
+    print(f"env_path={env_path}")
+    print(f"vault_root={result.vault_root}")
+    print(f"months={months}")
+    print(f"since={result.since}")
+    print(f"until={result.until}")
+    print(f"execute={_yes_no(execute)}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    print(f"people_entities={result.people_count}")
+    print(f"event_entities={result.event_count}")
+    print(f"object_entities={result.object_count}")
+    print(f"files_considered={result.files_considered}")
+    print(f"files_changed={result.files_changed}")
+    print(f"links_inserted={result.inserted_count}")
+    print("entity_link_results:")
+    for item in result.items:
+        target_path = item.path.relative_to(result.vault_root)
+        aliases = ", ".join(
+            f"{link.kind}:{link.alias}->{link.target}" for link in item.links
+        )
+        print(
+            f"- date={item.date} status={item.status} "
+            f"links={item.inserted_count} path={target_path} "
+            f"matches={aliases or '-'}"
+        )
+    return 0
 
 
 def _vault_preflight(env_path: Path, vault_root: Path | None) -> int:

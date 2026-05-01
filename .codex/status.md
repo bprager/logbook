@@ -4,7 +4,7 @@ Updated: 2026-05-01
 
 ## Current Focus
 
-Production hardening backlog opened; retention watch for the next cleanup gate.
+Daily log entity linking is the active implementation slice; retention watch remains open for the next cleanup gate.
 
 ## Active Request
 
@@ -22,6 +22,7 @@ Production hardening backlog opened; retention watch for the next cleanup gate.
 - Keep the completed LGB-022 acceptance evidence current.
 - Recheck second-batch cleanup eligibility after `2026-05-02T09:52:11+00:00`.
 - Start production hardening with LGB-030 launchd rollout, LGB-031 metrics, LGB-032 backups, LGB-033 graph pruning, and LGB-034 release readiness.
+- Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
 
 ## Progress
 
@@ -89,6 +90,9 @@ Production hardening backlog opened; retention watch for the next cleanup gate.
 - [x] Added explicit local copied-audio cleanup and separately gated recorder-side cleanup.
 - [x] Added checksum and recorder-directory guards before destructive source cleanup.
 - [x] Added `/cleanup/audio` FastAPI status.
+- [x] Added dry-run-first daily log entity linking for existing Obsidian People, Events, and Objects.
+- [x] Added a scheduled launchd entity-linker plist that runs daily against the last 3 months.
+- [x] Backfilled 12 Obsidian links across the 4 canonical daily logs from 2026-02-01 through 2026-05-01.
 
 ## Notes
 

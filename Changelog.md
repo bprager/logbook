@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Processed the second production batch of 7 Sony recorder files through discovery, local copy, live `odin` transcription, Obsidian inbox routing, canonical daily log consolidation, pushed vault sync marking, and Memgraph proof-graph sync.
 - Replaced the original placeholder/fake transcript vault entries with real `odin` transcripts from quarantined local audio, moved two non-log recordings to dead letters, rebuilt affected daily logs, and refreshed the Memgraph proof graph.
 - Added the production hardening backlog for launchd rollout, Prometheus metrics, `saga` backups, memory graph pruning, and `0.2.0` release readiness.
+- Added an entity-linking CLI and scheduled launchd job that links canonical daily logs to existing Obsidian people, event, and object notes.
 
 ### Fixed
 
