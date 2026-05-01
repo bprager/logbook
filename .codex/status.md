@@ -93,6 +93,7 @@ Daily log entity linking is the active implementation slice; retention watch rem
 - [x] Added dry-run-first daily log entity linking for existing Obsidian People, Events, and Objects.
 - [x] Added a scheduled launchd entity-linker plist that runs daily against the last 3 months.
 - [x] Backfilled 12 Obsidian links across the 4 canonical daily logs from 2026-02-01 through 2026-05-01.
+- [x] Bootstrapped `local.logbook.entity-linker` as a user LaunchAgent under `bernd`; no OpenClaw services were started.
 
 ## Notes
 
