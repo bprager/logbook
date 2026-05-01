@@ -12,6 +12,7 @@ from logbook.ledger import RecordingJob, open_ledger
 
 FINAL_NOTE_STATUSES = {
     "category_written",
+    "dead_letter_discarded",
     "dead_letter_written",
     "meeting_written",
     "consolidated",

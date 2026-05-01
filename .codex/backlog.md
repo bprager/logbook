@@ -32,6 +32,7 @@ LGB-003 + LGB-009 + LGB-017 + LGB-018 + LGB-019 + LGB-024 -> LGB-027 Proof-carry
 LGB-027 -> LGB-028 Action candidate resolution
 LGB-027 -> LGB-029 Memory graph health and drift check
 LGB-015 + LGB-021 + LGB-025 -> LGB-035 Daily log entity linker
+LGB-014 + LGB-015 + LGB-020 + LGB-035 -> LGB-036 Dead letter management script
 LGB-021 + LGB-022 -> LGB-030 Production launchd rollout
 LGB-019 + LGB-021 -> LGB-031 Prometheus metrics and scrape integration
 LGB-003 + LGB-026 -> LGB-032 Saga backups and restore drill
@@ -836,3 +837,25 @@ Acceptance:
 - `--execute` is required for vault mutation.
 - Scheduled launchd rendering includes the bounded entity-linking command and does not start OpenClaw services.
 - The real-vault backfill is committed without staging Obsidian workspace state.
+
+### LGB-036 - Dead Letter Management Script
+
+Status: Completed
+
+Priority: P1
+
+Dependencies: LGB-014, LGB-015, LGB-020, LGB-035
+
+Deliverables:
+
+- Add a repo-local `scripts/manage-dead-letters` wrapper.
+- Add a dry-run-first CLI for listing pending dead letters, assigning a dead letter to the log route, and discarding a dead letter.
+- When assigning to log, write the rescued inbox note, record an audit action, clear stale vault-sync state, rebuild the canonical daily log for that date, and rerun entity linking.
+- When discarding, record an audit action and remove the job from the pending dead-letter list without deleting source audio or recorder audio.
+
+Acceptance:
+
+- List mode is read-only and shows job ID, timestamp, current generated note path, and transcript preview.
+- Assign/discard require `--execute` for mutation.
+- Rescued log jobs flow through daily consolidation and entity linking in one command.
+- Discarded jobs remain auditable in SQLite.

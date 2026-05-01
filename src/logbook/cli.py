@@ -7,6 +7,11 @@ from pathlib import Path
 from logbook.config import ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
+from logbook.dead_letters import (
+    assign_dead_letter_to_log,
+    discard_dead_letter,
+    list_dead_letters,
+)
 from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
 from logbook.entity_linker import link_daily_log_entities
 from logbook.insights import extract_insights
@@ -210,6 +215,57 @@ def main(argv: list[str] | None = None) -> int:
         "--execute",
         action="store_true",
         help="write links into daily logs; without this flag the command is a dry run",
+    )
+
+    dead_letter_parser = subparsers.add_parser(
+        "manage-dead-letters",
+        help="list, assign, or discard dead letters with an audit trail",
+    )
+    dead_letter_parser.add_argument("--env", type=Path, default=Path(".env"))
+    dead_letter_parser.add_argument(
+        "--action",
+        choices=("list", "assign", "discard"),
+        default="list",
+        help="operation to perform; assign currently supports only target=log",
+    )
+    dead_letter_parser.add_argument(
+        "--job-id",
+        type=int,
+        default=None,
+        help="dead-letter job id for assign or discard",
+    )
+    dead_letter_parser.add_argument(
+        "--target",
+        choices=("log",),
+        default="log",
+        help="target route for assign; only log is supported right now",
+    )
+    dead_letter_parser.add_argument(
+        "--vault",
+        type=Path,
+        default=None,
+        help="vault root to update; defaults to OBSIDIAN_VAULT_LOCAL_PATH",
+    )
+    dead_letter_parser.add_argument(
+        "--linker-months",
+        type=int,
+        default=3,
+        help="calendar months for the post-consolidation entity linker",
+    )
+    dead_letter_parser.add_argument(
+        "--requested-by",
+        default="operator",
+        help="actor recorded in action_audit",
+    )
+    dead_letter_parser.add_argument(
+        "--reason",
+        default=None,
+        help="optional reason recorded in action_audit",
+    )
+    dead_letter_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="mutate ledger/vault; without this flag assign/discard are dry runs",
     )
 
     vault_parser = subparsers.add_parser(
@@ -426,6 +482,18 @@ def main(argv: list[str] | None = None) -> int:
         return _open_log_preview(args.env, args.vault, args.writer, args.date)
     if args.command == "link-daily-log-entities":
         return _link_daily_log_entities(args.env, args.vault, args.months, args.execute)
+    if args.command == "manage-dead-letters":
+        return _manage_dead_letters(
+            args.env,
+            action=args.action,
+            job_id=args.job_id,
+            target=args.target,
+            vault_root=args.vault,
+            linker_months=args.linker_months,
+            requested_by=args.requested_by,
+            reason=args.reason,
+            execute=args.execute,
+        )
     if args.command == "vault-preflight":
         return _vault_preflight(args.env, args.vault)
     if args.command == "mark-vault-synced":
@@ -996,6 +1064,100 @@ def _link_daily_log_entities(
             f"matches={aliases or '-'}"
         )
     return 0
+
+
+def _manage_dead_letters(
+    env_path: Path,
+    *,
+    action: str,
+    job_id: int | None,
+    target: str,
+    vault_root: Path | None,
+    linker_months: int,
+    requested_by: str,
+    reason: str | None,
+    execute: bool,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    if action == "list":
+        result = list_dead_letters(config)
+        print("Manage dead letters")
+        print(f"env_path={env_path}")
+        print("action=list")
+        print("execute=no")
+        print(f"dead_letter_count={len(result.items)}")
+        print("dead_letters:")
+        for item in result.items:
+            print(
+                f"- job_id={item.job.id} status={item.job.status} "
+                f"recorded_at={item.recorded_at.isoformat(timespec='seconds') if item.recorded_at else '-'} "
+                f"obsidian_path={item.job.obsidian_path or '-'} "
+                f"preview={item.text_preview or '-'}"
+            )
+        return 0
+
+    if job_id is None:
+        print("config_error: --job-id is required for assign and discard", file=sys.stderr)
+        return 2
+
+    target_vault = vault_root
+    if action == "assign":
+        if target != "log":
+            print("config_error: only --target log is supported", file=sys.stderr)
+            return 2
+        if target_vault is None:
+            if config.obsidian is None:
+                print("config_error: missing Obsidian vault path", file=sys.stderr)
+                return 2
+            target_vault = config.obsidian.vault_local_path
+        result = assign_dead_letter_to_log(
+            config=config,
+            vault_root=target_vault,
+            job_id=job_id,
+            execute=execute,
+            requested_by=requested_by,
+            reason=reason,
+            linker_months=linker_months,
+        )
+    elif action == "discard":
+        result = discard_dead_letter(
+            config=config,
+            job_id=job_id,
+            execute=execute,
+            requested_by=requested_by,
+            reason=reason,
+        )
+    else:
+        print(f"config_error: unsupported action {action}", file=sys.stderr)
+        return 2
+
+    print("Manage dead letters")
+    print(f"env_path={env_path}")
+    print(f"action={action}")
+    print(f"job_id={job_id}")
+    print(f"target={target if action == 'assign' else '-'}")
+    print(f"execute={_yes_no(execute)}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    if target_vault is not None:
+        print(f"vault_root={target_vault}")
+    print(f"status={result.status}")
+    print(f"blockers={','.join(result.blockers) if result.blockers else '-'}")
+    print(f"audit_id={result.audit.id if result.audit is not None else '-'}")
+    print(f"inbox_path={result.inbox_path if result.inbox_path is not None else '-'}")
+    print(f"daily_log_path={result.daily_log_path if result.daily_log_path is not None else '-'}")
+    if result.consolidation is not None:
+        print(f"consolidated_count={result.consolidation.consolidated_count}")
+        print(f"consolidation_failed_count={result.consolidation.failed_count}")
+    if result.entity_links is not None:
+        print(f"entity_link_files_changed={result.entity_links.files_changed}")
+        print(f"entity_links_inserted={result.entity_links.inserted_count}")
+    return 1 if result.status.startswith(("blocked", "failed")) else 0
 
 
 def _vault_preflight(env_path: Path, vault_root: Path | None) -> int:

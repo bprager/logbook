@@ -4,7 +4,7 @@ Updated: 2026-05-01
 
 ## Current Focus
 
-Daily log entity linking is the active implementation slice; retention watch remains open for the next cleanup gate.
+Dead-letter management is the active implementation slice; retention watch remains open for the next cleanup gate.
 
 ## Active Request
 
@@ -23,6 +23,7 @@ Daily log entity linking is the active implementation slice; retention watch rem
 - Recheck second-batch cleanup eligibility after `2026-05-02T09:52:11+00:00`.
 - Start production hardening with LGB-030 launchd rollout, LGB-031 metrics, LGB-032 backups, LGB-033 graph pruning, and LGB-034 release readiness.
 - Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
+- Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
 
 ## Progress
 
@@ -94,6 +95,9 @@ Daily log entity linking is the active implementation slice; retention watch rem
 - [x] Added a scheduled launchd entity-linker plist that runs daily against the last 3 months.
 - [x] Backfilled 12 Obsidian links across the 4 canonical daily logs from 2026-02-01 through 2026-05-01.
 - [x] Bootstrapped `local.logbook.entity-linker` as a user LaunchAgent under `bernd`; no OpenClaw services were started.
+- [x] Added `scripts/manage-dead-letters` for read-only listing, dry-run-first log assignment, and dry-run-first discard.
+- [x] Dead-letter log assignment now writes the rescued inbox note, rebuilds the affected daily log, reruns entity linking, and records `dead_letter.assign`.
+- [x] Dead-letter discard records `dead_letter.discard` and removes the job from pending dead-letter views without deleting audio.
 
 ## Notes
 

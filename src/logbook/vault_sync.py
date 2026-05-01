@@ -12,6 +12,7 @@ from logbook.vault import ObsidianVaultWorkflow, VaultPreflight
 FINAL_SYNC_STATUSES = {
     "consolidated",
     "category_written",
+    "dead_letter_discarded",
     "dead_letter_written",
     "meeting_written",
 }

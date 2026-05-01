@@ -673,6 +673,67 @@ class Ledger:
             raise RuntimeError("routed recording job was not found")
         return job
 
+    def rescue_dead_letter_as_log(
+        self,
+        checksum_sha256: str,
+        obsidian_path: Path,
+        routed_at: str | None = None,
+    ) -> RecordingJob:
+        routed_at = routed_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET status = 'inbox_written',
+                    classification = 'log',
+                    obsidian_path = ?,
+                    routed_at = ?,
+                    daily_log_path = NULL,
+                    consolidated_at = NULL,
+                    late_arrival_at = NULL,
+                    vault_synced_at = NULL,
+                    cleanup_eligible_at = NULL,
+                    last_seen_at = ?
+                WHERE checksum_sha256 = ?
+                  AND status = 'dead_letter_written'
+                  AND classification = 'dead_letter'
+                """,
+                (
+                    str(obsidian_path),
+                    routed_at,
+                    routed_at,
+                    checksum_sha256,
+                ),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("rescued dead-letter recording job was not found")
+        return job
+
+    def discard_dead_letter(
+        self,
+        checksum_sha256: str,
+        discarded_at: str | None = None,
+    ) -> RecordingJob:
+        discarded_at = discarded_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET status = 'dead_letter_discarded',
+                    cleanup_eligible_at = NULL,
+                    last_seen_at = ?
+                WHERE checksum_sha256 = ?
+                  AND status = 'dead_letter_written'
+                  AND classification = 'dead_letter'
+                """,
+                (discarded_at, checksum_sha256),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("discarded dead-letter recording job was not found")
+        return job
+
     def mark_consolidated(
         self,
         checksum_sha256: str,
