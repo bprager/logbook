@@ -1,15 +1,15 @@
 # Status
 
-Updated: 2026-05-01
+Updated: 2026-05-03
 
 ## Current Focus
 
-Dead-letter management is the active implementation slice; retention watch remains open for the next cleanup gate.
+Second-batch retention cleanup completed; recorder-side cleanup remains pending until the Sony recorder is mounted.
 
 ## Active Request
 
 - Keep `.env` local and excluded from the remote repo.
-- Keep source audio in place; no recorder-side or local audio deletion in this step.
+- Continue source-audio retention cleanup only through audited safety gates.
 - Keep `.codex/status.md`, `.codex/backlog.md`, and `Changelog.md` current as implementation advances.
 - Preserve the one canonical final daily log path invariant, including late arrivals.
 - Implement LGB-014 Dead-Letter Writer, then LGB-013 Category Note Writer.
@@ -20,7 +20,7 @@ Dead-letter management is the active implementation slice; retention watch remai
 - Implement LGB-018 Meeting Note Renderer.
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
 - Keep the completed LGB-022 acceptance evidence current.
-- Recheck second-batch cleanup eligibility after `2026-05-02T09:52:11+00:00`.
+- Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
 - Start production hardening with LGB-030 launchd rollout, LGB-031 metrics, LGB-032 backups, LGB-033 graph pruning, and LGB-034 release readiness.
 - Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
 - Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
@@ -98,6 +98,12 @@ Dead-letter management is the active implementation slice; retention watch remai
 - [x] Added `scripts/manage-dead-letters` for read-only listing, dry-run-first log assignment, and dry-run-first discard.
 - [x] Dead-letter log assignment now writes the rescued inbox note, rebuilds the affected daily log, reruns entity linking, and records `dead_letter.assign`.
 - [x] Dead-letter discard records `dead_letter.discard` and removes the job from pending dead-letter views without deleting audio.
+- [x] Discarded dead-letter job 3 and rescued job 7 into the canonical 2026-04-27 daily log.
+- [x] Pushed rescued job 7 vault changes as `3033961 Rescue Logbook dead letter job 7`.
+- [x] Marked rescued job 7 vault-synced after pushed-vault evidence check.
+- [x] Executed eligible local audio cleanup for jobs 18-24 on 2026-05-03; all 24 copied audio files are now under `/Users/bernd/VoiceIngest/trash/local-audio`.
+- [x] Confirmed cleanup plan has 0 blocked jobs, 0 local pending actions, and 0 recorder pending actions while the recorder is unmounted.
+- [x] Confirmed memory graph health is `ok` after dead-letter rescue and cleanup checks.
 
 ## Notes
 
