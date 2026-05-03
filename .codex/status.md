@@ -4,7 +4,7 @@ Updated: 2026-05-03
 
 ## Current Focus
 
-`0.2.0` release candidate is prepared and awaiting explicit tag approval. May 1/2 production batch is processed, dead letters are clear, memory graph drift is repaired, Logbook launchd jobs are installed on `mimir`, and the first `saga` backup/restore drill is complete.
+`0.2.0` is tagged and pushed as `v0.2.0` after explicit operator approval. May 1/2 production batch is processed, dead letters are clear, memory graph drift is repaired, Logbook launchd jobs are installed on `mimir`, and the first `saga` backup/restore drill is complete.
 
 ## Active Request
 
@@ -20,7 +20,7 @@ Updated: 2026-05-03
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
 - Keep the completed LGB-022 acceptance evidence current.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
-- Wait for explicit operator approval before creating or pushing `v0.2.0`.
+- Keep post-`0.2.0` changes tracked under `[Unreleased]`.
 - Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
 - Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
 - Continue concluding work summaries with a recommended next step.
@@ -264,4 +264,4 @@ Updated: 2026-05-03
 - LGB-031 implementation completed on 2026-05-03 with Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. The metrics expose path-safe status counts, cleanup counters, graph health status, worker readiness, worker job counts, and model metadata. Scrape targets and alert candidates are documented in `docs/metrics.md`.
 - LGB-030 rollout completed on 2026-05-03 with `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` installed as `bernd` user LaunchAgents. The Logbook API now listens on `127.0.0.1:8788` because `127.0.0.1:8787` is reserved for the `clawdbot` CashClaw/OpenClaw adapter. Live checks passed for `/health`, `/metrics`, read-only mount-probe wiring, read-only retention-audit wiring, and OpenClaw ownership separation.
 - LGB-032 implementation completed on 2026-05-03 with dry-run-first `backup-run`, read-only `backup-restore-drill`, and documentation in `docs/backups.md`. The first production backup was written to `192.168.1.3:/mnt/saga/Napoleon/logbook-backups/logbook-backup-20260503T155634Z`; the remote restore drill reported `status=ok`, `integrity_check=ok`, schema version `1`, expected job count `34`, and actual job count `34`. Live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio are excluded.
-- LGB-034 release readiness completed on 2026-05-03 without creating a tag. README, changelog, `VERSION`, `pyproject.toml`, and `docs/releases/0.2.0.md` now describe the operational MVP release candidate. `secrets.yaml` is tracked by explicit operator request and contains SOPS/age encrypted secret values.
+- LGB-034 release readiness completed on 2026-05-03, and `v0.2.0` is tagged and pushed after explicit operator approval. README, changelog, `VERSION`, `pyproject.toml`, and `docs/releases/0.2.0.md` describe the operational MVP release. `secrets.yaml` is tracked by explicit operator request and contains SOPS/age encrypted secret values.

@@ -824,7 +824,7 @@ Notes:
 
 ### LGB-034 - 0.2.0 Release Readiness
 
-Status: Completed on 2026-05-03; awaiting explicit tag approval
+Status: Completed on 2026-05-03; tagged and pushed
 
 Priority: P1
 
@@ -839,15 +839,15 @@ Deliverables:
 
 Acceptance:
 
-- The release candidate has a clean working tree except approved local-only files.
+- The release has a clean working tree except approved local-only files.
 - README and changelog accurately describe the live operational surface.
-- No release tag is created without explicit approval.
+- The release tag is created only after explicit approval.
 
 Notes:
 
-- Prepared `0.2.0` release-candidate notes in `docs/releases/0.2.0.md`.
-- Updated README from implementation-started language to operational MVP release-candidate language.
-- Updated `VERSION`, `pyproject.toml`, and `Changelog.md` for `0.2.0`; no `v0.2.0` tag was created.
+- Prepared `0.2.0` release notes in `docs/releases/0.2.0.md`.
+- Updated README from implementation-started language to operational MVP release language.
+- Updated `VERSION`, `pyproject.toml`, and `Changelog.md` for `0.2.0`; `v0.2.0` is tagged and pushed after explicit operator approval.
 - Added tracked SOPS/age encrypted `secrets.yaml` by explicit operator request.
 - Release evidence: `odin-health` healthy, Memgraph health `status=ok`, cleanup has 0 pending local/recorder actions with jobs 25-34 only blocked by retention window, saga restore drill `status=ok`, and vault generated content is clean except `.obsidian/workspace.json`.
 

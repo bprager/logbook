@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes.
+### Fixed
+
+- Corrected post-release status metadata to reflect that `v0.2.0` is tagged and pushed.
 
 ## [0.2.0] - 2026-05-03
 
