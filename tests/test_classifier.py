@@ -19,6 +19,15 @@ class ClassifierTests(TestCase):
         self.assertEqual(result.route_kind, "log")
         self.assertEqual(result.content, "follow up on recorder cleanup.")
 
+    def test_routes_asr_log_record_variants(self) -> None:
+        lock_record = classify_transcript("Lock record. I bought groceries.")
+        block_entry = classify_transcript("Block entry. Onion was rotten.")
+
+        self.assertEqual(lock_record.route_kind, "log")
+        self.assertEqual(lock_record.content, "I bought groceries.")
+        self.assertEqual(block_entry.route_kind, "log")
+        self.assertEqual(block_entry.content, "Onion was rotten.")
+
     def test_routes_category_prefix(self) -> None:
         result = classify_transcript("To do: add route telemetry later.")
 

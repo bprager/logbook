@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed local inbox copying from the Sony recorder by copying audio bytes without preserving recorder filesystem flags that macOS may reject.
 - Fixed the Obsidian vault stage-command template so generated `10 - Logs` paths with spaces can be staged by the vault workflow.
 - Expanded the Obsidian vault stage-command template to include all generated Logbook note roots, including daily logs, reviews, meetings, category notes, and dead letters.
+- Recognized ASR variants `Lock record` and `Block entry` as log-entry prefixes so rescued daily-log recordings do not remain as dead letters.
 
 ## [0.1.0] - 2026-04-27
 

@@ -4,7 +4,7 @@ Updated: 2026-05-03
 
 ## Current Focus
 
-Second-batch retention cleanup completed; recorder-side cleanup remains pending until the Sony recorder is mounted.
+May 1/2 production batch is processed, dead letters are clear, and memory graph drift is repaired.
 
 ## Active Request
 
@@ -24,6 +24,7 @@ Second-batch retention cleanup completed; recorder-side cleanup remains pending 
 - Start production hardening with LGB-030 launchd rollout, LGB-031 metrics, LGB-032 backups, LGB-033 graph pruning, and LGB-034 release readiness.
 - Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
 - Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
+- Continue concluding work summaries with a recommended next step.
 
 ## Progress
 
@@ -252,3 +253,11 @@ Second-batch retention cleanup completed; recorder-side cleanup remains pending 
 - Post-cleanup verification passed: 79 tests OK, `ruff check .` OK, `memory-graph-query --query open-loops` returned 0 results, and scans of active transcripts plus generated vault notes found no `Placeholder transcript`, `fake-large-v3`, or `fake-` markers.
 - Backlog metadata normalized on 2026-05-01: LGB-001 Foundations and LGB-002 Configuration are now marked completed, matching the implemented repo/tooling/config state.
 - Production hardening backlog opened with LGB-030 Production launchd Rollout, LGB-031 Prometheus Metrics And Scrape Integration, LGB-032 Saga Backups And Restore Drill, LGB-033 Memory Graph Prune And Drift Repair, and LGB-034 0.2.0 Release Readiness.
+- Second-batch retention cleanup completed on 2026-05-03: jobs 18-24 have no local or recorder cleanup pending after guarded local cleanup and recorder-side deletion.
+- May 1/2 recorder batch processed on 2026-05-03: 10 Sony recorder files were discovered as jobs 25-34, copied, transcribed through live `odin`, routed, consolidated, linked, committed to the vault, and marked vault-synced.
+- May 1/2 routing initially produced 8 log entries and 2 dead letters. Jobs 27 and 29 were rescued as log entries after adding classifier aliases for ASR variants `Lock record` and `Block entry`.
+- The canonical 2026-05-01 daily log was rebuilt after rescuing jobs 27 and 29, entity linking was rerun, stale dead-letter artifacts were removed, and the vault rescue commit was pushed as `d2061d5 Rescue May 1 Logbook dead letters`.
+- Current dead-letter list is empty, and `cleanup-plan --env .env` reports 24 eligible jobs with no pending local or recorder action plus 10 newer jobs blocked only by `retention_window_open` until 2026-05-04.
+- Recorder discovery currently shows 10 May 1/2 MP3 files still on `/Volumes/IC RECORDER`; they are retained until their cleanup gates pass.
+- Memgraph drift after the May ingest was repaired by restoring planned `HAS_SEGMENT`, `MENTIONED_IN`, and `SUPPORTED_BY` relationships. Live `memory-graph-health --env .env` now reports `status=ok` with 432 planned/live nodes and 827 planned/live relationships.
+- Verification after classifier aliases and operational cleanup passed: 86 tests OK, `ruff check .` OK, `py_compile` OK, and `git diff --check` OK.
