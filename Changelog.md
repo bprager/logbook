@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the production hardening backlog for launchd rollout, Prometheus metrics, `saga` backups, memory graph pruning, and `0.2.0` release readiness.
 - Added an entity-linking CLI and scheduled launchd job that links canonical daily logs to existing Obsidian people, event, and object notes.
 - Added a dead-letter management wrapper and CLI for listing, assigning pending dead letters to log entries, rebuilding daily logs, rerunning entity linking, and auditing discards.
+- Added LGB-033 memory graph repair with dry-run-first exact ID drift planning, missing proof-graph upserts, and explicit stale Logbook namespace pruning.
 
 ### Fixed
 

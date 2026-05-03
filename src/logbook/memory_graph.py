@@ -76,6 +76,28 @@ class MemoryGraphSyncResult:
 
 
 @dataclass(frozen=True)
+class MemoryGraphRepairPlan:
+    plan: MemoryGraphPlan
+    live_node_ids: tuple[str, ...]
+    live_relationship_ids: tuple[str, ...]
+    missing_nodes: tuple[MemoryNode, ...]
+    missing_relationships: tuple[MemoryRelationship, ...]
+    stale_node_ids: tuple[str, ...]
+    stale_relationship_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MemoryGraphRepairResult:
+    repair_plan: MemoryGraphRepairPlan
+    execute: bool
+    prune_stale: bool
+    nodes_written: int = 0
+    relationships_written: int = 0
+    nodes_pruned: int = 0
+    relationships_pruned: int = 0
+
+
+@dataclass(frozen=True)
 class MemoryGraphHealth:
     plan: MemoryGraphPlan
     status: str
@@ -133,35 +155,7 @@ def build_memory_graph_plan(config: AppConfig, job_id: int | None = None) -> Mem
 
 def apply_memory_graph_plan(plan: MemoryGraphPlan, client: GraphClient) -> MemoryGraphSyncResult:
     try:
-        for labels, nodes in _nodes_by_labels(plan).items():
-            client.run(
-                _merge_nodes_cypher(labels),
-                {
-                    "rows": [
-                        {
-                            "id": node.id,
-                            "properties": _safe_properties(node.properties),
-                        }
-                        for node in nodes
-                    ]
-                },
-            )
-        for signature, relationships in _relationships_by_signature(plan).items():
-            relationship_type, start_label, end_label = signature
-            client.run(
-                _merge_relationships_cypher(relationship_type, start_label, end_label),
-                {
-                    "rows": [
-                        {
-                            "id": relationship.id,
-                            "start_id": relationship.start_id,
-                            "end_id": relationship.end_id,
-                            "properties": _safe_properties(relationship.properties),
-                        }
-                        for relationship in relationships
-                    ]
-                },
-            )
+        _write_memory_graph_plan(plan, client)
     finally:
         client.close()
     return MemoryGraphSyncResult(
@@ -169,6 +163,94 @@ def apply_memory_graph_plan(plan: MemoryGraphPlan, client: GraphClient) -> Memor
         execute=True,
         nodes_written=plan.node_count,
         relationships_written=plan.relationship_count,
+    )
+
+
+def build_memory_graph_repair_plan(
+    plan: MemoryGraphPlan,
+    client: GraphQueryClient,
+) -> MemoryGraphRepairPlan:
+    try:
+        live_node_ids = _id_rows(
+            client.query(_live_node_ids_cypher(), {"id_prefixes": _id_prefixes()})
+        )
+        live_relationship_ids = _id_rows(
+            client.query(
+                _live_relationship_ids_cypher(),
+                {"id_prefixes": _id_prefixes()},
+            )
+        )
+    finally:
+        client.close()
+
+    planned_nodes = {node.id: node for node in plan.nodes}
+    planned_relationships = {
+        relationship.id: relationship for relationship in plan.relationships
+    }
+    live_node_set = set(live_node_ids)
+    live_relationship_set = set(live_relationship_ids)
+    return MemoryGraphRepairPlan(
+        plan=plan,
+        live_node_ids=live_node_ids,
+        live_relationship_ids=live_relationship_ids,
+        missing_nodes=tuple(
+            node for node in plan.nodes if node.id not in live_node_set
+        ),
+        missing_relationships=tuple(
+            relationship
+            for relationship in plan.relationships
+            if relationship.id not in live_relationship_set
+        ),
+        stale_node_ids=tuple(
+            sorted(node_id for node_id in live_node_set if node_id not in planned_nodes)
+        ),
+        stale_relationship_ids=tuple(
+            sorted(
+                relationship_id
+                for relationship_id in live_relationship_set
+                if relationship_id not in planned_relationships
+            )
+        ),
+    )
+
+
+def apply_memory_graph_repair_plan(
+    repair_plan: MemoryGraphRepairPlan,
+    client: GraphClient,
+    *,
+    prune_stale: bool,
+) -> MemoryGraphRepairResult:
+    missing_plan = MemoryGraphPlan(
+        nodes=repair_plan.missing_nodes,
+        relationships=repair_plan.missing_relationships,
+        generated_at=repair_plan.plan.generated_at,
+    )
+    try:
+        _write_memory_graph_plan(missing_plan, client)
+        relationships_pruned = 0
+        nodes_pruned = 0
+        if prune_stale and repair_plan.stale_relationship_ids:
+            client.run(
+                _delete_relationships_by_id_cypher(),
+                {"ids": list(repair_plan.stale_relationship_ids)},
+            )
+            relationships_pruned = len(repair_plan.stale_relationship_ids)
+        if prune_stale and repair_plan.stale_node_ids:
+            client.run(
+                _delete_nodes_by_id_cypher(),
+                {"ids": list(repair_plan.stale_node_ids)},
+            )
+            nodes_pruned = len(repair_plan.stale_node_ids)
+    finally:
+        client.close()
+    return MemoryGraphRepairResult(
+        repair_plan=repair_plan,
+        execute=True,
+        prune_stale=prune_stale,
+        nodes_written=len(repair_plan.missing_nodes),
+        relationships_written=len(repair_plan.missing_relationships),
+        nodes_pruned=nodes_pruned,
+        relationships_pruned=relationships_pruned,
     )
 
 
@@ -860,6 +942,38 @@ def _relationships_by_signature(
     return grouped
 
 
+def _write_memory_graph_plan(plan: MemoryGraphPlan, client: GraphClient) -> None:
+    for labels, nodes in _nodes_by_labels(plan).items():
+        client.run(
+            _merge_nodes_cypher(labels),
+            {
+                "rows": [
+                    {
+                        "id": node.id,
+                        "properties": _safe_properties(node.properties),
+                    }
+                    for node in nodes
+                ]
+            },
+        )
+    for signature, relationships in _relationships_by_signature(plan).items():
+        relationship_type, start_label, end_label = signature
+        client.run(
+            _merge_relationships_cypher(relationship_type, start_label, end_label),
+            {
+                "rows": [
+                    {
+                        "id": relationship.id,
+                        "start_id": relationship.start_id,
+                        "end_id": relationship.end_id,
+                        "properties": _safe_properties(relationship.properties),
+                    }
+                    for relationship in relationships
+                ]
+            },
+        )
+
+
 def _id_prefixes() -> list[str]:
     return [
         f"{PROJECT}:job:",
@@ -906,10 +1020,47 @@ def _live_relationship_counts_cypher() -> str:
     )
 
 
+def _live_node_ids_cypher() -> str:
+    return (
+        "MATCH (n) "
+        "WHERE any(prefix IN $id_prefixes WHERE n.id STARTS WITH prefix) "
+        "RETURN n.id AS id "
+        "ORDER BY id"
+    )
+
+
+def _live_relationship_ids_cypher() -> str:
+    return (
+        "MATCH (a)-[r]->(b) "
+        "WHERE any(prefix IN $id_prefixes WHERE "
+        "a.id STARTS WITH prefix OR b.id STARTS WITH prefix) "
+        "RETURN r.id AS id "
+        "ORDER BY id"
+    )
+
+
+def _delete_relationships_by_id_cypher() -> str:
+    return "MATCH ()-[r]->() WHERE r.id IN $ids DELETE r"
+
+
+def _delete_nodes_by_id_cypher() -> str:
+    return "MATCH (n) WHERE n.id IN $ids DETACH DELETE n"
+
+
 def _single_count(rows: list[dict[str, object]]) -> int:
     if not rows:
         return 0
     return int(rows[0].get("count") or 0)
+
+
+def _id_rows(rows: list[dict[str, object]]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            str(row.get("id"))
+            for row in rows
+            if isinstance(row.get("id"), str) and row.get("id")
+        )
+    )
 
 
 def _count_rows(rows: list[dict[str, object]], key_name: str) -> dict[str, int]:

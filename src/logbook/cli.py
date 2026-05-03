@@ -21,7 +21,9 @@ from logbook.ledger import open_ledger
 from logbook.memory_graph import (
     Neo4jMemgraphClient,
     apply_memory_graph_plan,
+    apply_memory_graph_repair_plan,
     build_memory_graph_plan,
+    build_memory_graph_repair_plan,
     check_memory_graph_health,
     query_memory_graph_plan,
 )
@@ -361,6 +363,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     memory_health_parser.add_argument("--env", type=Path, default=Path(".env"))
 
+    memory_repair_parser = subparsers.add_parser(
+        "memory-graph-repair",
+        help="dry-run or repair exact Logbook memory graph drift without resetting Memgraph",
+    )
+    memory_repair_parser.add_argument("--env", type=Path, default=Path(".env"))
+    memory_repair_parser.add_argument(
+        "--prune-stale",
+        action="store_true",
+        help="delete stale Logbook-owned graph IDs that are absent from the local plan",
+    )
+    memory_repair_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="upsert missing planned IDs and optionally prune stale IDs",
+    )
+
     memory_resolve_parser = subparsers.add_parser(
         "memory-action-resolve",
         help="dry-run or mark a memory action candidate resolved in SQLite",
@@ -506,6 +524,8 @@ def main(argv: list[str] | None = None) -> int:
         return _memory_graph_query(args.env, args.query, args.job_id)
     if args.command == "memory-graph-health":
         return _memory_graph_health(args.env)
+    if args.command == "memory-graph-repair":
+        return _memory_graph_repair(args.env, args.prune_stale, execute=args.execute)
     if args.command == "memory-action-resolve":
         return _memory_action_resolve(
             args.env,
@@ -1397,6 +1417,101 @@ def _memory_graph_health(env_path: Path) -> int:
             f"drift={drift if drift is not None else '-'}"
         )
     return 1 if health.status in {"drift", "unavailable"} else 0
+
+
+def _memory_graph_repair(env_path: Path, prune_stale: bool, execute: bool) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+    if config.memgraph is None:
+        print("config_error: missing MEMGRAPH_URI", file=sys.stderr)
+        return 2
+
+    plan = build_memory_graph_plan(config)
+    try:
+        repair_plan = build_memory_graph_repair_plan(
+            plan,
+            Neo4jMemgraphClient(config.memgraph),
+        )
+    except RuntimeError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+    before_status = _memory_graph_repair_status(repair_plan)
+    result = None
+    after_status = "not_checked"
+    if execute:
+        try:
+            result = apply_memory_graph_repair_plan(
+                repair_plan,
+                Neo4jMemgraphClient(config.memgraph),
+                prune_stale=prune_stale,
+            )
+            after_plan = build_memory_graph_repair_plan(
+                plan,
+                Neo4jMemgraphClient(config.memgraph),
+            )
+        except RuntimeError as error:
+            print(f"config_error: {error}", file=sys.stderr)
+            return 2
+        after_status = _memory_graph_repair_status(after_plan)
+
+    print("Memory graph repair")
+    print(f"env_path={env_path}")
+    print(f"execute={_yes_no(execute)}")
+    print(f"prune_stale={_yes_no(prune_stale)}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    print(f"memgraph_uri={config.memgraph.uri}")
+    print(f"before_status={before_status}")
+    print(f"after_status={after_status}")
+    print(f"planned_nodes={plan.node_count}")
+    print(f"planned_relationships={plan.relationship_count}")
+    print(f"live_nodes={len(repair_plan.live_node_ids)}")
+    print(f"live_relationships={len(repair_plan.live_relationship_ids)}")
+    print(f"missing_nodes={len(repair_plan.missing_nodes)}")
+    print(f"missing_relationships={len(repair_plan.missing_relationships)}")
+    print(f"stale_nodes={len(repair_plan.stale_node_ids)}")
+    print(f"stale_relationships={len(repair_plan.stale_relationship_ids)}")
+    print(f"nodes_written={result.nodes_written if result is not None else 0}")
+    print(
+        "relationships_written="
+        f"{result.relationships_written if result is not None else 0}"
+    )
+    print(f"nodes_pruned={result.nodes_pruned if result is not None else 0}")
+    print(
+        "relationships_pruned="
+        f"{result.relationships_pruned if result is not None else 0}"
+    )
+    _print_id_preview("missing_node_ids", [node.id for node in repair_plan.missing_nodes])
+    _print_id_preview(
+        "missing_relationship_ids",
+        [relationship.id for relationship in repair_plan.missing_relationships],
+    )
+    _print_id_preview("stale_node_ids", list(repair_plan.stale_node_ids))
+    _print_id_preview("stale_relationship_ids", list(repair_plan.stale_relationship_ids))
+    return 0 if after_status in {"ok", "not_checked"} else 1
+
+
+def _memory_graph_repair_status(repair_plan) -> str:
+    has_drift = (
+        repair_plan.missing_nodes
+        or repair_plan.missing_relationships
+        or repair_plan.stale_node_ids
+        or repair_plan.stale_relationship_ids
+    )
+    return "drift" if has_drift else "ok"
+
+
+def _print_id_preview(label: str, ids: list[str], limit: int = 20) -> None:
+    print(f"{label}:")
+    for item in ids[:limit]:
+        print(f"- {item}")
+    if len(ids) > limit:
+        print(f"- ... {len(ids) - limit} more")
+    if not ids:
+        print("- -")
 
 
 def _memory_action_resolve(

@@ -775,7 +775,7 @@ Acceptance:
 
 ### LGB-033 - Memory Graph Prune And Drift Repair
 
-Status: Ready
+Status: Completed on 2026-05-03
 
 Priority: P0
 
@@ -793,6 +793,12 @@ Acceptance:
 - Drift caused by reroutes or removed generated notes can be repaired without resetting unrelated Memgraph data.
 - Dry run shows exactly what would be pruned.
 - Health reports `status=ok` after prune plus sync.
+
+Notes:
+
+- Implemented as `logbook memory-graph-repair --env .env`, dry-run by default.
+- The command compares exact Logbook-owned live node/relationship IDs against the local proof plan, upserts missing planned IDs with `--execute`, and prunes stale Logbook-owned IDs only when `--prune-stale --execute` is set.
+- Pruning is scoped to IDs in the Logbook memory namespace and does not reset unrelated Memgraph data.
 
 ### LGB-034 - 0.2.0 Release Readiness
 

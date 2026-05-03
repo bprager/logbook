@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -20,7 +21,9 @@ from logbook.insights import extract_insights
 from logbook.ledger import open_ledger
 from logbook.memory_graph import (
     apply_memory_graph_plan,
+    apply_memory_graph_repair_plan,
     build_memory_graph_plan,
+    build_memory_graph_repair_plan,
     check_memory_graph_health,
     query_memory_graph_plan,
 )
@@ -208,6 +211,132 @@ class MemoryGraphTests(TestCase):
             self.assertIn("planned_nodes", payload)
             self.assertEqual(payload["live_nodes"], None)
 
+    def test_memory_graph_repair_plan_reports_missing_and_stale_ids(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config)
+            missing_node = next(node for node in plan.nodes if "GeneratedNote" in node.labels)
+            missing_relationship = next(
+                relationship
+                for relationship in plan.relationships
+                if relationship.type == "SUPPORTED_BY"
+            )
+            stale_node_id = "logbook:job:999999:note:routed-note:stale"
+            stale_relationship_id = "logbook:job:999999:generated:stale"
+            stale_evidence_relationship_id = (
+                "logbook:person:stale:supported-by:"
+                "logbook:job:999999:evidence:segment:0000"
+            )
+            client = RepairGraphClient(
+                live_node_ids=[
+                    node.id for node in plan.nodes if node.id != missing_node.id
+                ]
+                + [stale_node_id],
+                live_relationship_ids=[
+                    relationship.id
+                    for relationship in plan.relationships
+                    if relationship.id != missing_relationship.id
+                ]
+                + [stale_relationship_id, stale_evidence_relationship_id],
+            )
+
+            repair_plan = build_memory_graph_repair_plan(plan, client)
+
+            self.assertEqual([node.id for node in repair_plan.missing_nodes], [missing_node.id])
+            self.assertEqual(repair_plan.stale_node_ids, (stale_node_id,))
+            self.assertEqual(
+                [relationship.id for relationship in repair_plan.missing_relationships],
+                [missing_relationship.id],
+            )
+            self.assertEqual(
+                repair_plan.stale_relationship_ids,
+                (stale_relationship_id, stale_evidence_relationship_id),
+            )
+            self.assertTrue(client.closed)
+
+    def test_apply_memory_graph_repair_plan_upserts_missing_and_prunes_stale(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config)
+            missing_node = next(node for node in plan.nodes if "GeneratedNote" in node.labels)
+            missing_relationship = next(
+                relationship
+                for relationship in plan.relationships
+                if relationship.type == "SUPPORTED_BY"
+            )
+            stale_node_id = "logbook:job:999999:note:routed-note:stale"
+            stale_relationship_id = "logbook:job:999999:generated:stale"
+            stale_evidence_relationship_id = (
+                "logbook:person:stale:supported-by:"
+                "logbook:job:999999:evidence:segment:0000"
+            )
+            client = RepairGraphClient(
+                live_node_ids=[
+                    node.id for node in plan.nodes if node.id != missing_node.id
+                ]
+                + [stale_node_id],
+                live_relationship_ids=[
+                    relationship.id
+                    for relationship in plan.relationships
+                    if relationship.id != missing_relationship.id
+                ]
+                + [stale_relationship_id, stale_evidence_relationship_id],
+            )
+            repair_plan = build_memory_graph_repair_plan(plan, client)
+
+            result = apply_memory_graph_repair_plan(
+                repair_plan,
+                client,
+                prune_stale=True,
+            )
+
+            self.assertEqual(result.nodes_written, 1)
+            self.assertEqual(result.relationships_written, 1)
+            self.assertEqual(result.relationships_pruned, 2)
+            self.assertEqual(result.nodes_pruned, 1)
+            self.assertTrue(
+                any(
+                    params.get("ids")
+                    == [stale_relationship_id, stale_evidence_relationship_id]
+                    for _, params in client.runs
+                )
+            )
+            self.assertTrue(any(params.get("ids") == [stale_node_id] for _, params in client.runs))
+            self.assertTrue(client.closed)
+
+    def test_memory_graph_repair_cli_is_dry_run_first(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            app_config = load_app_config(env_path)
+            _seed_memory_fixture_from_config(app_config)
+            plan = build_memory_graph_plan(app_config)
+            stale_node_id = "logbook:job:999999:note:routed-note:stale"
+            stale_relationship_id = "logbook:job:999999:generated:stale"
+            client = RepairGraphClient(
+                live_node_ids=[node.id for node in plan.nodes] + [stale_node_id],
+                live_relationship_ids=[
+                    relationship.id for relationship in plan.relationships
+                ]
+                + [stale_relationship_id],
+            )
+            stdout = io.StringIO()
+
+            with patch("logbook.cli.Neo4jMemgraphClient", return_value=client):
+                with redirect_stdout(stdout):
+                    exit_code = main(["memory-graph-repair", "--env", str(env_path)])
+
+            output = stdout.getvalue()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Memory graph repair", output)
+            self.assertIn("execute=no", output)
+            self.assertIn("prune_stale=no", output)
+            self.assertIn("stale_nodes=1", output)
+            self.assertIn("stale_relationships=1", output)
+            self.assertIn("nodes_written=0", output)
+            self.assertIn("relationships_written=0", output)
+            self.assertFalse(client.runs)
+
     def test_memory_action_resolution_removes_action_from_open_loops(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -359,6 +488,34 @@ class HealthGraphClient:
 
     def close(self) -> None:
         pass
+
+
+class RepairGraphClient:
+    def __init__(
+        self,
+        live_node_ids: list[str],
+        live_relationship_ids: list[str],
+    ) -> None:
+        self.live_node_ids = live_node_ids
+        self.live_relationship_ids = live_relationship_ids
+        self.runs: list[tuple[str, dict[str, object]]] = []
+        self.closed = False
+
+    def query(
+        self,
+        cypher: str,
+        parameters: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
+        del parameters
+        if "RETURN r.id AS id" in cypher:
+            return [{"id": relationship_id} for relationship_id in self.live_relationship_ids]
+        return [{"id": node_id} for node_id in self.live_node_ids]
+
+    def run(self, cypher: str, parameters: dict[str, object]) -> None:
+        self.runs.append((cypher, parameters))
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def _seed_memory_fixture(root: Path) -> AppConfig:

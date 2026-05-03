@@ -21,7 +21,7 @@ May 1/2 production batch is processed, dead letters are clear, and memory graph 
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
 - Keep the completed LGB-022 acceptance evidence current.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
-- Start production hardening with LGB-030 launchd rollout, LGB-031 metrics, LGB-032 backups, LGB-033 graph pruning, and LGB-034 release readiness.
+- Start production hardening with LGB-030 launchd rollout, LGB-031 metrics, LGB-032 backups, and LGB-034 release readiness.
 - Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
 - Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
 - Continue concluding work summaries with a recommended next step.
@@ -261,3 +261,4 @@ May 1/2 production batch is processed, dead letters are clear, and memory graph 
 - Recorder discovery currently shows 10 May 1/2 MP3 files still on `/Volumes/IC RECORDER`; they are retained until their cleanup gates pass.
 - Memgraph drift after the May ingest was repaired by restoring planned `HAS_SEGMENT`, `MENTIONED_IN`, and `SUPPORTED_BY` relationships. Live `memory-graph-health --env .env` now reports `status=ok` with 432 planned/live nodes and 827 planned/live relationships.
 - Verification after classifier aliases and operational cleanup passed: 86 tests OK, `ruff check .` OK, `py_compile` OK, and `git diff --check` OK.
+- LGB-033 implementation completed on 2026-05-03 with `logbook memory-graph-repair`, a dry-run-first command that compares exact Logbook-owned live IDs with the local proof plan, upserts missing planned nodes/relationships, and prunes stale Logbook-owned IDs only with explicit `--prune-stale --execute`.
