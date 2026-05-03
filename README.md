@@ -2,9 +2,9 @@
 
 Local-first voice capture for an Obsidian daily log, voice-note archive, and meeting transcript system.
 
-Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into an Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
+Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: implementation has started after planning release `0.1.0`. The safe local ingest, fake `odin` boundary, and test-vault routing slices are working.
+> Status: operational MVP release candidate `0.2.0`. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and `saga` restore-drill evidence in place. Release tagging still requires explicit operator approval.
 
 ## What It Does
 
@@ -16,6 +16,8 @@ Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stag
 - Updates the GitHub-backed Obsidian vault through the configured Obsidian CLI workflow.
 - Lets OpenClaw observe queue health, dead letters, inbox status, and bounded repair actions.
 - Deletes local and recorder-side source audio after the 24-hour retention gate confirms processing and vault sync.
+- Links canonical daily logs to existing Obsidian People, Event, and Object notes.
+- Backs up restorable non-audio operational state to `saga`.
 
 ## Architecture
 
@@ -57,21 +59,23 @@ Host roles:
 - [.codex/decisions.md](.codex/decisions.md) - accepted decisions and open questions.
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
+- [docs/backups.md](docs/backups.md) - `saga` backup policy and restore-drill runbook.
+- [docs/releases/0.2.0.md](docs/releases/0.2.0.md) - release candidate notes and verification evidence.
 - [Changelog.md](Changelog.md) - release history.
 
-## Planned MVP
+## Operational MVP
 
-1. Define configuration, schemas, and API contracts.
-2. Build the local routing and Markdown rendering slice with fixture transcripts.
-3. Add the `odin` worker contract and real faster-whisper integration.
-4. Add Sony recorder mount detection and deduplicated copying.
-5. Add Obsidian CLI sync/write workflow.
-6. Add OpenClaw status/action endpoints and Prometheus metrics.
-7. Run an end-to-end pilot against a test vault before writing to the real vault.
+- `mimir` owns Sony recorder discovery, local SQLite state, Logbook launchd jobs, Obsidian writes, retention cleanup, and the loopback status/action API.
+- `odin` runs the GPU ASR worker with faster-whisper `large-v3` on CUDA and exposes internal health and metrics.
+- The live Obsidian vault receives inbox notes, canonical daily logs, dead-letter/rescue updates, entity links, and generated review artifacts through the configured Git workflow.
+- OpenClaw gets bounded read/action API access without shell access to Logbook or `odin`.
+- `saga` stores timestamped non-audio backup artifacts validated by restore drills.
 
 ## Configuration
 
-Secrets and host-local settings live in `.env`, which is intentionally ignored by git. The local placeholder includes:
+Host-local runtime settings live in `.env`, which is intentionally ignored by git. Encrypted deployable settings live in tracked `secrets.yaml`, protected with SOPS/age; do not decrypt or print secret values in logs or release notes.
+
+The local placeholder includes:
 
 - `ODIN_API_TOKEN`
 - `LOGBOOK_READ_TOKEN`

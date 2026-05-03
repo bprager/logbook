@@ -824,7 +824,7 @@ Notes:
 
 ### LGB-034 - 0.2.0 Release Readiness
 
-Status: Ready after LGB-030, LGB-031, LGB-032, LGB-033
+Status: Completed on 2026-05-03; awaiting explicit tag approval
 
 Priority: P1
 
@@ -842,6 +842,14 @@ Acceptance:
 - The release candidate has a clean working tree except approved local-only files.
 - README and changelog accurately describe the live operational surface.
 - No release tag is created without explicit approval.
+
+Notes:
+
+- Prepared `0.2.0` release-candidate notes in `docs/releases/0.2.0.md`.
+- Updated README from implementation-started language to operational MVP release-candidate language.
+- Updated `VERSION`, `pyproject.toml`, and `Changelog.md` for `0.2.0`; no `v0.2.0` tag was created.
+- Added tracked SOPS/age encrypted `secrets.yaml` by explicit operator request.
+- Release evidence: `odin-health` healthy, Memgraph health `status=ok`, cleanup has 0 pending local/recorder actions with jobs 25-34 only blocked by retention window, saga restore drill `status=ok`, and vault generated content is clean except `.obsidian/workspace.json`.
 
 ### LGB-035 - Daily Log Entity Linker
 
