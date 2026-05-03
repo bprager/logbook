@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added LGB-033 memory graph repair with dry-run-first exact ID drift planning, missing proof-graph upserts, and explicit stale Logbook namespace pruning.
 - Added LGB-031 Prometheus text metrics endpoints for the Logbook API and `odin` worker, plus internal scrape-target and alert-candidate documentation.
 - Completed the LGB-030 production launchd rollout on `mimir`, installing Logbook API, recorder mount-probe, retention-audit, and entity-linker LaunchAgents while preserving OpenClaw ownership under `clawdbot`.
+- Added LGB-032 `saga` backup and restore-drill commands using SQLite backup semantics, explicit non-audio artifact policy, remote copy support, and first production restore evidence.
 
 ### Fixed
 

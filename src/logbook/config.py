@@ -41,6 +41,7 @@ class AppConfig:
     obsidian: "ObsidianConfig | None" = None
     api: "ApiConfig | None" = None
     memgraph: "MemgraphConfig | None" = None
+    backup: "BackupConfig | None" = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,12 @@ class MemgraphConfig:
     username: str | None = None
     password: str | None = None
     database: str | None = None
+
+
+@dataclass(frozen=True)
+class BackupConfig:
+    root: str
+    ssh_identity_file: str | None = None
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -124,6 +131,7 @@ def load_app_config(env_path: Path) -> AppConfig:
         obsidian=obsidian_config_from_values(values),
         api=api_config_from_values(values),
         memgraph=memgraph_config_from_values(values),
+        backup=backup_config_from_values(values, processing_root),
     )
 
 
@@ -194,6 +202,13 @@ def memgraph_config_from_values(values: dict[str, str]) -> MemgraphConfig | None
         or _optional(values, "LOGBOOK_MEMGRAPH_PASSWORD"),
         database=_optional(values, "MEMGRAPH_DATABASE")
         or _optional(values, "LOGBOOK_MEMGRAPH_DATABASE"),
+    )
+
+
+def backup_config_from_values(values: dict[str, str], processing_root: Path) -> BackupConfig:
+    return BackupConfig(
+        root=values.get("LOGBOOK_BACKUP_ROOT") or str(processing_root / "backups"),
+        ssh_identity_file=_optional(values, "LOGBOOK_BACKUP_SSH_IDENTITY_FILE"),
     )
 
 

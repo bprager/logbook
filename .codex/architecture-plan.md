@@ -275,3 +275,5 @@ Dead-letter management status: LGB-036 adds a dry-run-first operator script for 
 Metrics status: LGB-031 adds Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. Scrape targets and alert candidates are documented in `docs/metrics.md`, with the transcription path still kept direct over the trusted LAN rather than through `fenrir`.
 
 Launchd rollout status: LGB-030 installed the Logbook API, recorder mount probe, retention audit, and entity linker as `bernd` user LaunchAgents on `mimir` without starting OpenClaw services as `bernd`. The Logbook API listens on `127.0.0.1:8788`; `127.0.0.1:8787` remains owned by the `clawdbot` CashClaw/OpenClaw adapter.
+
+Backup status: LGB-032 adds dry-run-first backups and a read-only restore drill. The backup set uses SQLite backup semantics, excludes live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio, and writes to `saga` through `192.168.1.3:/mnt/saga/Napoleon/logbook-backups`. First validated backup: `logbook-backup-20260503T155634Z` with 34 ledger jobs and a successful remote restore drill.

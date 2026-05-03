@@ -61,6 +61,8 @@ MEMGRAPH_URI=bolt://odin:7697
 MEMGRAPH_USERNAME=logbook
 MEMGRAPH_PASSWORD=secret
 MEMGRAPH_DATABASE=memgraph
+LOGBOOK_BACKUP_ROOT=192.168.1.3:/mnt/saga/Napoleon/logbook-backups
+LOGBOOK_BACKUP_SSH_IDENTITY_FILE=/Users/bernd/.ssh/id_rsa_odin
 """.lstrip(),
             encoding="utf-8",
         )
@@ -86,6 +88,12 @@ MEMGRAPH_DATABASE=memgraph
         self.assertEqual(config.memgraph.username, "logbook")
         self.assertEqual(config.memgraph.password, "secret")
         self.assertEqual(config.memgraph.database, "memgraph")
+        self.assertIsNotNone(config.backup)
+        self.assertEqual(
+            config.backup.root,
+            "192.168.1.3:/mnt/saga/Napoleon/logbook-backups",
+        )
+        self.assertEqual(config.backup.ssh_identity_file, "/Users/bernd/.ssh/id_rsa_odin")
 
     def test_retention_hours_must_be_positive(self) -> None:
         env_path = Path(self._testMethodName) / ".env"

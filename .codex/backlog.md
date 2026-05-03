@@ -767,7 +767,7 @@ Notes:
 
 ### LGB-032 - Saga Backups And Restore Drill
 
-Status: Ready
+Status: Completed on 2026-05-03
 
 Priority: P0
 
@@ -785,6 +785,15 @@ Acceptance:
 - A backup run produces a timestamped, restorable artifact set on `saga`.
 - The restore drill proves ledger integrity and expected job counts from a backup copy.
 - Secrets and raw source audio are handled according to the documented policy.
+
+Notes:
+
+- Added dry-run-first `backup-run` and read-only `backup-restore-drill` CLI commands.
+- SQLite backup uses `sqlite3.Connection.backup`; no raw live WAL database copy is used.
+- Live target is `192.168.1.3:/mnt/saga/Napoleon/logbook-backups`, which writes through `odin` to the `saga` NFS mount using `/Users/bernd/.ssh/id_rsa_odin`.
+- First production artifact set: `logbook-backup-20260503T155634Z`, 34 ledger jobs, 4 audit records, 42 copied artifacts.
+- Restore drill from the remote `saga` copy reported `status=ok`, `integrity_check=ok`, schema version `1`, and job count `34`.
+- Policy: live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio are excluded.
 
 ### LGB-033 - Memory Graph Prune And Drift Repair
 

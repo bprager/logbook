@@ -228,6 +228,16 @@ probe. It does not copy, transcribe, route, or delete audio. See
 [docs/launchd.md](docs/launchd.md) for install guidance and the OpenClaw runtime ownership
 guardrail.
 
+Plan a non-audio backup and run a restore drill:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli backup-run --env .env --repo-root /Users/bernd/Projects/Logbook
+PYTHONPATH=src python3 -m logbook.cli backup-restore-drill --env .env --backup BACKUP_DIR_OR_REMOTE
+```
+
+Backups use SQLite backup semantics and exclude live secrets plus raw/quarantined
+audio. See [docs/backups.md](docs/backups.md).
+
 Run the standard-library test suite:
 
 ```bash

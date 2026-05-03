@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
+from logbook.backup import run_backup, run_restore_drill
 from logbook.config import ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
@@ -464,6 +467,39 @@ def main(argv: list[str] | None = None) -> int:
         help="Python executable launchd should run",
     )
 
+    backup_run_parser = subparsers.add_parser(
+        "backup-run",
+        help="plan or write a restorable non-audio backup artifact set",
+    )
+    backup_run_parser.add_argument("--env", type=Path, default=Path(".env"))
+    backup_run_parser.add_argument(
+        "--backup-root",
+        default=None,
+        help="local path or host:/path target; defaults to LOGBOOK_BACKUP_ROOT",
+    )
+    backup_run_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="repository root for configuration templates",
+    )
+    backup_run_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="write backup artifacts; without this flag the command is a dry run",
+    )
+
+    restore_drill_parser = subparsers.add_parser(
+        "backup-restore-drill",
+        help="open a backup ledger read-only and validate counts without mutating production",
+    )
+    restore_drill_parser.add_argument("--env", type=Path, default=Path(".env"))
+    restore_drill_parser.add_argument(
+        "--backup",
+        required=True,
+        help="backup directory or host:/path containing manifest.json",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "recorder-discover":
@@ -544,6 +580,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cleanup_audio(args.env, execute=args.execute, include_recorder=args.include_recorder)
     if args.command == "launchd-render":
         return _launchd_render(args.env, args.output_dir, args.repo_root, args.python_bin)
+    if args.command == "backup-run":
+        return _backup_run(args.env, args.backup_root, args.repo_root, execute=args.execute)
+    if args.command == "backup-restore-drill":
+        return _backup_restore_drill(args.env, args.backup)
 
     parser.error(f"unsupported command: {args.command}")
     return 2
@@ -1711,6 +1751,89 @@ def _launchd_render(
     for path in paths:
         print(f"- {path}")
     return 0
+
+
+def _backup_run(
+    env_path: Path,
+    backup_root: str | None,
+    repo_root: Path,
+    execute: bool,
+) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+    target_root = backup_root or (config.backup.root if config.backup is not None else None)
+    if target_root is None:
+        print("config_error: missing backup root", file=sys.stderr)
+        return 2
+
+    try:
+        result = run_backup(
+            config=config,
+            repo_root=repo_root,
+            env_path=env_path,
+            backup_root=target_root,
+            execute=execute,
+            ssh_identity_file=(
+                config.backup.ssh_identity_file if config.backup is not None else None
+            ),
+        )
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"backup_error: {error}", file=sys.stderr)
+        return 1
+
+    print("Logbook backup")
+    print(f"env_path={env_path}")
+    print(f"repo_root={repo_root}")
+    print(f"backup_root={result.backup_root}")
+    print(f"backup_id={result.backup_id}")
+    print(f"backup_dir={result.backup_dir}")
+    print(f"remote_target={result.remote_target or '-'}")
+    print(f"execute={_yes_no(result.executed)}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+    print(f"audio_policy={result.audio_policy}")
+    print(f"secret_policy={result.secret_policy}")
+    print(f"ledger_job_count={result.ledger_job_count}")
+    print(f"action_audit_count={result.action_audit_count}")
+    print(f"planned_artifact_count={len(result.planned_relative_paths)}")
+    print(f"copied_artifact_count={len(result.copied_relative_paths)}")
+    print(f"manifest_path={result.manifest_path if result.executed else '-'}")
+    print("backup_artifacts:")
+    paths = result.copied_relative_paths if result.executed else result.planned_relative_paths
+    for path in paths:
+        print(f"- {path}")
+    return 0
+
+
+def _backup_restore_drill(env_path: Path, backup_location: str) -> int:
+    try:
+        config = load_app_config(env_path)
+        result = run_restore_drill(
+            backup_location,
+            ssh_identity_file=(
+                config.backup.ssh_identity_file if config.backup is not None else None
+            ),
+        )
+    except (ConfigError, OSError, ValueError, sqlite3.Error, subprocess.CalledProcessError) as error:
+        print(f"restore_drill_error: {error}", file=sys.stderr)
+        return 1
+
+    print("Logbook restore drill")
+    print(f"backup_dir={result.backup_dir}")
+    print(f"manifest_path={result.manifest_path}")
+    print(f"ledger_path={result.ledger_path}")
+    print("write_production=no")
+    print("delete_audio=no")
+    print(f"status={result.status}")
+    print(f"integrity_check={result.integrity_check}")
+    print(f"schema_version={result.schema_version if result.schema_version is not None else '-'}")
+    print(f"expected_job_count={result.expected_job_count if result.expected_job_count is not None else '-'}")
+    print(f"job_count={result.job_count}")
+    print(f"action_audit_count={result.action_audit_count}")
+    return 0 if result.status == "ok" else 1
 
 
 def _print_vault_preflight(preflight) -> None:
