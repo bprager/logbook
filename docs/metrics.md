@@ -15,7 +15,7 @@ scrape_configs:
     scrape_timeout: 30s
     static_configs:
       - targets:
-          - 192.168.1.8:8787
+          - 192.168.1.8:8788
 
   - job_name: logbook-odin-worker
     scrape_timeout: 15s
@@ -30,6 +30,8 @@ human-facing dashboards.
 
 The Logbook API scrape includes a live graph-health check against Memgraph, so
 use an explicit scrape timeout instead of relying on Prometheus defaults.
+On `mimir`, port `8787` is reserved for the `clawdbot` CashClaw/OpenClaw
+adapter; Logbook listens on `8788`.
 
 ## Recorder/API Metrics
 

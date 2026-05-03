@@ -273,3 +273,5 @@ Entity-linking status: LGB-035 adds a dry-run-first scheduled job that scans can
 Dead-letter management status: LGB-036 adds a dry-run-first operator script for listing, assigning, and discarding dead letters. Assigning a dead letter to the log route writes a rescued inbox note, records an audit action, rebuilds the affected daily log, reruns entity linking, and clears stale vault-sync state for the rescued job.
 
 Metrics status: LGB-031 adds Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. Scrape targets and alert candidates are documented in `docs/metrics.md`, with the transcription path still kept direct over the trusted LAN rather than through `fenrir`.
+
+Launchd rollout status: LGB-030 installed the Logbook API, recorder mount probe, retention audit, and entity linker as `bernd` user LaunchAgents on `mimir` without starting OpenClaw services as `bernd`. The Logbook API listens on `127.0.0.1:8788`; `127.0.0.1:8787` remains owned by the `clawdbot` CashClaw/OpenClaw adapter.

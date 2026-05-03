@@ -4,7 +4,7 @@ Updated: 2026-05-03
 
 ## Current Focus
 
-May 1/2 production batch is processed, dead letters are clear, and memory graph drift is repaired.
+May 1/2 production batch is processed, dead letters are clear, memory graph drift is repaired, and Logbook launchd jobs are installed on `mimir`.
 
 ## Active Request
 
@@ -15,13 +15,12 @@ May 1/2 production batch is processed, dead letters are clear, and memory graph 
 - Implement LGB-014 Dead-Letter Writer, then LGB-013 Category Note Writer.
 - Implement LGB-019 Status API with correctly configured Swagger UI.
 - Implement LGB-020 Bounded Action API with audit records and action-token auth.
-- Implement LGB-021 launchd Packaging without starting OpenClaw services as `bernd`.
 - Implement LGB-017 Meeting Diarization before meeting note rendering.
 - Implement LGB-018 Meeting Note Renderer.
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
 - Keep the completed LGB-022 acceptance evidence current.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
-- Start production hardening with LGB-030 launchd rollout, LGB-032 backups, and LGB-034 release readiness.
+- Continue production hardening with LGB-032 backups before LGB-034 release readiness.
 - Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
 - Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
 - Continue concluding work summaries with a recommended next step.
@@ -263,3 +262,4 @@ May 1/2 production batch is processed, dead letters are clear, and memory graph 
 - Verification after classifier aliases and operational cleanup passed: 86 tests OK, `ruff check .` OK, `py_compile` OK, and `git diff --check` OK.
 - LGB-033 implementation completed on 2026-05-03 with `logbook memory-graph-repair`, a dry-run-first command that compares exact Logbook-owned live IDs with the local proof plan, upserts missing planned nodes/relationships, and prunes stale Logbook-owned IDs only with explicit `--prune-stale --execute`.
 - LGB-031 implementation completed on 2026-05-03 with Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. The metrics expose path-safe status counts, cleanup counters, graph health status, worker readiness, worker job counts, and model metadata. Scrape targets and alert candidates are documented in `docs/metrics.md`.
+- LGB-030 rollout completed on 2026-05-03 with `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` installed as `bernd` user LaunchAgents. The Logbook API now listens on `127.0.0.1:8788` because `127.0.0.1:8787` is reserved for the `clawdbot` CashClaw/OpenClaw adapter. Live checks passed for `/health`, `/metrics`, read-only mount-probe wiring, read-only retention-audit wiring, and OpenClaw ownership separation.

@@ -712,7 +712,7 @@ Acceptance:
 
 ### LGB-030 - Production launchd Rollout
 
-Status: Ready
+Status: Completed on 2026-05-03
 
 Priority: P0
 
@@ -730,6 +730,13 @@ Acceptance:
 - A fresh operator can install, inspect, stop, and rollback the Logbook launchd jobs without reading implementation code.
 - The launchd rollout does not start OpenClaw services under `bernd`.
 - Status/API and recorder probe behavior are verified after bootstrap.
+
+Notes:
+
+- Installed `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` as `bernd` user LaunchAgents on `mimir`.
+- Moved Logbook API from `127.0.0.1:8787` to `127.0.0.1:8788` because `8787` is already owned by the `clawdbot` CashClaw/OpenClaw adapter.
+- Verified `curl http://127.0.0.1:8788/health`, `/metrics`, the read-only mount probe wiring, and the read-only retention audit wiring.
+- Verified OpenClaw gateway/node processes remained owned by `clawdbot`; only Logbook launchd jobs run as `bernd`.
 
 ### LGB-031 - Prometheus Metrics And Scrape Integration
 
