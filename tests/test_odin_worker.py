@@ -52,6 +52,37 @@ class OdinWorkerTests(TestCase):
         self.assertEqual(result.json()["text"], "log entry real worker transcript")
         self.assertEqual(result.json()["segments"][0]["start_seconds"], 0.0)
 
+    def test_worker_metrics_report_readiness_and_job_counts_without_paths(self) -> None:
+        with TemporaryDirectory() as tmp:
+            worker_root = Path(tmp)
+            app = create_odin_worker_app(
+                OdinWorkerConfig(root=worker_root, odin=_odin_config()),
+                transcriber=_FakeTranscriber(),
+            )
+            client = TestClient(app)
+
+            client.post(
+                "/jobs",
+                data={
+                    "job_id": "17",
+                    "checksum_sha256": "abc123",
+                    "diarize": "false",
+                },
+                files={"audio": ("260429_0821.mp3", b"audio bytes", "audio/mpeg")},
+            )
+            response = client.get("/metrics")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/plain", response.headers["content-type"])
+        body = response.text
+        self.assertIn("odin_worker_up 1", body)
+        self.assertIn("odin_worker_model_ready 1", body)
+        self.assertIn('odin_worker_jobs_by_status{status="succeeded"} 1', body)
+        self.assertIn("odin_worker_jobs_in_memory 1", body)
+        self.assertIn('odin_worker_model_info{asr_model="large-v3"', body)
+        self.assertNotIn(str(worker_root), body)
+        self.assertNotIn("260429_0821.mp3", body)
+
 
 class _FakeTranscriber:
     @property

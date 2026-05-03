@@ -311,9 +311,6 @@ def check_memory_graph_health(
             graph.query(_live_label_counts_cypher(), {"id_prefixes": _id_prefixes()}),
             key_name="label",
         )
-        live_relationship_count = _single_count(
-            graph.query(_live_relationship_count_cypher(), {"id_prefixes": _id_prefixes()})
-        )
         live_relationships = _count_rows(
             graph.query(
                 _live_relationship_counts_cypher(),
@@ -321,6 +318,7 @@ def check_memory_graph_health(
             ),
             key_name="type",
         )
+        live_relationship_count = sum(live_relationships.values())
     except Exception as error:
         return MemoryGraphHealth(
             plan=plan,
@@ -1003,18 +1001,16 @@ def _live_label_counts_cypher() -> str:
 
 def _live_relationship_count_cypher() -> str:
     return (
-        "MATCH (a)-[r]->(b) "
-        "WHERE any(prefix IN $id_prefixes WHERE "
-        "a.id STARTS WITH prefix OR b.id STARTS WITH prefix) "
+        "MATCH ()-[r]->() "
+        "WHERE any(prefix IN $id_prefixes WHERE r.id STARTS WITH prefix) "
         "RETURN count(r) AS count"
     )
 
 
 def _live_relationship_counts_cypher() -> str:
     return (
-        "MATCH (a)-[r]->(b) "
-        "WHERE any(prefix IN $id_prefixes WHERE "
-        "a.id STARTS WITH prefix OR b.id STARTS WITH prefix) "
+        "MATCH ()-[r]->() "
+        "WHERE any(prefix IN $id_prefixes WHERE r.id STARTS WITH prefix) "
         "RETURN type(r) AS type, count(r) AS count "
         "ORDER BY type"
     )
@@ -1031,9 +1027,8 @@ def _live_node_ids_cypher() -> str:
 
 def _live_relationship_ids_cypher() -> str:
     return (
-        "MATCH (a)-[r]->(b) "
-        "WHERE any(prefix IN $id_prefixes WHERE "
-        "a.id STARTS WITH prefix OR b.id STARTS WITH prefix) "
+        "MATCH ()-[r]->() "
+        "WHERE any(prefix IN $id_prefixes WHERE r.id STARTS WITH prefix) "
         "RETURN r.id AS id "
         "ORDER BY id"
     )

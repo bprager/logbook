@@ -272,6 +272,31 @@ class StatusApiTests(TestCase):
             self.assertNotIn(str(app_config.processing_root), serialized)
             self.assertNotIn(str(app_config.recorder.mount_path), serialized)
 
+    def test_metrics_endpoint_exposes_path_safe_prometheus_metrics(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp), read_token="read-secret")
+            _seed_status_fixture(app_config)
+            client = TestClient(create_app(app_config))
+
+            response = client.get("/metrics")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("text/plain", response.headers["content-type"])
+            body = response.text
+            self.assertIn("logbook_up 1", body)
+            self.assertIn("logbook_jobs_total 3", body)
+            self.assertIn('logbook_jobs_by_status{status="consolidated"} 1', body)
+            self.assertIn('logbook_jobs_by_status{status="dead_letter_written"} 1', body)
+            self.assertIn("logbook_dead_letters 1", body)
+            self.assertIn("logbook_cleanup_blocked 3", body)
+            self.assertIn("logbook_cleanup_local_pending 0", body)
+            self.assertIn('logbook_memory_graph_health_status{status="not_configured"} 1', body)
+            self.assertNotIn("source_path", body)
+            self.assertNotIn("copied_path", body)
+            self.assertNotIn("transcript_path", body)
+            self.assertNotIn(str(app_config.processing_root), body)
+            self.assertNotIn(str(app_config.recorder.mount_path), body)
+
 
 def _seed_status_fixture(config: AppConfig) -> dict[str, int]:
     recordings_dir = config.recorder.recordings_dir

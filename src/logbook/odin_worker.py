@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from email import policy
 from email.parser import BytesParser
@@ -9,8 +10,10 @@ from pathlib import Path
 from typing import Protocol
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 
 from logbook.config import OdinConfig
+from logbook.metrics import MetricSample, render_prometheus_metrics
 from logbook.odin import OdinTranscriptResult, OdinTranscriptSegment
 
 
@@ -68,6 +71,13 @@ def create_odin_worker_app(
             "asr_compute_type": config.odin.asr_compute_type,
         }
 
+    @app.get("/metrics", response_class=PlainTextResponse)
+    def metrics() -> PlainTextResponse:
+        return PlainTextResponse(
+            _render_worker_metrics(config, worker, jobs),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
     @app.post("/jobs")
     async def submit_job(request: Request) -> dict[str, str]:
         form = _parse_multipart(request.headers.get("content-type", ""), await request.body())
@@ -97,6 +107,51 @@ def create_odin_worker_app(
         return result.to_json_dict()
 
     return app
+
+
+def _render_worker_metrics(
+    config: OdinWorkerConfig,
+    worker: WorkerTranscriber,
+    jobs: dict[str, OdinTranscriptResult],
+) -> str:
+    status_counts = Counter(result.status for result in jobs.values())
+    samples = [
+        MetricSample(
+            "odin_worker_up",
+            1,
+            help_text="Odin worker process is serving metrics.",
+        ),
+        MetricSample(
+            "odin_worker_model_ready",
+            1 if worker.model_ready else 0,
+            help_text="Configured ASR model is loaded or loadable.",
+        ),
+        MetricSample(
+            "odin_worker_jobs_in_memory",
+            len(jobs),
+            help_text="Odin job results retained in this worker process.",
+        ),
+        MetricSample(
+            "odin_worker_model_info",
+            1,
+            labels={
+                "asr_model": config.odin.asr_model,
+                "device": config.odin.asr_device,
+                "compute_type": config.odin.asr_compute_type,
+            },
+            help_text="Static configured Odin ASR model metadata.",
+        ),
+    ]
+    for status, count in sorted(status_counts.items()):
+        samples.append(
+            MetricSample(
+                "odin_worker_jobs_by_status",
+                count,
+                labels={"status": status},
+                help_text="Odin worker jobs grouped by result status.",
+            )
+        )
+    return render_prometheus_metrics(samples)
 
 
 class FasterWhisperTranscriber:

@@ -1,11 +1,12 @@
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -17,6 +18,7 @@ from logbook.memory_graph import (
     check_memory_graph_health,
     query_memory_graph_plan,
 )
+from logbook.metrics import MetricSample, render_prometheus_metrics
 from logbook.retention import plan_audio_cleanup
 
 
@@ -288,6 +290,13 @@ def create_app(config: AppConfig) -> FastAPI:
             sqlite_reachable=True,
             job_count=len(jobs),
             counts_by_status=dict(sorted(counts.items())),
+        )
+
+    @app.get("/metrics", tags=["system"], response_class=PlainTextResponse)
+    def metrics() -> PlainTextResponse:
+        return PlainTextResponse(
+            _render_logbook_metrics(config),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
         )
 
     @app.get(
@@ -706,6 +715,137 @@ def _memory_action_review_response(
 
 def _all_jobs(sqlite_path: Path) -> list[RecordingJob]:
     return _jobs(sqlite_path, status=None, limit=10_000, offset=0)
+
+
+def _render_logbook_metrics(config: AppConfig) -> str:
+    samples: list[MetricSample] = [
+        MetricSample("logbook_up", 1, help_text="Logbook API process is serving metrics."),
+    ]
+    try:
+        jobs = _all_jobs(config.sqlite_path)
+    except sqlite3.Error:
+        return render_prometheus_metrics(
+            [
+                MetricSample(
+                    "logbook_up",
+                    0,
+                    help_text="Logbook API process is serving metrics.",
+                ),
+                MetricSample(
+                    "logbook_sqlite_reachable",
+                    0,
+                    help_text="SQLite ledger can be opened and queried.",
+                ),
+            ]
+        )
+
+    status_counts = Counter(job.status for job in jobs)
+    samples.extend(
+        [
+            MetricSample(
+                "logbook_sqlite_reachable",
+                1,
+                help_text="SQLite ledger can be opened and queried.",
+            ),
+            MetricSample(
+                "logbook_jobs_total",
+                len(jobs),
+                help_text="Total recording jobs in the local ledger.",
+            ),
+        ]
+    )
+    for status, count in sorted(status_counts.items()):
+        samples.append(
+            MetricSample(
+                "logbook_jobs_by_status",
+                count,
+                labels={"status": status},
+                help_text="Recording jobs grouped by ledger status.",
+            )
+        )
+    samples.append(
+        MetricSample(
+            "logbook_dead_letters",
+            status_counts.get("dead_letter_written", 0),
+            help_text="Dead-letter jobs awaiting operator review.",
+        )
+    )
+    samples.append(
+        MetricSample(
+            "logbook_open_log_entries",
+            len(
+                [
+                    job
+                    for job in jobs
+                    if job.status == "inbox_written" and job.classification == "log"
+                ]
+            ),
+            help_text="Log inbox entries waiting for daily consolidation.",
+        )
+    )
+    latest = _latest_consolidated_log(config.sqlite_path)
+    samples.append(
+        MetricSample(
+            "logbook_latest_consolidation_age_seconds",
+            _age_seconds(latest.consolidated_at if latest is not None else None),
+            help_text="Age of the latest canonical daily-log consolidation.",
+        )
+    )
+    cleanup_plan = plan_audio_cleanup(config)
+    samples.extend(
+        [
+            MetricSample(
+                "logbook_cleanup_eligible",
+                cleanup_plan.eligible_count,
+                help_text="Jobs eligible for guarded source-audio cleanup.",
+            ),
+            MetricSample(
+                "logbook_cleanup_blocked",
+                cleanup_plan.blocked_count,
+                help_text="Jobs blocked from source-audio cleanup.",
+            ),
+            MetricSample(
+                "logbook_cleanup_local_pending",
+                cleanup_plan.local_pending_count,
+                help_text="Jobs with local copied-audio cleanup still pending.",
+            ),
+            MetricSample(
+                "logbook_cleanup_recorder_pending",
+                cleanup_plan.recorder_pending_count,
+                help_text="Jobs with recorder-side cleanup still pending.",
+            ),
+        ]
+    )
+    graph_health = check_memory_graph_health(config)
+    for status in ("ok", "drift", "unavailable", "not_configured"):
+        samples.append(
+            MetricSample(
+                "logbook_memory_graph_health_status",
+                1 if graph_health.status == status else 0,
+                labels={"status": status},
+                help_text="Memory graph health status as a one-hot gauge.",
+            )
+        )
+    samples.append(
+        MetricSample(
+            "logbook_memory_graph_drift",
+            0 if graph_health.status in {"ok", "not_configured"} else 1,
+            help_text="One when live Memgraph differs from the local proof plan.",
+        )
+    )
+    return render_prometheus_metrics(samples)
+
+
+def _age_seconds(value: Optional[str]) -> int:
+    if value is None:
+        return 0
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return 0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - parsed).total_seconds()))
 
 
 def _jobs(

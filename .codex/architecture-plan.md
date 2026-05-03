@@ -271,3 +271,5 @@ Health status: LGB-029 adds a read-only graph drift check through CLI and FastAP
 Entity-linking status: LGB-035 adds a dry-run-first scheduled job that scans canonical daily logs for existing Obsidian People, Event, and Object notes, then links matching mentions without mutating transcripts, inbox notes, source audio, or recorder files.
 
 Dead-letter management status: LGB-036 adds a dry-run-first operator script for listing, assigning, and discarding dead letters. Assigning a dead letter to the log route writes a rescued inbox note, records an audit action, rebuilds the affected daily log, reruns entity linking, and clears stale vault-sync state for the rescued job.
+
+Metrics status: LGB-031 adds Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. Scrape targets and alert candidates are documented in `docs/metrics.md`, with the transcription path still kept direct over the trusted LAN rather than through `fenrir`.

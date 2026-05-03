@@ -733,7 +733,7 @@ Acceptance:
 
 ### LGB-031 - Prometheus Metrics And Scrape Integration
 
-Status: Ready
+Status: Completed on 2026-05-03
 
 Priority: P0
 
@@ -751,6 +751,12 @@ Acceptance:
 - Metrics are path-safe and do not expose source audio, transcript paths, bearer tokens, or local vault paths.
 - Prometheus can scrape the configured endpoints over the trusted LAN or loopback path.
 - Alert candidates map to clear operator actions.
+
+Notes:
+
+- Implemented `/metrics` on the Logbook API and `odin` worker using Prometheus text exposition without adding an external dependency.
+- Documented internal scrape targets and alert candidates in `docs/metrics.md`.
+- Metrics are count/status/model gauges only and avoid source audio, transcript, token, and vault path exposure.
 
 ### LGB-032 - Saga Backups And Restore Drill
 

@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an entity-linking CLI and scheduled launchd job that links canonical daily logs to existing Obsidian people, event, and object notes.
 - Added a dead-letter management wrapper and CLI for listing, assigning pending dead letters to log entries, rebuilding daily logs, rerunning entity linking, and auditing discards.
 - Added LGB-033 memory graph repair with dry-run-first exact ID drift planning, missing proof-graph upserts, and explicit stale Logbook namespace pruning.
+- Added LGB-031 Prometheus text metrics endpoints for the Logbook API and `odin` worker, plus internal scrape-target and alert-candidate documentation.
 
 ### Fixed
 

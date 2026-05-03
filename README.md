@@ -56,6 +56,7 @@ Host roles:
 - [.codex/backlog.md](.codex/backlog.md) - dependency-aware delivery backlog.
 - [.codex/decisions.md](.codex/decisions.md) - accepted decisions and open questions.
 - [.codex/status.md](.codex/status.md) - current planning status.
+- [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
 - [Changelog.md](Changelog.md) - release history.
 
 ## Planned MVP
