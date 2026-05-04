@@ -1,12 +1,12 @@
 # Status
 
-Updated: 2026-05-03
+Updated: 2026-05-04
 
 ## Current Focus
 
 `0.2.0` is tagged and pushed as `v0.2.0` after explicit operator approval. May 1/2 production batch is processed, dead letters are clear, memory graph drift is repaired, Logbook launchd jobs are installed on `mimir`, and the first `saga` backup/restore drill is complete.
 
-Current blocker: jobs 25-34 source-audio cleanup remains gated by `retention_window_open` until 2026-05-04; no local or recorder cleanup should be executed for those jobs before the ledger gate opens.
+Current blocker: the first live meeting recording, `260504_1308.mp3` / job 49, was discovered, copied, transcribed, and classified as `meeting`, but live diarization failed with `failed_missing_speaker_labels`. No meeting note was written to Obsidian because meeting rendering correctly requires diarized speaker labels. Local `.env` has no `HUGGINGFACE_TOKEN`, and the current live `odin` worker path does not produce speaker labels for `diarize=true`.
 
 ## Active Request
 
@@ -268,3 +268,4 @@ Current blocker: jobs 25-34 source-audio cleanup remains gated by `retention_win
 - LGB-032 implementation completed on 2026-05-03 with dry-run-first `backup-run`, read-only `backup-restore-drill`, and documentation in `docs/backups.md`. The first production backup was written to `192.168.1.3:/mnt/saga/Napoleon/logbook-backups/logbook-backup-20260503T155634Z`; the remote restore drill reported `status=ok`, `integrity_check=ok`, schema version `1`, expected job count `34`, and actual job count `34`. Live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio are excluded.
 - LGB-034 release readiness completed on 2026-05-03, and `v0.2.0` is tagged and pushed after explicit operator approval. README, changelog, `VERSION`, `pyproject.toml`, and `docs/releases/0.2.0.md` describe the operational MVP release. `secrets.yaml` is tracked by explicit operator request and contains SOPS/age encrypted secret values.
 - Post-release status metadata correction was committed and pushed as `4988e1c` on 2026-05-03, and Memgraph LGB-034 now reflects that `v0.2.0` is tagged and pushed. Follow-up operational checks passed: API `/health` reports 34 jobs, `/metrics` reports `logbook_up 1` and graph drift 0, `odin-health` reports model loaded, `memory-graph-health` reports 432 planned/live nodes and 827 planned/live relationships, cleanup has 24 eligible historical jobs with no pending action and 10 newer jobs blocked only by `retention_window_open`, and the `saga` restore drill reports `status=ok`.
+- First live meeting check on 2026-05-04 found `260504_1308.mp3` was not auto-picked up before manual intervention: `ingest-dry-run` reported it as `new` with no job ID. Manual discovery/copy/transcription created job 49 and transcript `/Users/bernd/VoiceIngest/transcripts/260504_1308.transcript.json`; the transcript starts with `Meeting.` and has 83 ASR segments. Live diarization returned `failed_missing_speaker_labels`, so job 49 remains `transcribed` with no `obsidian_path`. Jobs 45-48 from the same recorder batch were log entries, routed into Obsidian, consolidated into the 2026-05-03 and 2026-05-04 canonical daily logs, entity-linked, pushed to the vault as `e7dff4a`, marked vault-synced, and synced into Memgraph. A long `memory-graph-sync --execute` was interrupted after it stopped returning; scoped `memory-graph-repair --execute` wrote the 225 missing proof relationships and restored graph health to `status=ok` with 807 nodes and 1642 relationships.
