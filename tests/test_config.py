@@ -47,6 +47,7 @@ SONY_RECORDER_VOLUME_NAME=IC RECORDER
 SONY_RECORDER_MOUNT_PATH=/Volumes/IC RECORDER
 SONY_RECORDER_RECORDINGS_PATH=/REC_FILE/FOLDER01
 ODIN_API_BASE_URL=http://odin.test
+HUGGING_FACE_TOKEN=hf_test_token
 OBSIDIAN_CLI_BIN=/usr/local/bin/obsidian
 OBSIDIAN_VAULT_REPO_URL=https://github.com/bprager/obs-vault.git
 OBSIDIAN_VAULT_LOCAL_PATH=/Users/bernd/Obsidian/obs-vault
@@ -83,6 +84,7 @@ LOGBOOK_BACKUP_SSH_IDENTITY_FILE=/Users/bernd/.ssh/id_rsa_odin
         self.assertEqual(config.api.read_token, "read-secret")
         self.assertEqual(config.retention.hours, 24)
         self.assertEqual(config.retention.cleanup_mode, "trash_then_delete")
+        self.assertEqual(config.odin.huggingface_token, "hf_test_token")
         self.assertIsNotNone(config.memgraph)
         self.assertEqual(config.memgraph.uri, "bolt://odin:7697")
         self.assertEqual(config.memgraph.username, "logbook")

@@ -246,7 +246,11 @@ class FasterWhisperTranscriber:
         if self._diarization_pipeline is not None:
             return self._diarization_pipeline
 
-        token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HUGGING_FACE_TOKEN")
+        token = (
+            self.config.huggingface_token
+            or os.environ.get("HUGGINGFACE_TOKEN")
+            or os.environ.get("HUGGING_FACE_TOKEN")
+        )
         if not token:
             raise RuntimeError("HUGGINGFACE_TOKEN or HUGGING_FACE_TOKEN is required for diarization")
 

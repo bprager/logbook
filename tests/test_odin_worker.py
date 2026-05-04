@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -114,6 +117,23 @@ class OdinWorkerTests(TestCase):
             ("SPEAKER_00", "SPEAKER_01"),
         )
 
+    def test_faster_whisper_transcriber_loads_diarization_token_from_config(self) -> None:
+        fake_audio_module = types.ModuleType("pyannote.audio")
+        fake_audio_module.Pipeline = _FakePyannotePipelineFactory
+
+        config = _odin_config(huggingface_token="hf_from_env_file")
+        transcriber = FasterWhisperTranscriber(config)
+        with patch.dict(
+            sys.modules,
+            {
+                "pyannote": types.ModuleType("pyannote"),
+                "pyannote.audio": fake_audio_module,
+            },
+        ):
+            transcriber._load_diarization_pipeline()
+
+        self.assertEqual(_FakePyannotePipelineFactory.token, "hf_from_env_file")
+
 
 class _FakeTranscriber:
     @property
@@ -206,7 +226,17 @@ class _FakePyannoteFourPipeline:
         return _FakePyannoteFourOutput()
 
 
-def _odin_config() -> OdinConfig:
+class _FakePyannotePipelineFactory:
+    token: str | None = None
+
+    @classmethod
+    def from_pretrained(cls, model: str, *, token: str):
+        cls.model = model
+        cls.token = token
+        return _FakeDiarizationPipeline()
+
+
+def _odin_config(*, huggingface_token: str | None = None) -> OdinConfig:
     return OdinConfig(
         api_base_url="http://odin.test",
         api_token=None,
@@ -215,4 +245,5 @@ def _odin_config() -> OdinConfig:
         asr_compute_type="float16",
         asr_vad_filter=True,
         diarization_model="pyannote/speaker-diarization-3.1",
+        huggingface_token=huggingface_token,
     )

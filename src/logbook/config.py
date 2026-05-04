@@ -53,6 +53,7 @@ class OdinConfig:
     asr_compute_type: str
     asr_vad_filter: bool
     diarization_model: str
+    huggingface_token: str | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,9 @@ def odin_config_from_values(values: dict[str, str]) -> OdinConfig:
         asr_vad_filter=_parse_bool(values.get("ODIN_ASR_VAD_FILTER", "true")),
         diarization_model=values.get("ODIN_DIARIZATION_MODEL")
         or "pyannote/speaker-diarization-3.1",
+        huggingface_token=values.get("HUGGINGFACE_TOKEN")
+        or values.get("HUGGING_FACE_TOKEN")
+        or None,
     )
 
 
