@@ -20,6 +20,10 @@ dependencies = [
 memgraph = [
   "neo4j>=5,<6",
 ]
+odin = [
+  "faster-whisper>=1.1,<2",
+  "pyannote.audio>=3.1,<4",
+]
 
 [project.scripts]
 logbook = "logbook.cli:main"

@@ -158,6 +158,7 @@ class FasterWhisperTranscriber:
     def __init__(self, config: OdinConfig) -> None:
         self.config = config
         self._model = None
+        self._diarization_pipeline = None
         self._detail: str | None = None
 
     @property
@@ -196,6 +197,8 @@ class FasterWhisperTranscriber:
             )
             for segment in raw_segments
         )
+        if diarize:
+            segments = self._assign_speakers(audio_path, segments)
         text = " ".join(segment.text for segment in segments).strip()
         return OdinTranscriptResult(
             odin_job_id=odin_job_id,
@@ -218,6 +221,82 @@ class FasterWhisperTranscriber:
             )
             self._detail = "model loaded"
         return self._model
+
+    def _assign_speakers(
+        self,
+        audio_path: Path,
+        segments: tuple[OdinTranscriptSegment, ...],
+    ) -> tuple[OdinTranscriptSegment, ...]:
+        pipeline = self._load_diarization_pipeline()
+        annotation = pipeline(str(audio_path))
+        turns = tuple(_speaker_turns(annotation))
+        if not turns:
+            return segments
+        return tuple(
+            OdinTranscriptSegment(
+                start_seconds=segment.start_seconds,
+                end_seconds=segment.end_seconds,
+                text=segment.text,
+                speaker=_best_speaker_for_segment(segment, turns),
+            )
+            for segment in segments
+        )
+
+    def _load_diarization_pipeline(self):
+        if self._diarization_pipeline is not None:
+            return self._diarization_pipeline
+
+        token = os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HUGGING_FACE_TOKEN")
+        if not token:
+            raise RuntimeError("HUGGINGFACE_TOKEN or HUGGING_FACE_TOKEN is required for diarization")
+
+        from pyannote.audio import Pipeline
+
+        try:
+            pipeline = Pipeline.from_pretrained(self.config.diarization_model, token=token)
+        except TypeError:
+            pipeline = Pipeline.from_pretrained(
+                self.config.diarization_model,
+                use_auth_token=token,
+            )
+
+        try:
+            import torch
+
+            if self.config.asr_device == "cuda" and torch.cuda.is_available():
+                pipeline.to(torch.device("cuda"))
+        except Exception:
+            pass
+
+        self._diarization_pipeline = pipeline
+        return self._diarization_pipeline
+
+
+def _speaker_turns(annotation) -> tuple[tuple[float, float, str], ...]:
+    return tuple(
+        (float(segment.start), float(segment.end), str(label))
+        for segment, _track, label in annotation.itertracks(yield_label=True)
+    )
+
+
+def _best_speaker_for_segment(
+    segment: OdinTranscriptSegment,
+    turns: tuple[tuple[float, float, str], ...],
+) -> str | None:
+    midpoint = (segment.start_seconds + segment.end_seconds) / 2
+    best_label: str | None = None
+    best_overlap = 0.0
+    for start, end, label in turns:
+        overlap = max(0.0, min(segment.end_seconds, end) - max(segment.start_seconds, start))
+        if overlap > best_overlap:
+            best_label = label
+            best_overlap = overlap
+    if best_label is not None:
+        return best_label
+    for start, end, label in turns:
+        if start <= midpoint <= end:
+            return label
+    return None
 
 
 @dataclass(frozen=True)
