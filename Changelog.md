@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Corrected post-release status metadata to reflect that `v0.2.0` is tagged and pushed.
 - Added `pyannote.audio` 4.x speaker-diarization output support in the `odin` worker so live meeting jobs can receive speaker labels.
+- Loaded the Hugging Face diarization token from `odin` env-file config as well as process environment variables.
 
 ## [0.2.0] - 2026-05-03
 
