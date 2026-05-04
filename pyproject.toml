@@ -22,7 +22,7 @@ memgraph = [
 ]
 odin = [
   "faster-whisper>=1.1,<2",
-  "pyannote.audio>=3.1,<4",
+  "pyannote.audio>=4,<5",
 ]
 
 [project.scripts]

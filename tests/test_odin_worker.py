@@ -99,6 +99,21 @@ class OdinWorkerTests(TestCase):
             ("SPEAKER_00", "SPEAKER_01"),
         )
 
+    def test_faster_whisper_transcriber_accepts_pyannote_four_output(self) -> None:
+        with TemporaryDirectory() as tmp:
+            audio_path = Path(tmp) / "meeting.mp3"
+            audio_path.write_bytes(b"audio")
+            transcriber = FasterWhisperTranscriber(_odin_config())
+            transcriber._model = _FakeWhisperModel()
+            transcriber._diarization_pipeline = _FakePyannoteFourPipeline()
+
+            result = transcriber.transcribe(audio_path, odin_job_id="odin-49", diarize=True)
+
+        self.assertEqual(
+            tuple(segment.speaker for segment in result.segments),
+            ("SPEAKER_00", "SPEAKER_01"),
+        )
+
 
 class _FakeTranscriber:
     @property
@@ -177,6 +192,18 @@ class _FakeDiarizationAnnotation:
 class _FakeDiarizationPipeline:
     def __call__(self, audio_path: str):
         return _FakeDiarizationAnnotation()
+
+
+class _FakePyannoteFourOutput:
+    speaker_diarization = (
+        (_FakeDiarizationSegment(0.0, 2.1), "SPEAKER_00"),
+        (_FakeDiarizationSegment(2.1, 4.0), "SPEAKER_01"),
+    )
+
+
+class _FakePyannoteFourPipeline:
+    def __call__(self, audio_path: str):
+        return _FakePyannoteFourOutput()
 
 
 def _odin_config() -> OdinConfig:

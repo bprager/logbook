@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Corrected post-release status metadata to reflect that `v0.2.0` is tagged and pushed.
+- Added `pyannote.audio` 4.x speaker-diarization output support in the `odin` worker so live meeting jobs can receive speaker labels.
 
 ## [0.2.0] - 2026-05-03
 

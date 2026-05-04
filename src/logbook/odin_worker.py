@@ -272,11 +272,35 @@ class FasterWhisperTranscriber:
         return self._diarization_pipeline
 
 
-def _speaker_turns(annotation) -> tuple[tuple[float, float, str], ...]:
-    return tuple(
-        (float(segment.start), float(segment.end), str(label))
-        for segment, _track, label in annotation.itertracks(yield_label=True)
-    )
+def _speaker_turns(output) -> tuple[tuple[float, float, str], ...]:
+    for attribute in ("exclusive_speaker_diarization", "speaker_diarization"):
+        diarization = getattr(output, attribute, None)
+        if diarization is None:
+            continue
+        turns = tuple(_speaker_turns_from_diarization(diarization))
+        if turns:
+            return turns
+    return tuple(_speaker_turns_from_diarization(output))
+
+
+def _speaker_turns_from_diarization(diarization) -> tuple[tuple[float, float, str], ...]:
+    if hasattr(diarization, "itertracks"):
+        return tuple(
+            (float(segment.start), float(segment.end), str(label))
+            for segment, _track, label in diarization.itertracks(yield_label=True)
+        )
+
+    turns = []
+    for item in diarization:
+        values = tuple(item)
+        if len(values) == 2:
+            segment, label = values
+        elif len(values) == 3:
+            segment, _track, label = values
+        else:
+            continue
+        turns.append((float(segment.start), float(segment.end), str(label)))
+    return tuple(turns)
 
 
 def _best_speaker_for_segment(
