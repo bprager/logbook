@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-05
+
+### Added
+
+- Added `1.0.0` release notes and promoted the live recorder-to-Obsidian system from operational MVP to stable operational release status.
+- Added fresh `saga` backup and restore-drill evidence for the current 39-job ledger.
+
+### Changed
+
+- Updated project version metadata, README status, release documentation, backlog, and durable Codex status for the `1.0.0` release.
+
 ### Fixed
 
 - Corrected post-release status metadata to reflect that `v0.2.0` is tagged and pushed.

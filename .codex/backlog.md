@@ -38,6 +38,7 @@ LGB-019 + LGB-021 -> LGB-031 Prometheus metrics and scrape integration
 LGB-003 + LGB-026 -> LGB-032 Saga backups and restore drill
 LGB-027 + LGB-029 -> LGB-033 Memory graph prune and drift repair
 LGB-022 + LGB-030 + LGB-031 + LGB-032 + LGB-033 -> LGB-034 0.2.0 release readiness
+LGB-034 + LGB-035 + LGB-036 -> LGB-037 1.0.0 stable release promotion
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -895,3 +896,31 @@ Acceptance:
 - Assign/discard require `--execute` for mutation.
 - Rescued log jobs flow through daily consolidation and entity linking in one command.
 - Discarded jobs remain auditable in SQLite.
+
+## Milestone 9: Stable Operational Release
+
+### LGB-037 - 1.0.0 Stable Release Promotion
+
+Status: Completed on 2026-05-05; tagged and pushed
+
+Priority: P0
+
+Dependencies: LGB-034, LGB-035, LGB-036
+
+Deliverables:
+
+- Promote project metadata from `0.2.0` to `1.0.0`.
+- Update README, changelog, release notes, durable Codex status, and backlog for stable operational release status.
+- Confirm current verification commands, vault state, Memgraph health, `odin` health, recorder cleanup posture, and backup/restore evidence.
+- Tag and push `v1.0.0` after explicit operator approval.
+
+Acceptance:
+
+- Core CLI/API/ledger/Obsidian path contracts are treated as stable release surfaces.
+- The release has fresh verification evidence from tests, lint, live `odin` health, Memgraph health, cleanup planning, recorder discovery, and restore drill.
+- Local `.env`, Obsidian workspace state, and unrelated local secret edits are not included in the release commit.
+
+Notes:
+
+- The user approved promotion to `1.0.0` on 2026-05-05 after review confirmed no major capability gaps remained.
+- Fresh release evidence includes 98 tests passing, `ruff check .` passing, `odin-health` healthy, Memgraph health `status=ok` with 805 planned/live nodes and 1631 planned/live relationships, cleanup at 0 pending eligible actions, recorder discovery showing 5 retained MP3s for still-gated jobs 45-49, and `saga` restore drill `status=ok` for `logbook-backup-20260505T015132Z` with 39 expected/actual jobs.

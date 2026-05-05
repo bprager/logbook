@@ -1,12 +1,12 @@
 # Status
 
-Updated: 2026-05-04
+Updated: 2026-05-05
 
 ## Current Focus
 
-`0.2.0` is tagged and pushed as `v0.2.0` after explicit operator approval. May 1/2 production batch is processed, dead letters are clear, memory graph drift is repaired, Logbook launchd jobs are installed on `mimir`, and the first `saga` backup/restore drill is complete.
+`1.0.0` is tagged and pushed as `v1.0.0` after explicit operator approval. The live recorder-to-Obsidian system has reached steady operation with meeting diarization, audited retention cleanup, Memgraph health, launchd jobs, Prometheus metrics, dead-letter management, and fresh `saga` backup/restore evidence in place.
 
-The first live meeting recording, `260504_1308.mp3` / job 49, is now processed end to end. It was manually discovered after the mount-probe missed it, transcribed, diarized with `pyannote/speaker-diarization-community-1`, routed to Obsidian as a meeting note, pushed to the vault, marked vault-synced, and represented in Memgraph with health `status=ok`.
+The first live meeting recording, `260504_1308.mp3` / job 49, is now processed end to end. It was manually discovered after the mount-probe missed it, transcribed, diarized with `pyannote/speaker-diarization-community-1`, routed to Obsidian as a meeting note, pushed to the vault, marked vault-synced, and represented in Memgraph with health `status=ok`. Jobs 45-49 remain retained until their May 5 cleanup gates pass.
 
 ## Active Request
 
@@ -22,7 +22,8 @@ The first live meeting recording, `260504_1308.mp3` / job 49, is now processed e
 - Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
 - Keep the completed LGB-022 acceptance evidence current.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
-- Keep post-`0.2.0` changes tracked under `[Unreleased]`.
+- Keep post-`1.0.0` changes tracked under `[Unreleased]`.
+- Promote the stable operational release to `1.0.0`, update release documentation, tag `v1.0.0`, and push to remote after verification.
 - Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
 - Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
 - Continue concluding work summaries with a recommended next step.
@@ -275,3 +276,5 @@ The first live meeting recording, `260504_1308.mp3` / job 49, is now processed e
 - After the next Hugging Face authorization attempt, authenticated probes from Odin returned 200 for `pyannote/speaker-diarization-3.1/resolve/main/config.yaml` and `pyannote/segmentation-3.0/resolve/main/config.yaml`, but `pyannote/speaker-diarization-community-1` still returned 403 `GatedRepo`. With `pyannote.audio` 4.0.4, even the 3.1 pipeline attempts to fetch `xvec_transform.npz` from `speaker-diarization-community-1`, so live diarization remains blocked until `community-1` is authorized and added to the fine-grained token scope.
 - After adding `pyannote/speaker-diarization-community-1` to the fine-grained token scope, token metadata on Odin shows scoped read permissions for `segmentation-3.0`, `speaker-diarization-3.1`, and `speaker-diarization-community-1`. Direct authenticated `HEAD` probes still return 403 `GatedRepo` for `speaker-diarization-community-1` with Hugging Face's message that the account is not in the authorized list. This confirms the remaining blocker is account-level gated model approval for `community-1`, not local token propagation or token scope.
 - After account-level `community-1` approval, Odin successfully loaded both `pyannote/speaker-diarization-community-1` and `pyannote/speaker-diarization-3.1`. Job 49 diarization succeeded with four speaker labels and wrote `/Users/bernd/VoiceIngest/diarization/260504_1308.diarization.json`. Routing wrote `30 - Meetings/2026/05-May/2026-05-04T13-08-00-job-000049-meeting.md`, the vault commit `f2a4b31 Add Logbook meeting note for May 4` was pushed, and `mark-vault-synced --execute` marked job 49. The full memory graph execute path hung and was terminated, but it had written the missing relationships; stale Logbook-owned proof nodes were pruned in small chunks and `memory-graph-health --env .env` returned `status=ok` with 805 planned/live nodes and 1631 planned/live relationships.
+- Recorder-side cleanup resumed when the Sony recorder was mounted again on 2026-05-05. Read-only discovery found 15 MP3s and `cleanup-plan --env .env` showed jobs 25-34 eligible with local and recorder cleanup pending, while jobs 45-49 remained blocked by `retention_window_open`. `cleanup-audio --env .env --execute --include-recorder` cleared jobs 25-34 through the audited gates. Post-checks report `local_pending_count=0`, `recorder_pending_count=0`, recorder discovery now shows 5 retained MP3s for jobs 45-49, and `memory-graph-health --env .env` remains `status=ok` with 805 planned/live nodes and 1631 planned/live relationships.
+- Stable release assessment on 2026-05-05 concluded `1.0.0` is warranted: canonical Memgraph backlog items LGB-001 through LGB-036 are complete, live operations are running on `mimir`/`odin`, and the remaining work is operational refinement rather than missing core capability. Fresh release checks before promotion: 98 tests OK, `ruff check .` OK, `odin-health` healthy, `cleanup-plan --env .env` reports 0 local and recorder pending actions for eligible jobs, `memory-graph-health --env .env` reports `status=ok` with 805 planned/live nodes and 1631 planned/live relationships, recorder discovery reports 5 retained MP3s for jobs 45-49, and `backup-restore-drill` against `logbook-backup-20260505T015132Z` reports `status=ok`, schema version 1, and 39 expected/actual jobs. Release docs and metadata were updated for `1.0.0` before tagging.

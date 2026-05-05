@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: operational MVP `0.2.0`. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and `saga` restore-drill evidence in place. The `v0.2.0` release tag is pushed.
+> Status: stable operational release `1.0.0`. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place. The `v1.0.0` release tag is pushed.
 
 ## What It Does
 
@@ -60,10 +60,11 @@ Host roles:
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
 - [docs/backups.md](docs/backups.md) - `saga` backup policy and restore-drill runbook.
-- [docs/releases/0.2.0.md](docs/releases/0.2.0.md) - release notes and verification evidence.
+- [docs/releases/1.0.0.md](docs/releases/1.0.0.md) - current stable release notes and verification evidence.
+- [docs/releases/0.2.0.md](docs/releases/0.2.0.md) - operational MVP release notes.
 - [Changelog.md](Changelog.md) - release history.
 
-## Operational MVP
+## Operational Release
 
 - `mimir` owns Sony recorder discovery, local SQLite state, Logbook launchd jobs, Obsidian writes, retention cleanup, and the loopback status/action API.
 - `odin` runs the GPU ASR worker with faster-whisper `large-v3` on CUDA and exposes internal health and metrics.
