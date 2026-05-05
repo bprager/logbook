@@ -14,7 +14,7 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 - Classify recordings by deterministic spoken prefixes.
 - Stage log entries in `10 - Logs/00 - Inbox` before final consolidation.
 - Render one canonical daily log per date under `06 - Timestamps/YYYY/MM-Month/`.
-- Route category voice notes to `20 - Voice Notes`.
+- Route category voice notes to `20 - Notes/00 - Inbox`.
 - Route meetings to `30 - Meetings` with speaker labels.
 - Route unknown prefixes to `99 - Dead Letters` with 28-day retention.
 - Expose a narrow OpenClaw-facing API for health, status, rescue, reprocess, and rebuild actions.
@@ -31,7 +31,7 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 ## Suggested Architecture
 
 - Mac Mini ingestion daemon:
-  - launchd-triggered mount probe.
+  - launchd-triggered bounded recorder processing through `process-mounted-recorder`.
   - Recorder validation.
   - Copy/dedupe by checksum and source metadata.
   - SQLite ledger for job state and idempotency.
@@ -55,4 +55,5 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 - Keep generated audio, logs, databases, model caches, and secrets out of git.
 - Put implementation decisions in `.codex/decisions.md`.
 - Keep backlog dependencies in `.codex/backlog.md` and memgraph.
+- Keep live operational failure modes and prevention rules in `lessons-learned.md`.
 - Use test fixtures for synthetic transcripts and tiny sample audio; do not commit personal recordings.

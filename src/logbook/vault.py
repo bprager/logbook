@@ -136,6 +136,91 @@ class ObsidianVaultWorkflow:
             )
         return run
 
+    def _preserve_obsidian_workspace(self) -> None:
+        workspace_path = self.vault_root / ".obsidian" / "workspace.json"
+        if not workspace_path.exists() or not (self.vault_root / ".git").exists():
+            return
+
+        self._run_git_workspace_step(
+            "track_obsidian_workspace_for_stash",
+            ["update-index", "--no-skip-worktree", "--", ".obsidian/workspace.json"],
+            allow_failure=True,
+        )
+        dirty = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.vault_root),
+                "diff",
+                "--quiet",
+                "--",
+                ".obsidian/workspace.json",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if dirty.returncode == 1:
+            self._run_git_workspace_step(
+                "stash_obsidian_workspace",
+                [
+                    "stash",
+                    "push",
+                    "-m",
+                    "Logbook preserve Obsidian workspace state",
+                    "--",
+                    ".obsidian/workspace.json",
+                ],
+            )
+        elif dirty.returncode != 0:
+            raise VaultWorkflowError(
+                "vault workflow step failed: "
+                f"check_obsidian_workspace exited {dirty.returncode}"
+            )
+
+        self._run_git_workspace_step(
+            "ignore_obsidian_workspace",
+            ["update-index", "--skip-worktree", "--", ".obsidian/workspace.json"],
+        )
+
+    def _run_git_workspace_step(
+        self,
+        name: str,
+        args: list[str],
+        *,
+        allow_failure: bool = False,
+    ) -> VaultCommandRun:
+        completed = subprocess.run(
+            ["git", "-C", str(self.vault_root), *args],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        run = VaultCommandRun(
+            name=name,
+            skipped=False,
+            returncode=completed.returncode,
+            stdout=completed.stdout.strip(),
+            stderr=completed.stderr.strip(),
+        )
+        self._commands.append(run)
+        if not run.ok and not allow_failure:
+            raise VaultWorkflowError(
+                f"vault workflow step failed: {name} exited {completed.returncode}"
+            )
+        return run
+
+    def _ensure_generated_roots(self) -> None:
+        for relative in (
+            "06 - Timestamps",
+            "10 - Logs",
+            "20 - Notes",
+            "30 - Meetings",
+            "40 - Reviews",
+            "99 - Dead Letters",
+        ):
+            (self.vault_root / relative).mkdir(parents=True, exist_ok=True)
+
 
 class VaultWriteSession:
     def __init__(self, workflow: ObsidianVaultWorkflow, message: str) -> None:
@@ -151,6 +236,7 @@ class VaultWriteSession:
             raise VaultWorkflowError(f"vault preflight failed: {details}")
         self.workflow._acquire_lock()
         try:
+            self.workflow._preserve_obsidian_workspace()
             self.workflow._run_step("sync", self.workflow.config.sync_command, self.message)
         except Exception:
             self.workflow._release_lock()
@@ -165,6 +251,7 @@ class VaultWriteSession:
     ) -> bool:
         try:
             if exc_type is None:
+                self.workflow._ensure_generated_roots()
                 self.workflow._run_step(
                     "stage",
                     self.workflow.config.stage_command,

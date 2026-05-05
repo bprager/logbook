@@ -4,32 +4,29 @@ Updated: 2026-05-05
 
 ## Current Focus
 
-`1.0.0` is tagged and pushed as `v1.0.0` after explicit operator approval. The live recorder-to-Obsidian system has reached steady operation with meeting diarization, audited retention cleanup, Memgraph health, launchd jobs, Prometheus metrics, dead-letter management, and fresh `saga` backup/restore evidence in place.
+`1.0.1` patch release work has hardened the live mount-triggered ingest path. The live recorder-to-Obsidian system remains operational with meeting diarization, audited retention cleanup, Memgraph health, launchd jobs, Prometheus metrics, dead-letter management, and `saga` backup/restore evidence in place.
 
-The first live meeting recording, `260504_1308.mp3` / job 49, is now processed end to end. It was manually discovered after the mount-probe missed it, transcribed, diarized with `pyannote/speaker-diarization-community-1`, routed to Obsidian as a meeting note, pushed to the vault, marked vault-synced, and represented in Memgraph with health `status=ok`. Jobs 45-49 remain retained until their May 5 cleanup gates pass.
+The May 5 meeting recording `260505_0919_01.mp3` / job 52 is now processed end to end. It was copied from the Sony recorder, transcribed, diarized after the `odin` worker MP3-to-WAV fix, routed to Obsidian as `30 - Meetings/2026/05-May/2026-05-05T09-19-00-job-000052-meeting.md`, pushed to the vault in commit `796346c`, marked vault-synced, and represented in Memgraph. The StartOnMount LaunchAgent now runs `process-mounted-recorder` rather than read-only discovery.
 
 ## Active Request
 
 - Keep `.env` local and excluded from the remote repo.
 - Continue source-audio retention cleanup only through audited safety gates.
-- Keep `.codex/status.md`, `.codex/backlog.md`, and `Changelog.md` current as implementation advances.
+- Keep `.codex/status.md`, `.codex/backlog.md`, `Changelog.md`, and `lessons-learned.md` current as implementation advances.
 - Preserve the one canonical final daily log path invariant, including late arrivals.
-- Implement LGB-014 Dead-Letter Writer, then LGB-013 Category Note Writer.
-- Implement LGB-019 Status API with correctly configured Swagger UI.
-- Implement LGB-020 Bounded Action API with audit records and action-token auth.
-- Implement LGB-017 Meeting Diarization before meeting note rendering.
-- Implement LGB-018 Meeting Note Renderer.
-- Implement LGB-026 Audio Retention Cleanup in staged order: read-only status, dry-run planner, explicit local cleanup, explicit recorder cleanup, API status.
-- Keep the completed LGB-022 acceptance evidence current.
+- Keep completed acceptance evidence current for release, vault sync, memory graph, backup, launchd, and retention behavior.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
-- Keep post-`1.0.0` changes tracked under `[Unreleased]`.
-- Promote the stable operational release to `1.0.0`, update release documentation, tag `v1.0.0`, and push to remote after verification.
-- Add scheduled daily-log entity linking for existing Obsidian People, Events, and Objects, then backfill the last 3 months of canonical daily logs.
-- Provide a dead-letter management script that can list, assign to log, or discard pending dead letters with audit records.
+- Keep post-`1.0.1` changes tracked under `[Unreleased]`.
+- Maintain `lessons-learned.md` whenever live operations expose a recoverable failure mode or prevention rule.
 - Continue concluding work summaries with a recommended next step.
 
 ## Progress
 
+- [x] Processed May 5 recorder jobs 50-52 after the mount trigger missed them.
+- [x] Wrote job 52 meeting note to Obsidian and marked jobs 51-52 vault-synced.
+- [x] Updated launchd so future recorder mounts run `process-mounted-recorder`.
+- [x] Added long-job timeout, recorder access, pyannote WAV normalization, vault workspace, generated-root, and pending-vault-change recovery hardening.
+- [x] Added `lessons-learned.md` and `1.0.1` release documentation.
 - [x] Created `.codex/status.md`.
 - [x] Reviewed `prager.ws` repository structure.
 - [x] Identified relevant hosts, networking, service deployment, and secrets patterns.
@@ -81,7 +78,7 @@ The first live meeting recording, `260504_1308.mp3` / job 49, is now processed e
 - [x] Added SQLite `action_audit` records and `LOGBOOK_ACTION_TOKEN` enforcement for action endpoints.
 - [x] Added optional action idempotency keys so OpenClaw retries can reuse an existing audit record.
 - [x] Added launchd plist rendering for the Logbook API keepalive service.
-- [x] Added a `StartOnMount` launchd probe that runs only read-only recorder discovery.
+- [x] Added a `StartOnMount` launchd job; as of `1.0.1`, it runs bounded `process-mounted-recorder` ingest rather than read-only discovery.
 - [x] Added an hourly retention audit launchd job that reports config and performs no deletion before LGB-026.
 - [x] Added a meeting diarization pass that resubmits only meeting-prefix transcripts with `diarize=true`.
 - [x] Added SQLite diarization metadata fields and routing support for `diarized` jobs.
@@ -265,7 +262,7 @@ The first live meeting recording, `260504_1308.mp3` / job 49, is now processed e
 - Verification after classifier aliases and operational cleanup passed: 86 tests OK, `ruff check .` OK, `py_compile` OK, and `git diff --check` OK.
 - LGB-033 implementation completed on 2026-05-03 with `logbook memory-graph-repair`, a dry-run-first command that compares exact Logbook-owned live IDs with the local proof plan, upserts missing planned nodes/relationships, and prunes stale Logbook-owned IDs only with explicit `--prune-stale --execute`.
 - LGB-031 implementation completed on 2026-05-03 with Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. The metrics expose path-safe status counts, cleanup counters, graph health status, worker readiness, worker job counts, and model metadata. Scrape targets and alert candidates are documented in `docs/metrics.md`.
-- LGB-030 rollout completed on 2026-05-03 with `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` installed as `bernd` user LaunchAgents. The Logbook API now listens on `127.0.0.1:8788` because `127.0.0.1:8787` is reserved for the `clawdbot` CashClaw/OpenClaw adapter. Live checks passed for `/health`, `/metrics`, read-only mount-probe wiring, read-only retention-audit wiring, and OpenClaw ownership separation.
+- LGB-030 rollout completed on 2026-05-03 with `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` installed as `bernd` user LaunchAgents. The Logbook API now listens on `127.0.0.1:8788` because `127.0.0.1:8787` is reserved for the `clawdbot` CashClaw/OpenClaw adapter. As of `1.0.1`, mount-probe wiring runs bounded `process-mounted-recorder`; retention audit remains read-only, and OpenClaw ownership separation is preserved.
 - LGB-032 implementation completed on 2026-05-03 with dry-run-first `backup-run`, read-only `backup-restore-drill`, and documentation in `docs/backups.md`. The first production backup was written to `192.168.1.3:/mnt/saga/Napoleon/logbook-backups/logbook-backup-20260503T155634Z`; the remote restore drill reported `status=ok`, `integrity_check=ok`, schema version `1`, expected job count `34`, and actual job count `34`. Live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio are excluded.
 - LGB-034 release readiness completed on 2026-05-03, and `v0.2.0` is tagged and pushed after explicit operator approval. README, changelog, `VERSION`, `pyproject.toml`, and `docs/releases/0.2.0.md` describe the operational MVP release. `secrets.yaml` is tracked by explicit operator request and contains SOPS/age encrypted secret values.
 - Post-release status metadata correction was committed and pushed as `4988e1c` on 2026-05-03, and Memgraph LGB-034 now reflects that `v0.2.0` is tagged and pushed. Follow-up operational checks passed: API `/health` reports 34 jobs, `/metrics` reports `logbook_up 1` and graph drift 0, `odin-health` reports model loaded, `memory-graph-health` reports 432 planned/live nodes and 827 planned/live relationships, cleanup has 24 eligible historical jobs with no pending action and 10 newer jobs blocked only by `retention_window_open`, and the `saga` restore drill reports `status=ok`.

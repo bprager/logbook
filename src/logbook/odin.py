@@ -124,7 +124,7 @@ class FakeOdinClient:
 
 
 class HttpOdinClient:
-    def __init__(self, config: OdinConfig, timeout_seconds: float = 30.0) -> None:
+    def __init__(self, config: OdinConfig, timeout_seconds: float = 900.0) -> None:
         self.config = config
         self.timeout_seconds = timeout_seconds
 

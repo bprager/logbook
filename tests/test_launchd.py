@@ -33,7 +33,8 @@ class LaunchdPackagingTests(TestCase):
             mount_probe = _loads(package.mount_probe.content)
             self.assertEqual(mount_probe["Label"], "local.logbook.recorder.mount-probe")
             self.assertTrue(mount_probe["StartOnMount"])
-            self.assertIn("recorder-discover", mount_probe["ProgramArguments"])
+            self.assertIn("process-mounted-recorder", mount_probe["ProgramArguments"])
+            self.assertNotIn("recorder-discover", mount_probe["ProgramArguments"])
             self.assertNotIn("copy-discovered", mount_probe["ProgramArguments"])
             self.assertNotIn("route-transcripts", mount_probe["ProgramArguments"])
 

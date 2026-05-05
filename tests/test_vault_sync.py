@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+from logbook.cli import _mark_vault_synced_and_sync_memory
 from logbook.config import AppConfig, ObsidianConfig, OdinConfig, RecorderConfig, RetentionConfig
 from logbook.ledger import open_ledger
 from logbook.recorder import RecordingCandidate
@@ -67,6 +68,29 @@ class VaultSyncMarkTests(TestCase):
                 ledger.close()
             self.assertIsNotNone(updated)
             self.assertEqual(updated.vault_synced_at, "2026-04-29T20:00:00+00:00")
+
+    def test_mount_processing_recovers_clean_pushed_job_before_vault_sync_mark(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _app_config(root)
+            _init_pushed_vault(
+                config.obsidian.vault_local_path,
+                [
+                    "20 - Notes/00 - Inbox/task/2026-04-29T08-21-00-job-000001-task.md",
+                ],
+            )
+            job = _category_job(config)
+
+            recovered = _mark_vault_synced_and_sync_memory(config)
+
+            self.assertTrue(recovered)
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                updated = ledger.get_by_checksum(job.checksum_sha256)
+            finally:
+                ledger.close()
+            self.assertIsNotNone(updated)
+            self.assertIsNotNone(updated.vault_synced_at)
 
     def test_blocks_when_vault_head_is_not_pushed_to_origin(self) -> None:
         with TemporaryDirectory() as tmp:

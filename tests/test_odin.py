@@ -140,6 +140,14 @@ class OdinClientTests(TestCase):
         self.assertEqual(result.asr_model, "large-v3")
         self.assertEqual(urlopen.call_count, 2)
 
+    def test_http_client_default_timeout_allows_long_meeting_jobs(self) -> None:
+        with patch("logbook.odin.request.urlopen") as urlopen:
+            urlopen.return_value = _JsonResponse({"ready": True})
+
+            HttpOdinClient(_odin_config()).health()
+
+        self.assertGreaterEqual(urlopen.call_args.kwargs["timeout"], 900)
+
 
 def _odin_config() -> OdinConfig:
     return OdinConfig(

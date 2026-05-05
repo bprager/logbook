@@ -17,7 +17,7 @@ $LOGBOOK_PROCESSING_ROOT/launchd
 Generated jobs:
 
 - `local.logbook.api`: runs `logbook serve-api --env .env`, keeps the FastAPI status/action API alive, and lets `launchd` send the normal termination signal on shutdown.
-- `local.logbook.recorder.mount-probe`: uses `StartOnMount` and runs only `logbook recorder-discover --env .env`. It is intentionally read-only and does not copy, transcribe, route, or delete audio.
+- `local.logbook.recorder.mount-probe`: uses `StartOnMount` and runs `logbook process-mounted-recorder --env .env`. It copies discovered audio into the local inbox, transcribes through `odin`, diarizes meetings, routes generated notes into Obsidian, marks pushed vault artifacts as synced, and never deletes recorder or local audio.
 - `local.logbook.retention-audit`: runs hourly at minute 17 and calls `logbook retention-status --env .env`. It reports retention configuration but does not delete audio.
 - `local.logbook.entity-linker`: runs daily at 03:37 and calls `logbook link-daily-log-entities --env .env --months 3 --execute`. It scans canonical daily logs for existing people, event, and object notes, then adds Obsidian links without touching source audio.
 
@@ -67,9 +67,11 @@ launchctl kickstart -k "gui/$(id -u)/local.logbook.retention-audit"
 tail -n 60 "$LOGBOOK_PROCESSING_ROOT/logs/logbook-retention-audit.out.log"
 ```
 
-The mount probe is read-only. If the recorder is not mounted, it should report
-`operational=no` and exit nonzero without creating, copying, routing, or deleting
-anything. The retention audit is also read-only and must print
+The mount probe is bounded but mutating: it may copy source audio, write the
+SQLite ledger, submit work to `odin`, and write generated Obsidian notes. If the
+recorder is not mounted or macOS denies access to the removable volume, it should
+report `operational=no` or `copy_failed_count=1` and exit nonzero without deleting
+anything. The retention audit is read-only and must print
 `delete_audio=no` and `delete_recorder_audio=no`.
 
 Do not manually `kickstart` `local.logbook.entity-linker` during a rollout check

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from logbook.backup import run_backup, run_restore_drill
-from logbook.config import ConfigError, load_app_config, load_recorder_config
+from logbook.config import AppConfig, ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
 from logbook.dead_letters import (
@@ -33,7 +33,7 @@ from logbook.memory_graph import (
 from logbook.odin import HttpOdinClient
 from logbook.odin_worker import OdinWorkerConfig, create_odin_worker_app
 from logbook.preview import write_open_log_preview
-from logbook.recorder import discover_recordings, validate_recorder
+from logbook.recorder import RecorderAccessError, discover_recordings, validate_recorder
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied, transcribe_copied_with_fake_odin
@@ -68,6 +68,12 @@ def main(argv: list[str] | None = None) -> int:
         help="copy recorder MP3 files into the local inbox and verify checksums",
     )
     copy_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    process_mount_parser = subparsers.add_parser(
+        "process-mounted-recorder",
+        help="copy, transcribe, diarize, route, and sync mounted recorder files",
+    )
+    process_mount_parser.add_argument("--env", type=Path, default=Path(".env"))
 
     fake_transcribe_parser = subparsers.add_parser(
         "fake-transcribe-copied",
@@ -508,6 +514,8 @@ def main(argv: list[str] | None = None) -> int:
         return _ingest_dry_run(args.env, record_discovery=args.record_discovery)
     if args.command == "copy-discovered":
         return _copy_discovered(args.env)
+    if args.command == "process-mounted-recorder":
+        return _process_mounted_recorder(args.env)
     if args.command == "fake-transcribe-copied":
         return _fake_transcribe_copied(args.env)
     if args.command == "transcribe-copied":
@@ -614,7 +622,12 @@ def _recorder_discover(env_path: Path) -> int:
         print("operational=no")
         return 1
 
-    recordings = discover_recordings(validation.recordings_dir)
+    try:
+        recordings = discover_recordings(validation.recordings_dir)
+    except RecorderAccessError as error:
+        print(f"warning={error}")
+        print("operational=no")
+        return 1
     print("operational=yes")
     print(f"mp3_count={len(recordings)}")
     print("would_ingest:")
@@ -656,6 +669,8 @@ def _ingest_dry_run(env_path: Path, record_discovery: bool) -> int:
     print(f"operational={_yes_no(validation.operational)}")
     for warning in validation.warnings:
         print(f"warning={warning}")
+    if result.discovery_error:
+        print(f"warning={result.discovery_error}")
     if not validation.operational:
         return 1
 
@@ -717,6 +732,196 @@ def _copy_discovered(env_path: Path) -> int:
         )
 
     return 1 if result.failed_count else 0
+
+
+def _process_mounted_recorder(env_path: Path) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    if config.obsidian is None:
+        print("config_error: missing Obsidian configuration", file=sys.stderr)
+        return 2
+
+    print("Process mounted recorder")
+    print(f"env_path={env_path}")
+    print("delete_audio=no")
+    print("delete_recorder_audio=no")
+
+    copy_result = copy_discovered_recordings(config)
+    print(f"copy_copied_count={copy_result.copied_count}")
+    print(f"copy_skipped_count={copy_result.skipped_count}")
+    print(f"copy_failed_count={copy_result.failed_count}")
+    if copy_result.discovery_error:
+        print(f"warning={copy_result.discovery_error}")
+    for warning in copy_result.validation.warnings:
+        print(f"warning={warning}")
+    if not copy_result.validation.operational or copy_result.failed_count:
+        return 1
+
+    try:
+        odin_client = HttpOdinClient(config.odin)
+        transcription_result = transcribe_copied(config=config, client=odin_client)
+    except Exception as error:
+        print(f"odin_error={error}", file=sys.stderr)
+        return 1
+    print(f"transcribed_count={transcription_result.transcribed_count}")
+    print(f"transcription_skipped_count={transcription_result.skipped_count}")
+    print(f"transcription_failed_count={transcription_result.failed_count}")
+    if transcription_result.failed_count:
+        return 1
+
+    try:
+        diarization_result = diarize_meetings(config=config, client=HttpOdinClient(config.odin))
+    except Exception as error:
+        print(f"diarization_error={error}", file=sys.stderr)
+        return 1
+    print(f"diarized_count={diarization_result.diarized_count}")
+    print(f"diarization_skipped_count={diarization_result.skipped_count}")
+    print(f"diarization_failed_count={diarization_result.failed_count}")
+    if diarization_result.failed_count:
+        return 1
+
+    routing_job_ids = _routing_job_ids(config)
+    print(f"routing_candidate_count={len(routing_job_ids)}")
+    if not routing_job_ids:
+        if _vault_has_generated_changes(config):
+            print("route_transcripts=skipped_pending_vault_changes")
+            if not _commit_pending_vault_changes(config):
+                return 1
+        else:
+            print("route_transcripts=skipped_no_candidates")
+        return 0 if _mark_vault_synced_and_sync_memory(config) else 1
+
+    if not _route_with_vault_workflow(config):
+        return 1
+
+    return 0 if _mark_vault_synced_and_sync_memory(config) else 1
+
+
+def _mark_vault_synced_and_sync_memory(config: AppConfig) -> bool:
+    try:
+        vault_sync_result = mark_vault_synced_jobs(config, dry_run=False)
+    except ValueError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return False
+    print(f"vault_sync_marked_count={vault_sync_result.marked_count}")
+    print(f"vault_sync_already_synced_count={vault_sync_result.already_synced_count}")
+    print(f"vault_sync_blocked_count={vault_sync_result.blocked_count}")
+    if vault_sync_result.blocked_count:
+        return False
+
+    marked_job_ids = tuple(item.job.id for item in vault_sync_result.items if item.status == "marked")
+    if marked_job_ids:
+        _sync_memory_graph_for_jobs(config, marked_job_ids)
+    return True
+
+
+def _route_with_vault_workflow(config: AppConfig) -> bool:
+    workflow = ObsidianVaultWorkflow(
+        config=config.obsidian,
+        vault_root=config.obsidian.vault_local_path,
+        lock_root=config.processing_root,
+    )
+    preflight = workflow.preflight()
+    if not preflight.operational:
+        _print_vault_preflight(preflight)
+        return False
+    note_writer = ObsidianCliNoteWriter(
+        config=config.obsidian,
+        vault_root=config.obsidian.vault_local_path,
+    )
+    try:
+        routing_result = route_transcripts(
+            config,
+            vault_root=config.obsidian.vault_local_path,
+            vault_workflow=workflow,
+            note_writer=note_writer,
+            commit_message="Update Logbook generated notes from mounted recorder",
+        )
+    except VaultWorkflowError as error:
+        print(f"vault_workflow_error: {error}", file=sys.stderr)
+        return False
+    print(f"routed_count={routing_result.routed_count}")
+    print(f"routing_failed_count={routing_result.failed_count}")
+    print(f"meeting_count={sum(1 for item in routing_result.items if item.status == 'meeting_written')}")
+    if routing_result.failed_count:
+        return False
+    return True
+
+
+def _commit_pending_vault_changes(config: AppConfig) -> bool:
+    workflow = ObsidianVaultWorkflow(
+        config=config.obsidian,
+        vault_root=config.obsidian.vault_local_path,
+        lock_root=config.processing_root,
+    )
+    try:
+        with workflow.session("Update Logbook generated notes from mounted recorder"):
+            pass
+    except VaultWorkflowError as error:
+        print(f"vault_workflow_error: {error}", file=sys.stderr)
+        return False
+    print("vault_pending_changes_committed=yes")
+    return True
+
+
+def _vault_has_generated_changes(config: AppConfig) -> bool:
+    if config.obsidian is None:
+        return False
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(config.obsidian.vault_local_path),
+            "status",
+            "--porcelain",
+            "--",
+            "06 - Timestamps",
+            "10 - Logs",
+            "20 - Notes",
+            "30 - Meetings",
+            "40 - Reviews",
+            "99 - Dead Letters",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return bool(completed.stdout.strip()) if completed.returncode == 0 else False
+
+
+def _routing_job_ids(config: AppConfig) -> tuple[int, ...]:
+    ledger = open_ledger(config.sqlite_path, initialize=True)
+    try:
+        return tuple(job.id for job in ledger.routing_jobs())
+    finally:
+        ledger.close()
+
+
+def _sync_memory_graph_for_jobs(config: AppConfig, job_ids: tuple[int, ...]) -> None:
+    if config.memgraph is None:
+        print("memory_graph_sync=skipped_missing_memgraph_config")
+        return
+
+    written_nodes = 0
+    written_relationships = 0
+    try:
+        for job_id in job_ids:
+            plan = build_memory_graph_plan(config, job_id=job_id)
+            result = apply_memory_graph_plan(plan, Neo4jMemgraphClient(config.memgraph))
+            written_nodes += result.nodes_written
+            written_relationships += result.relationships_written
+    except RuntimeError as error:
+        print(f"memory_graph_sync=failed warning={error}")
+        return
+
+    print("memory_graph_sync=ok")
+    print(f"memory_graph_jobs_synced={len(job_ids)}")
+    print(f"memory_graph_nodes_written={written_nodes}")
+    print(f"memory_graph_relationships_written={written_relationships}")
 
 
 def _fake_transcribe_copied(env_path: Path) -> int:
@@ -1745,7 +1950,7 @@ def _launchd_render(
     print(f"python_bin={python_bin}")
     print("load_launchd=no")
     print("start_openclaw=no")
-    print("mount_trigger_command=recorder-discover")
+    print("mount_trigger_command=process-mounted-recorder")
     print("retention_delete_audio=no")
     print("plists:")
     for path in paths:

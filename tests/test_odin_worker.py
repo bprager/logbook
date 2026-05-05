@@ -11,7 +11,12 @@ from fastapi.testclient import TestClient
 
 from logbook.config import OdinConfig
 from logbook.odin import OdinTranscriptResult, OdinTranscriptSegment
-from logbook.odin_worker import FasterWhisperTranscriber, OdinWorkerConfig, create_odin_worker_app
+from logbook.odin_worker import (
+    FasterWhisperTranscriber,
+    OdinWorkerConfig,
+    create_odin_worker_app,
+    prepare_diarization_audio,
+)
 
 
 class OdinWorkerTests(TestCase):
@@ -94,7 +99,8 @@ class OdinWorkerTests(TestCase):
             transcriber._model = _FakeWhisperModel()
             transcriber._diarization_pipeline = _FakeDiarizationPipeline()
 
-            result = transcriber.transcribe(audio_path, odin_job_id="odin-49", diarize=True)
+            with patch("logbook.odin_worker.prepare_diarization_audio", return_value=audio_path):
+                result = transcriber.transcribe(audio_path, odin_job_id="odin-49", diarize=True)
 
         self.assertEqual(result.diarization_model, "pyannote/speaker-diarization-3.1")
         self.assertEqual(
@@ -110,7 +116,8 @@ class OdinWorkerTests(TestCase):
             transcriber._model = _FakeWhisperModel()
             transcriber._diarization_pipeline = _FakePyannoteFourPipeline()
 
-            result = transcriber.transcribe(audio_path, odin_job_id="odin-49", diarize=True)
+            with patch("logbook.odin_worker.prepare_diarization_audio", return_value=audio_path):
+                result = transcriber.transcribe(audio_path, odin_job_id="odin-49", diarize=True)
 
         self.assertEqual(
             tuple(segment.speaker for segment in result.segments),
@@ -133,6 +140,24 @@ class OdinWorkerTests(TestCase):
             transcriber._load_diarization_pipeline()
 
         self.assertEqual(_FakePyannotePipelineFactory.token, "hf_from_env_file")
+
+    def test_prepare_diarization_audio_normalizes_mp3_to_wav(self) -> None:
+        with TemporaryDirectory() as tmp:
+            audio_path = Path(tmp) / "meeting.mp3"
+            audio_path.write_bytes(b"mp3")
+
+            with patch("logbook.odin_worker.subprocess.run") as run:
+                run.return_value.returncode = 0
+                wav_path = prepare_diarization_audio(audio_path)
+
+        self.assertEqual(wav_path.name, "meeting.diarization.wav")
+        run.assert_called_once()
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ["ffmpeg", "-y"])
+        self.assertIn("-ac", command)
+        self.assertIn("1", command)
+        self.assertIn("-ar", command)
+        self.assertIn("16000", command)
 
 
 class _FakeTranscriber:

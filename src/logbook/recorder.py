@@ -45,6 +45,10 @@ class RecordingCandidate:
     sequence: str | None
 
 
+class RecorderAccessError(OSError):
+    """Raised when the recorder folder exists but cannot be enumerated."""
+
+
 def validate_recorder(config: RecorderConfig) -> RecorderValidation:
     warnings: list[str] = []
     resolved_mount_path = _resolve_mount_path(config, warnings)
@@ -79,23 +83,29 @@ def validate_recorder(config: RecorderConfig) -> RecorderValidation:
 
 def discover_recordings(recordings_dir: Path) -> list[RecordingCandidate]:
     candidates: list[RecordingCandidate] = []
-    for path in sorted(recordings_dir.iterdir(), key=lambda item: item.name):
-        if not _is_real_mp3(path):
-            continue
-        stat = path.stat()
-        modified_at = datetime.fromtimestamp(stat.st_mtime)
-        parsed_at, sequence = parse_sony_recording_name(path.name)
-        candidates.append(
-            RecordingCandidate(
-                path=path,
-                filename=path.name,
-                size_bytes=stat.st_size,
-                modified_at=modified_at,
-                parsed_recorded_at=parsed_at,
-                timestamp_matches_mtime=_timestamps_match(parsed_at, modified_at),
-                sequence=sequence,
+    try:
+        paths = sorted(recordings_dir.iterdir(), key=lambda item: item.name)
+        for path in paths:
+            if not _is_real_mp3(path):
+                continue
+            stat = path.stat()
+            modified_at = datetime.fromtimestamp(stat.st_mtime)
+            parsed_at, sequence = parse_sony_recording_name(path.name)
+            candidates.append(
+                RecordingCandidate(
+                    path=path,
+                    filename=path.name,
+                    size_bytes=stat.st_size,
+                    modified_at=modified_at,
+                    parsed_recorded_at=parsed_at,
+                    timestamp_matches_mtime=_timestamps_match(parsed_at, modified_at),
+                    sequence=sequence,
+                )
             )
-        )
+    except OSError as error:
+        raise RecorderAccessError(
+            f"cannot read recordings directory: {recordings_dir}: {error}"
+        ) from error
     return candidates
 
 
@@ -174,4 +184,3 @@ def _timestamps_match(parsed_at: datetime | None, modified_at: datetime) -> bool
         and parsed_at.hour == modified_at.hour
         and parsed_at.minute == modified_at.minute
     )
-

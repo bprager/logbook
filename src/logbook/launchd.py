@@ -88,7 +88,7 @@ def render_launchd_package(
             python_executable,
             "-m",
             "logbook.cli",
-            "recorder-discover",
+            "process-mounted-recorder",
             "--env",
             str(env_path),
         ],

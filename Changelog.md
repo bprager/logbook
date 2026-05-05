@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-05
+
+### Added
+
+- Added `process-mounted-recorder` for bounded StartOnMount ingestion from Sony recorder through local copy, `odin` transcription/meeting diarization, Obsidian routing, vault-sync marking, and Memgraph sync.
+- Added `lessons-learned.md` to capture operational incidents, recoveries, and prevention guidance.
+
+### Changed
+
+- Updated launchd mount handling to run the bounded ingest pipeline instead of the read-only recorder discovery command.
+- Updated README, launchd runbook, Codex workspace docs, durable status, backlog, and release notes for the `1.0.1` patch release.
+
+### Fixed
+
+- Converted recorder folder permission denials into actionable nonzero CLI failures instead of Python stack traces.
+- Increased the live `odin` HTTP timeout for long meeting recordings, normalized MP3 audio to WAV before pyannote diarization, and hardened the vault workflow against Obsidian workspace state and missing generated-note roots.
+- Made the mounted-recorder processor recover a final, pushed, but not-yet-marked vault-sync state instead of skipping it when no routing candidates remain.
+
 ## [1.0.0] - 2026-05-05
 
 ### Added

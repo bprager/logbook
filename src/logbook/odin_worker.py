@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import uuid
 from collections import Counter
 from dataclasses import dataclass
@@ -228,7 +229,7 @@ class FasterWhisperTranscriber:
         segments: tuple[OdinTranscriptSegment, ...],
     ) -> tuple[OdinTranscriptSegment, ...]:
         pipeline = self._load_diarization_pipeline()
-        annotation = pipeline(str(audio_path))
+        annotation = pipeline(str(prepare_diarization_audio(audio_path)))
         turns = tuple(_speaker_turns(annotation))
         if not turns:
             return segments
@@ -274,6 +275,37 @@ class FasterWhisperTranscriber:
 
         self._diarization_pipeline = pipeline
         return self._diarization_pipeline
+
+
+def prepare_diarization_audio(audio_path: Path) -> Path:
+    if audio_path.suffix.lower() == ".wav":
+        return audio_path
+
+    target = audio_path.with_name(f"{audio_path.stem}.diarization.wav")
+    if target.exists() and target.stat().st_mtime >= audio_path.stat().st_mtime:
+        return target
+
+    completed = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_path),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            str(target),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip().splitlines()
+        message = detail[-1] if detail else "ffmpeg failed"
+        raise RuntimeError(f"failed to prepare diarization WAV for {audio_path.name}: {message}")
+    return target
 
 
 def _speaker_turns(output) -> tuple[tuple[float, float, str], ...]:

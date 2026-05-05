@@ -1,6 +1,6 @@
 # Backlog
 
-Updated: 2026-05-01
+Updated: 2026-05-05
 
 Project key in memgraph: `logbook`
 
@@ -39,6 +39,7 @@ LGB-003 + LGB-026 -> LGB-032 Saga backups and restore drill
 LGB-027 + LGB-029 -> LGB-033 Memory graph prune and drift repair
 LGB-022 + LGB-030 + LGB-031 + LGB-032 + LGB-033 -> LGB-034 0.2.0 release readiness
 LGB-034 + LGB-035 + LGB-036 -> LGB-037 1.0.0 stable release promotion
+LGB-037 -> LGB-038 1.0.1 mount ingest hardening patch release
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -736,7 +737,7 @@ Notes:
 
 - Installed `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` as `bernd` user LaunchAgents on `mimir`.
 - Moved Logbook API from `127.0.0.1:8787` to `127.0.0.1:8788` because `8787` is already owned by the `clawdbot` CashClaw/OpenClaw adapter.
-- Verified `curl http://127.0.0.1:8788/health`, `/metrics`, the read-only mount probe wiring, and the read-only retention audit wiring.
+- Verified `curl http://127.0.0.1:8788/health`, `/metrics`, bounded mount-triggered ingest wiring, and read-only retention audit wiring. The original rollout used discovery-only mount wiring; `1.0.1` changes the mount job to `process-mounted-recorder`.
 - Verified OpenClaw gateway/node processes remained owned by `clawdbot`; only Logbook launchd jobs run as `bernd`.
 
 ### LGB-031 - Prometheus Metrics And Scrape Integration
@@ -924,3 +925,32 @@ Notes:
 
 - The user approved promotion to `1.0.0` on 2026-05-05 after review confirmed no major capability gaps remained.
 - Fresh release evidence includes 98 tests passing, `ruff check .` passing, `odin-health` healthy, Memgraph health `status=ok` with 805 planned/live nodes and 1631 planned/live relationships, cleanup at 0 pending eligible actions, recorder discovery showing 5 retained MP3s for still-gated jobs 45-49, and `saga` restore drill `status=ok` for `logbook-backup-20260505T015132Z` with 39 expected/actual jobs.
+
+### LGB-038 - 1.0.1 Mount Ingest Hardening Patch Release
+
+Status: Completed on 2026-05-05; tagged and pushed
+
+Priority: P0
+
+Dependencies: LGB-037
+
+Deliverables:
+
+- Recover the May 5 meeting recording `260505_0919_01.mp3` through transcription, diarization, Obsidian meeting-note routing, vault sync, ledger state, and Memgraph evidence.
+- Change the StartOnMount LaunchAgent from discovery-only probing to bounded `process-mounted-recorder` ingestion.
+- Harden live ingest around recorder permission errors, long meeting transcription timeouts, MP3-to-WAV diarization normalization, generated-vault roots, and Obsidian workspace state.
+- Add `lessons-learned.md` and update README, launchd docs, release notes, changelog, durable status, decisions, and backlog.
+- Tag and push `v1.0.1`.
+
+Acceptance:
+
+- Re-running `process-mounted-recorder --env .env` after recovery is idempotent and finds no unrouted candidates.
+- The mounted-recorder LaunchAgent arguments show `process-mounted-recorder --env .env`.
+- Job 52 is `meeting_written`, has a generated meeting note in `30 - Meetings`, is vault-synced, and is represented in Memgraph.
+- The release has fresh lint, unit test, compile, diff, live vault, launchd, and Memgraph evidence before tagging.
+
+Notes:
+
+- Job 52 wrote `30 - Meetings/2026/05-May/2026-05-05T09-19-00-job-000052-meeting.md` and was pushed to the Obsidian vault in commit `796346c`.
+- Jobs 51 and 52 are vault-synced after the recovery run; job 50 remains an inbox entry awaiting normal consolidation.
+- `lessons-learned.md` is now the durable place for production failure modes and prevention guidance.

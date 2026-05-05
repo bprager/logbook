@@ -86,11 +86,12 @@ Obsidian Vault/
         04-April/
           2026-04-12.consolidated.json
 
-  20 - Voice Notes/
-    Ideas/
-    Tasks/
-    Research/
-    Reminders/
+  20 - Notes/
+    00 - Inbox/
+      Ideas/
+      Tasks/
+      Research/
+      Reminders/
 
   30 - Meetings/
     2026/
@@ -230,26 +231,26 @@ categories:
     aliases:
       - idea
       - ideas
-    folder: "20 - Voice Notes/Ideas"
+    folder: "20 - Notes/00 - Inbox/Ideas"
 
   task:
     aliases:
       - task
       - todo
       - to do
-    folder: "20 - Voice Notes/Tasks"
+    folder: "20 - Notes/00 - Inbox/Tasks"
 
   research:
     aliases:
       - research
       - question
-    folder: "20 - Voice Notes/Research"
+    folder: "20 - Notes/00 - Inbox/Research"
 
   reminder:
     aliases:
       - reminder
       - remind me
-    folder: "20 - Voice Notes/Reminders"
+    folder: "20 - Notes/00 - Inbox/Reminders"
 
   meeting:
     aliases:

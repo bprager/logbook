@@ -8,7 +8,13 @@ from pathlib import Path
 from logbook.checksum import sha256_file
 from logbook.config import AppConfig
 from logbook.ledger import open_ledger
-from logbook.recorder import RecordingCandidate, RecorderValidation, discover_recordings, validate_recorder
+from logbook.recorder import (
+    RecorderAccessError,
+    RecordingCandidate,
+    RecorderValidation,
+    discover_recordings,
+    validate_recorder,
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +32,7 @@ class CopyResult:
     inbox_dir: Path
     ledger_path: Path
     items: tuple[CopyItem, ...]
+    discovery_error: str | None = None
 
     @property
     def copied_count(self) -> int:
@@ -37,7 +44,8 @@ class CopyResult:
 
     @property
     def failed_count(self) -> int:
-        return sum(1 for item in self.items if item.status.startswith("failed"))
+        item_failures = sum(1 for item in self.items if item.status.startswith("failed"))
+        return item_failures + (1 if self.discovery_error else 0)
 
 
 def copy_discovered_recordings(config: AppConfig) -> CopyResult:
@@ -55,7 +63,18 @@ def copy_discovered_recordings(config: AppConfig) -> CopyResult:
     ledger = open_ledger(config.sqlite_path, initialize=True)
     try:
         items: list[CopyItem] = []
-        for candidate in discover_recordings(validation.recordings_dir):
+        try:
+            candidates = discover_recordings(validation.recordings_dir)
+        except RecorderAccessError as error:
+            return CopyResult(
+                validation=validation,
+                inbox_dir=inbox_dir,
+                ledger_path=config.sqlite_path,
+                items=(),
+                discovery_error=str(error),
+            )
+
+        for candidate in candidates:
             checksum = sha256_file(candidate.path)
             job = ledger.get_by_checksum(checksum)
             if job is None:

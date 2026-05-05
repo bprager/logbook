@@ -74,6 +74,18 @@ Support `obsidian-cli create <note> --vault <vault-name> --content <markdown> --
 
 Reason: The installed `obsidian-cli` v0.2.3 supports note create/list operations, but it relies on Obsidian's vault registry and URI handling. Direct filesystem writes remain the test/scratch fallback until the target vault is opened or registered in Obsidian.
 
+### D-013: StartOnMount runs bounded processing, not discovery only
+
+The recorder mount LaunchAgent runs `logbook process-mounted-recorder --env .env`, which copies new files, submits transcription, routes generated notes, marks pushed vault artifacts as synced, and refreshes Memgraph evidence. It remains bounded and recoverable, and it never deletes recorder or local source audio.
+
+Reason: A read-only mount probe can prove that a recorder mounted without advancing the ledger or vault. The May 5 meeting incident showed that mount-triggered automation must execute the same recoverable ingest path an operator would run manually.
+
+### D-014: Vault sync isolates Obsidian workspace state
+
+The generated-note vault workflow may preserve or ignore `.obsidian/workspace.json`, but that local UI state must not block generated Logbook note commits. Generated-note roots are ensured before staging so command templates do not fail on missing directories.
+
+Reason: Obsidian workspace state is operator-local UI state, while Logbook notes are recoverable generated artifacts. A workspace conflict must not prevent processed meetings, logs, notes, or dead letters from reaching the vault.
+
 ## Open Questions
 
 1. Should the current open day have an Obsidian preview note?

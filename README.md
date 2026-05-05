@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: stable operational release `1.0.0`. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place. The `v1.0.0` release tag is pushed.
+> Status: patch release `1.0.1` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
 
 ## What It Does
 
@@ -60,8 +60,10 @@ Host roles:
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
 - [docs/backups.md](docs/backups.md) - `saga` backup policy and restore-drill runbook.
-- [docs/releases/1.0.0.md](docs/releases/1.0.0.md) - current stable release notes and verification evidence.
+- [docs/releases/1.0.1.md](docs/releases/1.0.1.md) - patch release notes for mount-triggered ingest hardening.
+- [docs/releases/1.0.0.md](docs/releases/1.0.0.md) - stable release notes and verification evidence.
 - [docs/releases/0.2.0.md](docs/releases/0.2.0.md) - operational MVP release notes.
+- [lessons-learned.md](lessons-learned.md) - durable operational lessons from live incidents and recoveries.
 - [Changelog.md](Changelog.md) - release history.
 
 ## Operational Release
@@ -228,10 +230,17 @@ Render launchd plists for the local API, mount probe, and retention audit:
 PYTHONPATH=src python3 -m logbook.cli launchd-render --env .env
 ```
 
-The mount-trigger plist uses `StartOnMount` but runs only the read-only `recorder-discover`
-probe. It does not copy, transcribe, route, or delete audio. See
-[docs/launchd.md](docs/launchd.md) for install guidance and the OpenClaw runtime ownership
-guardrail.
+The mount-trigger plist uses `StartOnMount` and runs `process-mounted-recorder`, a bounded ingest
+command that copies new recorder audio, transcribes through `odin`, diarizes meetings, routes
+generated notes, marks pushed vault artifacts as synced, and syncs proof-graph evidence. It does not
+delete local or recorder audio. See [docs/launchd.md](docs/launchd.md) for install guidance and the
+OpenClaw runtime ownership guardrail.
+
+Run the same bounded mount-processing command manually:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli process-mounted-recorder --env .env
+```
 
 Plan a non-audio backup and run a restore drill:
 

@@ -4,9 +4,15 @@ import os
 from datetime import datetime
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 from logbook.config import RecorderConfig
-from logbook.recorder import discover_recordings, parse_sony_recording_name, validate_recorder
+from logbook.recorder import (
+    RecorderAccessError,
+    discover_recordings,
+    parse_sony_recording_name,
+    validate_recorder,
+)
 
 
 class RecorderTests(TestCase):
@@ -51,6 +57,15 @@ class RecorderTests(TestCase):
         self.assertIs(validation.operational, True)
         self.assertEqual(validation.recordings_dir, recordings_dir)
         self.assertEqual(validation.warnings, ())
+
+    def test_discover_recordings_reports_permission_denied(self) -> None:
+        recordings_dir = Path(self._testMethodName) / "IC RECORDER" / "REC_FILE" / "FOLDER01"
+
+        with patch.object(Path, "iterdir", side_effect=PermissionError("operation not permitted")):
+            with self.assertRaises(RecorderAccessError) as raised:
+                discover_recordings(recordings_dir)
+
+        self.assertIn("cannot read recordings directory", str(raised.exception))
 
 
 def _cleanup_tree(path: Path) -> None:

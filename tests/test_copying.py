@@ -10,6 +10,7 @@ from unittest.mock import patch
 from logbook.config import AppConfig, OdinConfig, RecorderConfig
 from logbook.copying import copy_discovered_recordings
 from logbook.ledger import open_ledger
+from logbook.recorder import RecorderAccessError
 
 
 class CopyingTests(TestCase):
@@ -110,6 +111,21 @@ class CopyingTests(TestCase):
             self.assertEqual(result.copied_count, 1)
             self.assertEqual(result.failed_count, 0)
             self.assertEqual(result.items[0].copied_path.read_bytes(), b"audio")
+
+    def test_copy_reports_recorder_access_error_without_crashing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+
+            with patch(
+                "logbook.copying.discover_recordings",
+                side_effect=RecorderAccessError("cannot read recordings directory: denied"),
+            ):
+                result = copy_discovered_recordings(app_config)
+
+            self.assertEqual(result.copied_count, 0)
+            self.assertEqual(result.failed_count, 1)
+            self.assertEqual(result.discovery_error, "cannot read recordings directory: denied")
 
 
 def _app_config(root: Path) -> AppConfig:
