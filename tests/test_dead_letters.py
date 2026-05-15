@@ -41,6 +41,7 @@ class DeadLetterManagementTests(TestCase):
             consolidate_daily_logs(app_config, vault_root, entry_date="2026-04-30")
             _write(vault_root / "04 - People" / "Quinn Wolf Prager.md", "# Quinn\n")
             dead_letter = _pending_dead_letter(app_config)
+            original_dead_letter_path = vault_root / dead_letter.obsidian_path
 
             result = assign_dead_letter_to_log(
                 config=app_config,
@@ -56,6 +57,8 @@ class DeadLetterManagementTests(TestCase):
             self.assertEqual(result.status, "assigned")
             self.assertIsNotNone(result.inbox_path)
             self.assertTrue(result.inbox_path.exists())
+            self.assertEqual(result.removed_dead_letter_path, original_dead_letter_path)
+            self.assertFalse(original_dead_letter_path.exists())
             self.assertIsNotNone(result.daily_log_path)
             rendered = result.daily_log_path.read_text(encoding="utf-8")
             self.assertIn("first entry", rendered)
@@ -79,6 +82,7 @@ class DeadLetterManagementTests(TestCase):
             self.assertIsNone(rescued.vault_synced_at)
             self.assertEqual(audit_rows[0]["action_type"], "dead_letter.assign")
             self.assertIn("spoken log prefix", audit_rows[0]["request_payload"])
+            self.assertIn("removed_dead_letter_path", audit_rows[0]["request_payload"])
 
     def test_assign_dead_letter_dry_run_does_not_mutate_ledger_or_vault(self) -> None:
         with TemporaryDirectory() as tmp:

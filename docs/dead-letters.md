@@ -24,7 +24,9 @@ When executed, Logbook:
 - records `dead_letter.assign` in `action_audit`,
 - resets stale vault-sync state for the rescued job,
 - rebuilds the canonical daily log for that recording date,
-- reruns the daily-log entity linker.
+- reruns the daily-log entity linker,
+- removes the obsolete generated dead-letter Markdown only after the log inbox
+  note is written.
 
 Rescue a pending dead letter as a meeting:
 

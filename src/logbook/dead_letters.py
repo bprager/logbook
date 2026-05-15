@@ -91,6 +91,7 @@ def assign_dead_letter_to_log(
         content = _rescued_log_content(job)
         inbox_path = inbox_log_path(vault_root, recorded_at, job.id)
         daily_path = _daily_path_for(vault_root, recorded_at)
+        dead_letter_path = vault_root / job.obsidian_path if job.obsidian_path else None
         if blockers:
             return DeadLetterManageResult(
                 "assign",
@@ -111,6 +112,7 @@ def assign_dead_letter_to_log(
                 "log",
                 inbox_path=inbox_path,
                 daily_log_path=daily_path,
+                removed_dead_letter_path=dead_letter_path,
             )
 
         try:
@@ -141,6 +143,10 @@ def assign_dead_letter_to_log(
             checksum_sha256=job.checksum_sha256,
             obsidian_path=inbox_path.relative_to(vault_root),
         )
+        removed_path = None
+        if dead_letter_path is not None and dead_letter_path.exists():
+            dead_letter_path.unlink()
+            removed_path = dead_letter_path
         audit = ledger.record_action(
             action_type="dead_letter.assign",
             target_type="recording_job",
@@ -152,6 +158,11 @@ def assign_dead_letter_to_log(
                 "previous_status": job.status,
                 "previous_obsidian_path": job.obsidian_path,
                 "new_obsidian_path": inbox_path.relative_to(vault_root).as_posix(),
+                "removed_dead_letter_path": (
+                    removed_path.relative_to(vault_root).as_posix()
+                    if removed_path is not None
+                    else None
+                ),
             },
         )
     finally:
@@ -181,6 +192,7 @@ def assign_dead_letter_to_log(
         "log",
         inbox_path=inbox_path,
         daily_log_path=final_daily_path or daily_path,
+        removed_dead_letter_path=removed_path,
         consolidation=consolidation,
         entity_links=entity_links,
         audit=audit,

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Dead-letter assignment to the log route now removes the obsolete generated
+  dead-letter note after the replacement log inbox note is written and audited.
+
 ## [1.1.0] - 2026-05-15
 
 ### Fixed
