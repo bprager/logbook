@@ -27,7 +27,7 @@ class StatusApiTests(TestCase):
             self.assertEqual(openapi.status_code, 200)
             schema = openapi.json()
             self.assertEqual(schema["info"]["title"], "Logbook API")
-            self.assertEqual(schema["info"]["version"], "0.1.0")
+            self.assertEqual(schema["info"]["version"], "1.1.0")
             self.assertIn("/jobs/{job_id}", schema["paths"])
             self.assertIn("/jobs/{job_id}/reprocess", schema["paths"])
             self.assertIn("/dead-letters/{job_id}/rescue", schema["paths"])
@@ -40,6 +40,7 @@ class StatusApiTests(TestCase):
             self.assertIn("/memory/topic-trails", schema["paths"])
             self.assertIn("/memory/graph-health", schema["paths"])
             self.assertIn("/memory/actions/{action_id}/resolve", schema["paths"])
+            self.assertIn("/observer/snapshot", schema["paths"])
             self.assertIn("HTTPBearer", schema["components"]["securitySchemes"])
             self.assertEqual(docs.status_code, 200)
             self.assertIn("Swagger UI", docs.text)
@@ -296,6 +297,34 @@ class StatusApiTests(TestCase):
             self.assertNotIn("transcript_path", body)
             self.assertNotIn(str(app_config.processing_root), body)
             self.assertNotIn(str(app_config.recorder.mount_path), body)
+
+    def test_observer_snapshot_endpoint_is_read_only_and_path_safe(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp), read_token="read-secret")
+            seeded = _seed_status_fixture(app_config)
+            client = TestClient(create_app(app_config))
+
+            unauthorized = client.get("/observer/snapshot")
+            response = client.get(
+                "/observer/snapshot",
+                headers={"Authorization": "Bearer read-secret"},
+            )
+
+            self.assertEqual(unauthorized.status_code, 401)
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["health"]["sqlite"], "ok")
+            self.assertEqual(payload["current_run"], None)
+            self.assertEqual(payload["active_stage"], None)
+            self.assertEqual(payload["stats"]["jobs_seen"], 3)
+            self.assertEqual(payload["stats"]["dead_letters"], 1)
+            self.assertEqual(payload["recent_finished"][0]["job_id"], seeded["dead_letter_id"])
+            serialized = str(payload)
+            self.assertNotIn("source_path", serialized)
+            self.assertNotIn("copied_path", serialized)
+            self.assertNotIn("transcript_path", serialized)
+            self.assertNotIn(str(app_config.processing_root), serialized)
+            self.assertNotIn(str(app_config.recorder.mount_path), serialized)
 
 
 def _seed_status_fixture(config: AppConfig) -> dict[str, int]:

@@ -81,9 +81,32 @@ class VaultSyncMarkTests(TestCase):
             )
             job = _category_job(config)
 
-            recovered = _mark_vault_synced_and_sync_memory(config)
+            recovered = _mark_vault_synced_and_sync_memory(config, Path(".env"))
 
             self.assertTrue(recovered)
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                updated = ledger.get_by_checksum(job.checksum_sha256)
+            finally:
+                ledger.close()
+            self.assertIsNotNone(updated)
+            self.assertIsNotNone(updated.vault_synced_at)
+
+    def test_mount_processing_publishes_local_generated_note_before_vault_sync_mark(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _app_config(root)
+            _init_pushed_vault(config.obsidian.vault_local_path, [])
+            job = _meeting_job(config)
+            note_path = config.obsidian.vault_local_path / job.obsidian_path
+            note_path.parent.mkdir(parents=True, exist_ok=True)
+            note_path.write_text("generated meeting\n", encoding="utf-8")
+
+            recovered = _mark_vault_synced_and_sync_memory(config, Path(".env"))
+
+            self.assertTrue(recovered)
+            _git(config.obsidian.vault_local_path, "cat-file", "-e", f"HEAD:{job.obsidian_path}")
+            self.assertEqual(_git_output(config.obsidian.vault_local_path, "status", "--short"), "")
             ledger = open_ledger(config.sqlite_path)
             try:
                 updated = ledger.get_by_checksum(job.checksum_sha256)
@@ -126,6 +149,27 @@ class VaultSyncMarkTests(TestCase):
                 any(blocker.startswith("missing_in_vault_head:") for blocker in result.items[0].blockers)
             )
 
+    def test_blocks_previously_synced_job_when_required_path_is_missing_from_head(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _app_config(root)
+            _init_pushed_vault(config.obsidian.vault_local_path, [])
+            job = _category_job(config)
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                ledger.mark_vault_synced(job.checksum_sha256, "2026-04-29T20:00:00+00:00")
+            finally:
+                ledger.close()
+
+            result = mark_vault_synced_jobs(config, dry_run=True)
+
+            self.assertEqual(result.already_synced_count, 0)
+            self.assertEqual(result.blocked_count, 1)
+            self.assertEqual(result.items[0].status, "blocked")
+            self.assertTrue(
+                any(blocker.startswith("missing_in_vault_head:") for blocker in result.items[0].blockers)
+            )
+
 
 def _consolidated_job(config: AppConfig):
     ledger = open_ledger(config.sqlite_path, initialize=True)
@@ -162,6 +206,24 @@ def _category_job(config: AppConfig):
             classification="category:task",
             obsidian_path=Path("20 - Notes/00 - Inbox/task/2026-04-29T08-21-00-job-000001-task.md"),
             status="category_written",
+        )
+    finally:
+        ledger.close()
+
+
+def _meeting_job(config: AppConfig):
+    ledger = open_ledger(config.sqlite_path, initialize=True)
+    try:
+        job = ledger.record_discovery(
+            _candidate(config.recorder.recordings_dir / "260429_0821.mp3"),
+            checksum_sha256="c" * 64,
+            source_device="IC RECORDER",
+        )
+        return ledger.mark_routed(
+            job.checksum_sha256,
+            classification="meeting",
+            obsidian_path=Path("30 - Meetings/2026/04-April/2026-04-29T08-21-00-job-000001-meeting.md"),
+            status="meeting_written",
         )
     finally:
         ledger.close()
@@ -212,6 +274,11 @@ def _app_config(root: Path) -> AppConfig:
             cli_bin=str(_fake_cli(root)),
             vault_repo_url="https://github.com/bprager/obs-vault.git",
             vault_local_path=vault_root,
+            sync_command="git -C {vault_path} pull --ff-only",
+            stage_command='git -C {vault_path} add -- "06 - Timestamps" "10 - Logs" "20 - Notes" "30 - Meetings" "40 - Reviews" "99 - Dead Letters"',
+            status_command="git -C {vault_path} status --short",
+            commit_command='git -C {vault_path} commit -m "{message}"',
+            push_command="git -C {vault_path} push origin main",
         ),
     )
 
@@ -252,3 +319,18 @@ def _git(cwd: Path, *args: str) -> None:
         raise AssertionError(
             f"git {' '.join(args)} failed: {completed.stdout}\n{completed.stderr}"
         )
+
+
+def _git_output(cwd: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"git {' '.join(args)} failed: {completed.stdout}\n{completed.stderr}"
+        )
+    return completed.stdout.strip()

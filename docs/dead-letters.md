@@ -26,6 +26,28 @@ When executed, Logbook:
 - rebuilds the canonical daily log for that recording date,
 - reruns the daily-log entity linker.
 
+Rescue a pending dead letter as a meeting:
+
+```bash
+scripts/manage-dead-letters --env .env --action rescue --job-id 123 --target meeting --reason "actually a meeting"
+```
+
+That command is a dry run by default. It reports the planned meeting note path and the dead-letter
+note that would be removed. To execute:
+
+```bash
+scripts/manage-dead-letters --env .env --action rescue --job-id 123 --target meeting --reason "actually a meeting" --execute
+```
+
+When executed, Logbook:
+
+- keeps source audio untouched,
+- diarizes the recording as a meeting even when the spoken meeting prefix was missed,
+- routes the diarized transcript into `30 - Meetings`,
+- records `dead_letter.rescue` in `action_audit`,
+- clears stale vault-sync state for the rescued job,
+- removes the obsolete generated dead-letter Markdown only after the meeting note is written.
+
 Discard a pending dead letter:
 
 ```bash

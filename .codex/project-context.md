@@ -19,6 +19,9 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 - Route unknown prefixes to `99 - Dead Letters` with 28-day retention.
 - Expose a narrow OpenClaw-facing API for health, status, rescue, reprocess, and rebuild actions.
 - Expose proof-carrying memory queries through bounded read-only `/memory/*` API endpoints backed by local ledger/artifact state.
+- Provide an independent read-only observer/watch surface for current pipeline
+  progress, recent completions, failures, durations, and compact operational
+  statistics.
 
 ## Non-Negotiable Invariants
 
@@ -37,6 +40,7 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
   - SQLite ledger for job state and idempotency.
   - Router and Obsidian note writer.
   - Status API for OpenClaw.
+  - Pipeline observer telemetry and compact watch CLI.
 
 - `odin` GPU worker:
   - HTTP job API.
@@ -50,6 +54,13 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
   - Atomic file writes.
   - Delayed source-audio cleanup only after processing and vault sync are confirmed.
 
+- Observer/watch layer:
+  - Reads SQLite/API snapshots without mutating pipeline state.
+  - Shows active run heartbeat, stage, progress, ETA, recent successes,
+    failures, dead letters, and p50/p90 duration statistics.
+  - Labels progress as measured, estimated, or unknown and keeps default output
+    path-safe.
+
 ## Repo Practices
 
 - Keep generated audio, logs, databases, model caches, and secrets out of git.
@@ -57,3 +68,5 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 - Keep backlog dependencies in `.codex/backlog.md` and memgraph.
 - Keep live operational failure modes and prevention rules in `lessons-learned.md`.
 - Use test fixtures for synthetic transcripts and tiny sample audio; do not commit personal recordings.
+- Install `.githooks/pre-commit` with `git config core.hooksPath .githooks`;
+  run `scripts/quality-gate` before release commits.

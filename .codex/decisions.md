@@ -86,6 +86,30 @@ The generated-note vault workflow may preserve or ignore `.obsidian/workspace.js
 
 Reason: Obsidian workspace state is operator-local UI state, while Logbook notes are recoverable generated artifacts. A workspace conflict must not prevent processed meetings, logs, notes, or dead letters from reaching the vault.
 
+### D-015: Pipeline observation is read-only telemetry
+
+Implement the independent watch program as a read-only consumer of pipeline
+telemetry and ledger/API snapshots. The pipeline may emit run heartbeats, stage
+events, and safe progress metadata into SQLite, but the observer must not
+supervise work, mutate job state, invoke recovery actions, delete files, or hold
+the vault write lock.
+
+Reason: The requested observer needs current-run visibility and ETA history, but
+that visibility should not weaken the existing local-first recovery model or
+OpenClaw bounded-action guardrail. SQLite remains the processing source of truth;
+observer telemetry explains what is happening now.
+
+### D-016: Pre-commit quality gate is a changed-line coverage ratchet
+
+Use a versioned `.githooks/pre-commit` hook backed by `scripts/quality-gate`.
+The gate runs Ruff, markdownlint-cli2, the full unittest suite under coverage,
+and `diff-cover` with a 96% changed-line threshold.
+
+Reason: The current full-project source coverage baseline is below 96%, so a
+global gate would block useful work unless large legacy areas were excluded.
+A changed-line ratchet keeps the requirement enforceable for new Python changes
+without pretending historical coverage debt has already been paid down.
+
 ## Open Questions
 
 1. Should the current open day have an Obsidian preview note?
@@ -97,3 +121,4 @@ Reason: Obsidian workspace state is operator-local UI state, while Logbook notes
 7. What is the exact Sony ICD-PX370 mounted volume path/name on `mimir`?
 8. Should 24-hour local cleanup move audio to trash/quarantine first, or hard-delete immediately after confirmed sync?
 9. Should the one-minute timestamp mismatch on `260427_1351.mp3` be treated as expected recorder behavior or corrected manually?
+10. Should the first watch UI implementation add a small terminal rendering dependency such as Rich, or stay standard-library-only with plainer output?

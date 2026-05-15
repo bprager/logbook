@@ -8,6 +8,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-15
+
+### Fixed
+
+- Launchd packaging now runs the Sony recorder mount processor through a stable `LogbookMountRunner.app` bundle instead of bare Python, giving macOS privacy/TCC a durable app identity for removable-volume access.
+- The deterministic log classifier now accepts `a log entry` as a log-entry trigger phrase and strips the full trigger from generated log content.
+- `process-mounted-recorder` now consolidates routed log inbox entries into canonical daily logs before vault-sync marking, preventing log jobs from remaining stuck at `inbox_written`.
+- `process-mounted-recorder` now continues local downstream recovery when recorder copy/discovery fails, so already copied, transcribed, or routed jobs can still be finalized even if launchd cannot read the removable volume.
+- Vault-sync proof checks now block previously marked jobs if required generated paths are missing from pushed vault `HEAD`, preventing stale `vault_synced_at` evidence from hiding missing notes.
+- `process-mounted-recorder` now publishes pending generated vault files before vault-sync marking, recovering final ledger jobs whose notes exist locally but are not yet committed or pushed.
+- Fixed `ingest-dry-run` so recorder access failures are reported as controlled warnings instead of crashing on a missing result field.
+- Added bounded retry around mounted-recorder copy/discovery so launchd can survive transient removable-volume readiness or access errors.
+- Extended mounted-recorder retry coverage for slow Sony volume readiness before launchd gives up on the only mount-triggered run.
+- Made non-server CLI commands importable without FastAPI so operator recovery commands can run from lighter Python environments.
+- Bounded per-job Memgraph sync from `process-mounted-recorder` so ledger and vault success cannot hang indefinitely behind graph latency.
+- Ensured proof-graph sync creates Logbook label `id` indexes, tolerates transient Memgraph index DDL storage locks, and scopes relationship health/repair checks to managed Logbook relationships.
+
+### Added
+
+- Documented the proposed LGB-039 independent pipeline observer/watch program, including read-only observer telemetry, compact CLI/API snapshot requirements, progress/ETA rules, and planned metrics.
+- Implemented LGB-039 Phase 1 with a ledger-derived `GET /observer/snapshot`
+  endpoint and compact `logbook watch --once` / `--json` output for recent
+  outcomes, durable failures, dead letters, and duration statistics.
+- Implemented LGB-039 Phase 2 with SQLite pipeline run/stage telemetry,
+  mounted-recorder stage instrumentation, stale-run detection, background
+  heartbeats for long stages, and active-run/stage fields in the observer
+  snapshot.
+- Implemented LGB-039 Phase 3 with materialized stage-duration history and
+  estimated active-stage progress/ETA using p50 duration, p90 risk duration,
+  sample count, confidence, and collecting-baseline output for sparse history.
+- Implemented LGB-039 Phase 4 with measured progress events, chunked byte
+  progress for recorder copy, and count-based mounted-recorder progress for
+  route, consolidation, and vault-sync stages.
+- Implemented LGB-039 Phase 5 with live terminal refresh, remote API snapshots,
+  bearer-token lookup, status filters, failure/stale exit policies, automatic
+  day/night appearance, theme overrides, JSON mode, no-color fallback, and an
+  optional full terminal dashboard with live key controls.
+- Added bounded read-only Odin and Memgraph reachability probes to observer
+  snapshots so the watch UI reports configured service availability.
+- Added dry-run-first `manage-dead-letters --action rescue --target meeting` for reassigning a dead letter to the meeting pipeline, including diarization, meeting-note routing, audit logging, and obsolete dead-letter note removal after success.
+- Added a versioned pre-commit quality gate under `.githooks/` that runs Ruff,
+  markdownlint-cli2, the full unittest suite under coverage, and a 96% changed
+  Python line coverage ratchet through diff-cover.
+- Promoted project metadata to `1.1.0`.
+
 ## [1.0.1] - 2026-05-05
 
 ### Added

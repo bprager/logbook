@@ -1,6 +1,6 @@
 # Backlog
 
-Updated: 2026-05-05
+Updated: 2026-05-15
 
 Project key in memgraph: `logbook`
 
@@ -40,6 +40,8 @@ LGB-027 + LGB-029 -> LGB-033 Memory graph prune and drift repair
 LGB-022 + LGB-030 + LGB-031 + LGB-032 + LGB-033 -> LGB-034 0.2.0 release readiness
 LGB-034 + LGB-035 + LGB-036 -> LGB-037 1.0.0 stable release promotion
 LGB-037 -> LGB-038 1.0.1 mount ingest hardening patch release
+LGB-003 + LGB-019 + LGB-021 + LGB-031 + LGB-038 -> LGB-039 Pipeline observer and watch program
+LGB-039 -> LGB-040 1.1.0 quality gate release
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -954,3 +956,114 @@ Notes:
 - Job 52 wrote `30 - Meetings/2026/05-May/2026-05-05T09-19-00-job-000052-meeting.md` and was pushed to the Obsidian vault in commit `796346c`.
 - Jobs 51 and 52 are vault-synced after the recovery run; job 50 remains an inbox entry awaiting normal consolidation.
 - `lessons-learned.md` is now the durable place for production failure modes and prevention guidance.
+
+## Milestone 10: Operator Watchability
+
+### LGB-039 - Pipeline Observer And Watch Program
+
+Status: In Progress
+
+Priority: P0
+
+Dependencies: LGB-003, LGB-019, LGB-021, LGB-031, LGB-038
+
+Deliverables:
+
+- Add read-only observer documentation in `docs/pipeline-observer.md`.
+- Add observer telemetry beside the SQLite job ledger: pipeline runs, stage
+  events, heartbeats, progress metadata, and rolling stage-duration history.
+- Add a read-only `GET /observer/snapshot` API that reports current run,
+  active stage, recent completions, recent failures, stale heartbeat status,
+  health summaries, and 24-hour statistics in one consistent response.
+- Add `logbook watch` with live refresh, `--once`, `--json`, filters, no-color
+  mode, and API-backed remote mode.
+- Use measured progress for byte-copy and countable stages.
+- Use historical ETA estimates for transcription, diarization, and other
+  stages that cannot report real progress.
+- Label progress as `measured`, `estimated`, or `unknown`, including ETA
+  confidence and sample count for estimates.
+- Add path-safe Prometheus metrics for active run, stale run, active stage,
+  progress percent, ETA, recent failures, and stage-duration quantiles.
+
+Acceptance:
+
+- `logbook watch --once --env .env` reports recent finished jobs, current run
+  state, failures, successes, durations, and basic statistics without writing to
+  SQLite, Obsidian, Memgraph, recorder audio, or local source audio.
+- `logbook watch --env .env` refreshes compactly in a normal 80-column terminal
+  and falls back to plain text when stdout is not a TTY.
+- A currently running mounted-recorder pipeline shows current stage, elapsed
+  time, heartbeat age, progress bar, ETA, and whether the percentage is measured
+  or estimated.
+- Sparse history produces `unknown` or `collecting baseline` rather than a fake
+  precise ETA.
+- Stale pipeline heartbeat detection is visible in the API, CLI, and metrics.
+- Default observer output avoids source audio paths, transcript paths, bearer
+  tokens, and transcript text.
+- Tests cover snapshot consistency, stale heartbeat detection, ETA fallback,
+  privacy redaction, terminal/no-TTY output, JSON output, and Prometheus metrics.
+
+Notes:
+
+- Phase 1 landed on 2026-05-15 with a ledger-derived `GET /observer/snapshot`
+  endpoint and `logbook watch --once` / `--json` output. This first slice is
+  read-only and reports recent finished jobs, durable failures, dead letters,
+  and p50/p90 duration statistics.
+- Phase 2 landed on 2026-05-15 with `pipeline_runs`, `pipeline_stage_events`,
+  the SQLite pipeline reporter, background run heartbeats, mounted-recorder
+  stage instrumentation, active-run/stage observer fields, stale-run detection,
+  and path-redacted active-stage details.
+- Phase 3 landed on 2026-05-15 with `pipeline_stage_durations`,
+  stage-duration materialization from successful stage events, legacy
+  start/succeeded event rebuild support, and observer ETA fallback using p50
+  history, p90 risk duration, sample count, and confidence. Sparse history is
+  still reported as `collecting baseline`.
+- Phase 4 landed on 2026-05-15 with measured `progress` events, chunked copy
+  byte progress, mounted-recorder count progress for route/consolidate/vault
+  sync, and observer rendering that prefers measured progress while preserving
+  elapsed time from the stage start.
+- Phase 5 landed on 2026-05-15 with live in-place refresh, one-shot and JSON
+  modes, local SQLite or remote `--api` snapshots, bearer-token environment
+  lookup, status filters, failure/stale exit policies, automatic day/night
+  appearance, explicit theme overrides, no-color terminal fallback, and optional
+  full terminal dashboard mode via `--ui full` with live key controls.
+- The watch CLI and observer API now run bounded read-only Odin and Memgraph
+  reachability probes, replacing configured-service `unknown` labels with
+  `ok` or `unavailable`.
+- The observer is a read-only consumer. Bounded recovery actions stay in the
+  existing action API and dead-letter management commands.
+- SQLite remains the processing source of truth. Observer telemetry explains
+  active work and supports ETAs, but it must not decide idempotency or recovery.
+
+### LGB-040 - 1.1.0 Quality Gate Release
+
+Status: Done
+
+Priority: P0
+
+Dependencies: LGB-039
+
+Deliverables:
+
+- Promote project package metadata, API metadata, and release documentation to
+  `1.1.0`.
+- Add a versioned `.githooks/pre-commit` hook that runs the repository quality
+  gate before commits.
+- Add `scripts/quality-gate` for manual and hook-driven verification.
+- Add a Markdown lint configuration and dev dependencies for coverage and
+  changed-line coverage checks.
+
+Acceptance:
+
+- Python files pass Ruff.
+- Markdown files pass markdownlint-cli2 under the project style configuration.
+- The full unittest suite runs under coverage.
+- Python changes must meet at least 96% changed-line coverage through
+  diff-cover.
+- The versioned hook can be installed with `git config core.hooksPath .githooks`.
+
+Notes:
+
+- Implemented on 2026-05-15. The gate is a coverage ratchet over changed Python
+  lines, not a claim that the existing legacy global source coverage is already
+  above 96%.

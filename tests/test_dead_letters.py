@@ -12,10 +12,12 @@ from logbook.consolidation import consolidate_daily_logs
 from logbook.copying import copy_discovered_recordings
 from logbook.dead_letters import (
     assign_dead_letter_to_log,
+    rescue_dead_letter_as_meeting,
     discard_dead_letter,
     list_dead_letters,
 )
 from logbook.ledger import open_ledger
+from logbook.odin import FakeOdinClient
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied_with_fake_odin
 
@@ -104,6 +106,88 @@ class DeadLetterManagementTests(TestCase):
                 ledger.close()
             self.assertEqual(unchanged.status, "dead_letter_written")
             self.assertEqual(audit_count, 0)
+
+    def test_rescue_dead_letter_as_meeting_dry_run_does_not_mutate_or_delete(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            vault_root = root / "test-vault"
+            dead_letter = _seed_dead_letter(app_config, vault_root)
+            dead_letter_path = vault_root / dead_letter.obsidian_path
+
+            result = rescue_dead_letter_as_meeting(
+                config=app_config,
+                vault_root=vault_root,
+                job_id=dead_letter.id,
+                execute=False,
+                client=FakeOdinClient(app_config.odin),
+            )
+
+            self.assertEqual(result.status, "would_rescue")
+            self.assertEqual(result.target_route_kind, "meeting")
+            self.assertTrue(dead_letter_path.exists())
+            self.assertIsNotNone(result.meeting_path)
+            self.assertFalse(result.meeting_path.exists())
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                unchanged = ledger.get_by_id(dead_letter.id)
+                audit_count = ledger.connection.execute(
+                    "SELECT COUNT(*) AS count FROM action_audit"
+                ).fetchone()["count"]
+            finally:
+                ledger.close()
+            self.assertEqual(unchanged.status, "dead_letter_written")
+            self.assertEqual(unchanged.classification, "dead_letter")
+            self.assertEqual(audit_count, 0)
+
+    def test_rescue_dead_letter_as_meeting_diarizes_routes_and_removes_dead_letter_note(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            vault_root = root / "test-vault"
+            dead_letter = _seed_dead_letter(app_config, vault_root)
+            dead_letter_path = vault_root / dead_letter.obsidian_path
+            self.assertTrue(dead_letter_path.exists())
+
+            result = rescue_dead_letter_as_meeting(
+                config=app_config,
+                vault_root=vault_root,
+                job_id=dead_letter.id,
+                execute=True,
+                requested_by="test",
+                reason="actually a meeting",
+                client=FakeOdinClient(app_config.odin),
+            )
+
+            self.assertEqual(result.status, "rescued")
+            self.assertEqual(result.target_route_kind, "meeting")
+            self.assertIsNotNone(result.meeting_path)
+            self.assertTrue(result.meeting_path.exists())
+            self.assertFalse(dead_letter_path.exists())
+            rendered = result.meeting_path.read_text(encoding="utf-8")
+            self.assertIn('type: "meeting"', rendered)
+            self.assertIn("## Transcript", rendered)
+
+            ledger = open_ledger(app_config.sqlite_path)
+            try:
+                rescued = ledger.get_by_id(dead_letter.id)
+                row = ledger.connection.execute(
+                    "SELECT action_type, request_payload FROM action_audit"
+                ).fetchone()
+            finally:
+                ledger.close()
+
+            self.assertIsNotNone(rescued)
+            self.assertEqual(rescued.status, "meeting_written")
+            self.assertEqual(rescued.classification, "meeting")
+            self.assertIsNotNone(rescued.diarization_path)
+            self.assertEqual(
+                rescued.obsidian_path,
+                str(result.meeting_path.relative_to(vault_root)),
+            )
+            self.assertIsNone(rescued.vault_synced_at)
+            self.assertEqual(row["action_type"], "dead_letter.rescue")
+            self.assertIn("actually a meeting", row["request_payload"])
 
     def test_discard_dead_letter_records_audit_and_removes_from_pending_list(self) -> None:
         with TemporaryDirectory() as tmp:

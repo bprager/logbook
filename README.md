@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: patch release `1.0.1` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
+> Status: minor release `1.1.0` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, observer/watch UI, meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
 
 ## What It Does
 
@@ -15,6 +15,8 @@ Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stag
 - Stages log entries before rendering one canonical daily log per date.
 - Updates the GitHub-backed Obsidian vault through the configured Obsidian CLI workflow.
 - Lets OpenClaw observe queue health, dead letters, inbox status, and bounded repair actions.
+- Plans a compact independent observer/watch view for active pipeline progress,
+  recent completions, failures, ETAs, and path-safe statistics.
 - Deletes local and recorder-side source audio after the 24-hour retention gate confirms processing and vault sync.
 - Links canonical daily logs to existing Obsidian People, Event, and Object notes.
 - Backs up restorable non-audio operational state to `saga`.
@@ -59,6 +61,8 @@ Host roles:
 - [.codex/decisions.md](.codex/decisions.md) - accepted decisions and open questions.
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
+- [docs/pipeline-observer.md](docs/pipeline-observer.md) - design for the independent watch program and observer telemetry.
+- [docs/releases/1.1.0.md](docs/releases/1.1.0.md) - release notes for the observer/watch UI and quality gate.
 - [docs/backups.md](docs/backups.md) - `saga` backup policy and restore-drill runbook.
 - [docs/releases/1.0.1.md](docs/releases/1.0.1.md) - patch release notes for mount-triggered ingest hardening.
 - [docs/releases/1.0.0.md](docs/releases/1.0.0.md) - stable release notes and verification evidence.
@@ -88,6 +92,27 @@ The local placeholder includes:
 - Sony recorder mount details
 
 Use [.env.example](.env.example) as the tracked, secret-free template.
+
+## Development Quality Gate
+
+Install the versioned pre-commit hook once per clone:
+
+```bash
+git config core.hooksPath .githooks
+.venv/bin/python -m pip install -e '.[dev]'
+```
+
+Run the same gate manually before a release:
+
+```bash
+scripts/quality-gate
+```
+
+The gate runs Ruff over Python files, markdownlint-cli2 over every tracked
+Markdown file, the full unittest suite under coverage, and `diff-cover` with a
+96% changed-line coverage threshold for Python changes. The full coverage report
+is still printed so legacy coverage debt remains visible while new changes are
+ratcheted upward.
 
 ## Development
 
@@ -202,6 +227,29 @@ Bounded action endpoints use `LOGBOOK_ACTION_TOKEN` and only record auditable in
 - `POST /logs/{date}/rebuild`
 
 Send an `idempotency_key` in the JSON body when OpenClaw may retry an action request.
+
+Print a compact, read-only observer snapshot from the SQLite ledger:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli watch --env .env --once
+PYTHONPATH=src python3 -m logbook.cli watch --env .env --once --json
+PYTHONPATH=src python3 -m logbook.cli watch --env .env --theme auto
+PYTHONPATH=src python3 -m logbook.cli watch --env .env --ui full
+PYTHONPATH=src python3 -m logbook.cli watch --api http://127.0.0.1:8788 --read-token-env LOGBOOK_READ_TOKEN
+```
+
+The matching API endpoint is `GET /observer/snapshot`. The observer reports
+recent finished jobs, failures visible in durable state, dead letters, basic
+duration statistics, and bounded Odin/Memgraph reachability checks. When
+`process-mounted-recorder` is running, it reports the active run, heartbeat age,
+stale status, current top-level stage, and ETA/progress estimate when enough
+comparable stage-duration history exists. Copy, route, consolidation, and
+vault-sync stages report measured progress when they know their byte or item
+counts. The live terminal UI supports automatic day/night appearance,
+`--theme day|night|auto`, `--no-color`, status filters, script-friendly
+failure/stale exit policies, and an optional full terminal dashboard with
+`--ui full`. In a live interactive terminal the full dashboard also supports
+`q`, `r`, `f`, `a`, and `+/-` key controls.
 
 Inspect audio retention cleanup eligibility without deleting anything:
 

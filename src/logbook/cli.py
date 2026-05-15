@@ -1,19 +1,28 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import select
+import shutil
 import sqlite3
 import subprocess
 import sys
+import termios
+import time
+import tty
 from pathlib import Path
+from urllib import request
 
 from logbook.backup import run_backup, run_restore_drill
 from logbook.config import AppConfig, ConfigError, load_app_config, load_recorder_config
 from logbook.consolidation import consolidate_daily_logs
-from logbook.copying import copy_discovered_recordings
+from logbook.copying import copy_discovered_recordings, copy_discovered_recordings_with_retries
 from logbook.dead_letters import (
     assign_dead_letter_to_log,
     discard_dead_letter,
     list_dead_letters,
+    rescue_dead_letter_as_meeting,
 )
 from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
 from logbook.entity_linker import link_daily_log_entities
@@ -31,11 +40,18 @@ from logbook.memory_graph import (
     query_memory_graph_plan,
 )
 from logbook.odin import HttpOdinClient
-from logbook.odin_worker import OdinWorkerConfig, create_odin_worker_app
+from logbook.observer import (
+    build_observer_snapshot,
+    filter_observer_snapshot,
+    observer_snapshot_from_dict,
+    render_full_observer_dashboard,
+    render_observer_snapshot,
+)
 from logbook.preview import write_open_log_preview
 from logbook.recorder import RecorderAccessError, discover_recordings, validate_recorder
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
 from logbook.routing import route_transcripts
+from logbook.telemetry import SQLitePipelineReporter
 from logbook.transcription import transcribe_copied, transcribe_copied_with_fake_odin
 from logbook.vault import ObsidianVaultWorkflow, VaultWorkflowError
 from logbook.vault_sync import mark_vault_synced_jobs
@@ -230,26 +246,26 @@ def main(argv: list[str] | None = None) -> int:
 
     dead_letter_parser = subparsers.add_parser(
         "manage-dead-letters",
-        help="list, assign, or discard dead letters with an audit trail",
+        help="list, assign, rescue, or discard dead letters with an audit trail",
     )
     dead_letter_parser.add_argument("--env", type=Path, default=Path(".env"))
     dead_letter_parser.add_argument(
         "--action",
-        choices=("list", "assign", "discard"),
+        choices=("list", "assign", "rescue", "discard"),
         default="list",
-        help="operation to perform; assign currently supports only target=log",
+        help="operation to perform; rescue supports target=meeting",
     )
     dead_letter_parser.add_argument(
         "--job-id",
         type=int,
         default=None,
-        help="dead-letter job id for assign or discard",
+        help="dead-letter job id for assign, rescue, or discard",
     )
     dead_letter_parser.add_argument(
         "--target",
-        choices=("log",),
+        choices=("log", "meeting"),
         default="log",
-        help="target route for assign; only log is supported right now",
+        help="target route for assign or rescue",
     )
     dead_letter_parser.add_argument(
         "--vault",
@@ -276,7 +292,7 @@ def main(argv: list[str] | None = None) -> int:
     dead_letter_parser.add_argument(
         "--execute",
         action="store_true",
-        help="mutate ledger/vault; without this flag assign/discard are dry runs",
+        help="mutate ledger/vault; without this flag assign/rescue/discard are dry runs",
     )
 
     vault_parser = subparsers.add_parser(
@@ -421,6 +437,73 @@ def main(argv: list[str] | None = None) -> int:
     serve_api_parser.add_argument("--env", type=Path, default=Path(".env"))
     serve_api_parser.add_argument("--host", default=None)
     serve_api_parser.add_argument("--port", type=int, default=None)
+
+    watch_parser = subparsers.add_parser(
+        "watch",
+        help="print a compact read-only observer snapshot of recent pipeline state",
+    )
+    watch_parser.add_argument("--env", type=Path, default=Path(".env"))
+    watch_parser.add_argument(
+        "--api",
+        default=None,
+        help="read observer snapshots from a Logbook API base URL instead of local SQLite",
+    )
+    watch_parser.add_argument(
+        "--read-token-env",
+        default=None,
+        help="environment variable containing the API bearer token",
+    )
+    watch_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="render one snapshot and exit",
+    )
+    watch_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the observer snapshot as JSON",
+    )
+    watch_parser.add_argument(
+        "--ui",
+        choices=("compact", "full"),
+        default="compact",
+        help="terminal layout for text output",
+    )
+    watch_parser.add_argument(
+        "--refresh-interval",
+        type=float,
+        default=2.0,
+        help="seconds between live refreshes",
+    )
+    watch_parser.add_argument(
+        "--max-refreshes",
+        type=int,
+        default=None,
+        help="stop after this many refreshes; useful for scripts and tests",
+    )
+    watch_parser.add_argument(
+        "--theme",
+        choices=("auto", "day", "night"),
+        default="auto",
+        help="terminal appearance; auto uses local day/night hour",
+    )
+    watch_parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="disable ANSI colors",
+    )
+    watch_parser.add_argument(
+        "--status",
+        choices=("all", "failed", "success", "dead_letter"),
+        default="all",
+        help="filter recent sections",
+    )
+    watch_parser.add_argument(
+        "--fail-on",
+        choices=("never", "failure", "stale", "any"),
+        default="never",
+        help="exit nonzero when the snapshot contains the selected condition",
+    )
 
     retention_status_parser = subparsers.add_parser(
         "retention-status",
@@ -580,6 +663,21 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "serve-api":
         return _serve_api(args.env, args.host, args.port)
+    if args.command == "watch":
+        return _watch(
+            args.env,
+            api_url=args.api,
+            read_token_env=args.read_token_env,
+            once=args.once,
+            json_output=args.json,
+            refresh_interval=args.refresh_interval,
+            max_refreshes=args.max_refreshes,
+            theme=args.theme,
+            no_color=args.no_color,
+            ui=args.ui,
+            status_filter=args.status,
+            fail_on=args.fail_on,
+        )
     if args.command == "retention-status":
         return _retention_status(args.env)
     if args.command == "cleanup-plan":
@@ -671,7 +769,7 @@ def _ingest_dry_run(env_path: Path, record_discovery: bool) -> int:
         print(f"warning={warning}")
     if result.discovery_error:
         print(f"warning={result.discovery_error}")
-    if not validation.operational:
+    if not validation.operational or result.discovery_error:
         return 1
 
     print(f"mp3_count={len(result.items)}")
@@ -749,59 +847,132 @@ def _process_mounted_recorder(env_path: Path) -> int:
     print(f"env_path={env_path}")
     print("delete_audio=no")
     print("delete_recorder_audio=no")
-
-    copy_result = copy_discovered_recordings(config)
-    print(f"copy_copied_count={copy_result.copied_count}")
-    print(f"copy_skipped_count={copy_result.skipped_count}")
-    print(f"copy_failed_count={copy_result.failed_count}")
-    if copy_result.discovery_error:
-        print(f"warning={copy_result.discovery_error}")
-    for warning in copy_result.validation.warnings:
-        print(f"warning={warning}")
-    if not copy_result.validation.operational or copy_result.failed_count:
-        return 1
+    reporter = SQLitePipelineReporter.start(
+        config.sqlite_path,
+        command="process-mounted-recorder",
+        heartbeat_interval_seconds=15.0,
+    )
+    exit_code = 1
 
     try:
-        odin_client = HttpOdinClient(config.odin)
-        transcription_result = transcribe_copied(config=config, client=odin_client)
-    except Exception as error:
-        print(f"odin_error={error}", file=sys.stderr)
-        return 1
-    print(f"transcribed_count={transcription_result.transcribed_count}")
-    print(f"transcription_skipped_count={transcription_result.skipped_count}")
-    print(f"transcription_failed_count={transcription_result.failed_count}")
-    if transcription_result.failed_count:
-        return 1
+        reporter.start_stage("copy")
+        copy_result = copy_discovered_recordings_with_retries(
+            config,
+            progress_callback=lambda current, total: (
+                reporter.advance_stage("copy", progress_current=current, progress_total=total)
+                if total
+                else None
+            ),
+        )
+        print(f"copy_attempt_count={copy_result.attempt_count}")
+        print(f"copy_copied_count={copy_result.copied_count}")
+        print(f"copy_skipped_count={copy_result.skipped_count}")
+        print(f"copy_failed_count={copy_result.failed_count}")
+        if copy_result.discovery_error:
+            print(f"warning={copy_result.discovery_error}")
+        for warning in copy_result.validation.warnings:
+            print(f"warning={warning}")
+        copy_stage_ok = copy_result.validation.operational and copy_result.failed_count == 0
+        reporter.finish_stage(
+            "copy",
+            event="succeeded" if copy_stage_ok else "failed",
+            safe_detail=copy_result.discovery_error,
+        )
 
-    try:
-        diarization_result = diarize_meetings(config=config, client=HttpOdinClient(config.odin))
-    except Exception as error:
-        print(f"diarization_error={error}", file=sys.stderr)
-        return 1
-    print(f"diarized_count={diarization_result.diarized_count}")
-    print(f"diarization_skipped_count={diarization_result.skipped_count}")
-    print(f"diarization_failed_count={diarization_result.failed_count}")
-    if diarization_result.failed_count:
-        return 1
+        try:
+            reporter.start_stage("transcribe")
+            odin_client = HttpOdinClient(config.odin)
+            transcription_result = transcribe_copied(config=config, client=odin_client)
+        except Exception as error:
+            reporter.finish_stage("transcribe", event="failed", safe_detail=str(error))
+            print(f"odin_error={error}", file=sys.stderr)
+            return 1
+        print(f"transcribed_count={transcription_result.transcribed_count}")
+        print(f"transcription_skipped_count={transcription_result.skipped_count}")
+        print(f"transcription_failed_count={transcription_result.failed_count}")
+        if transcription_result.failed_count:
+            reporter.finish_stage("transcribe", event="failed")
+            return 1
+        reporter.finish_stage("transcribe", event="succeeded")
 
-    routing_job_ids = _routing_job_ids(config)
-    print(f"routing_candidate_count={len(routing_job_ids)}")
-    if not routing_job_ids:
-        if _vault_has_generated_changes(config):
-            print("route_transcripts=skipped_pending_vault_changes")
-            if not _commit_pending_vault_changes(config):
+        try:
+            reporter.start_stage("diarize")
+            diarization_result = diarize_meetings(config=config, client=HttpOdinClient(config.odin))
+        except Exception as error:
+            reporter.finish_stage("diarize", event="failed", safe_detail=str(error))
+            print(f"diarization_error={error}", file=sys.stderr)
+            return 1
+        print(f"diarized_count={diarization_result.diarized_count}")
+        print(f"diarization_skipped_count={diarization_result.skipped_count}")
+        print(f"diarization_failed_count={diarization_result.failed_count}")
+        if diarization_result.failed_count:
+            reporter.finish_stage("diarize", event="failed")
+            return 1
+        reporter.finish_stage("diarize", event="succeeded")
+
+        reporter.start_stage("route")
+        routing_job_ids = _routing_job_ids(config)
+        print(f"routing_candidate_count={len(routing_job_ids)}")
+        if not routing_job_ids:
+            if _vault_has_generated_changes(config):
+                print("route_transcripts=skipped_pending_vault_changes")
+                if not _commit_pending_vault_changes(config):
+                    reporter.finish_stage("route", event="failed")
+                    return 1
+            else:
+                print("route_transcripts=skipped_no_candidates")
+            reporter.finish_stage("route", event="succeeded")
+            reporter.start_stage("consolidate")
+            if not _consolidate_pending_logs_with_vault_workflow(config):
+                reporter.finish_stage("consolidate", event="failed")
                 return 1
-        else:
-            print("route_transcripts=skipped_no_candidates")
-        return 0 if _mark_vault_synced_and_sync_memory(config) else 1
+            reporter.advance_stage("consolidate", progress_current=1, progress_total=1)
+            reporter.finish_stage("consolidate", event="succeeded")
+            reporter.start_stage("vault_sync")
+            sync_ok = _mark_vault_synced_and_sync_memory(config, env_path)
+            if sync_ok:
+                reporter.advance_stage("vault_sync", progress_current=1, progress_total=1)
+            reporter.finish_stage("vault_sync", event="succeeded" if sync_ok else "failed")
+            exit_code = 0 if copy_stage_ok and sync_ok else 1
+            return exit_code
 
-    if not _route_with_vault_workflow(config):
-        return 1
+        if not _route_with_vault_workflow(config):
+            reporter.finish_stage("route", event="failed")
+            return 1
+        reporter.advance_stage(
+            "route",
+            progress_current=len(routing_job_ids),
+            progress_total=len(routing_job_ids),
+        )
+        reporter.finish_stage("route", event="succeeded")
 
-    return 0 if _mark_vault_synced_and_sync_memory(config) else 1
+        reporter.start_stage("consolidate")
+        if not _consolidate_pending_logs_with_vault_workflow(config):
+            reporter.finish_stage("consolidate", event="failed")
+            return 1
+        reporter.advance_stage("consolidate", progress_current=1, progress_total=1)
+        reporter.finish_stage("consolidate", event="succeeded")
+
+        reporter.start_stage("vault_sync")
+        sync_ok = _mark_vault_synced_and_sync_memory(config, env_path)
+        if sync_ok:
+            reporter.advance_stage("vault_sync", progress_current=1, progress_total=1)
+        reporter.finish_stage("vault_sync", event="succeeded" if sync_ok else "failed")
+        exit_code = 0 if copy_stage_ok and sync_ok else 1
+        return exit_code
+    finally:
+        reporter.finish_run(
+            status="succeeded" if exit_code == 0 else "failed",
+            exit_code=exit_code,
+        )
 
 
-def _mark_vault_synced_and_sync_memory(config: AppConfig) -> bool:
+def _mark_vault_synced_and_sync_memory(config: AppConfig, env_path: Path) -> bool:
+    if _vault_has_generated_changes(config):
+        print("vault_pending_changes_detected=yes")
+        if not _commit_pending_vault_changes(config):
+            return False
+
     try:
         vault_sync_result = mark_vault_synced_jobs(config, dry_run=False)
     except ValueError as error:
@@ -815,7 +986,7 @@ def _mark_vault_synced_and_sync_memory(config: AppConfig) -> bool:
 
     marked_job_ids = tuple(item.job.id for item in vault_sync_result.items if item.status == "marked")
     if marked_job_ids:
-        _sync_memory_graph_for_jobs(config, marked_job_ids)
+        _sync_memory_graph_for_jobs(config, marked_job_ids, env_path=env_path)
     return True
 
 
@@ -850,6 +1021,60 @@ def _route_with_vault_workflow(config: AppConfig) -> bool:
     if routing_result.failed_count:
         return False
     return True
+
+
+def _consolidate_pending_logs_with_vault_workflow(config: AppConfig) -> bool:
+    pending_count = _pending_log_consolidation_count(config)
+    print(f"consolidation_candidate_count={pending_count}")
+    if pending_count == 0:
+        print("consolidate_logs=skipped_no_candidates")
+        return True
+
+    if config.obsidian is None:
+        print("config_error: missing Obsidian configuration", file=sys.stderr)
+        return False
+
+    workflow = ObsidianVaultWorkflow(
+        config=config.obsidian,
+        vault_root=config.obsidian.vault_local_path,
+        lock_root=config.processing_root,
+    )
+    preflight = workflow.preflight()
+    if not preflight.operational:
+        _print_vault_preflight(preflight)
+        return False
+
+    note_writer = ObsidianCliNoteWriter(
+        config=config.obsidian,
+        vault_root=config.obsidian.vault_local_path,
+    )
+    try:
+        with workflow.session("Update Logbook daily logs from mounted recorder"):
+            result = consolidate_daily_logs(
+                config,
+                vault_root=config.obsidian.vault_local_path,
+                note_writer=note_writer,
+            )
+    except VaultWorkflowError as error:
+        print(f"vault_workflow_error: {error}", file=sys.stderr)
+        return False
+
+    print(f"consolidated_count={result.consolidated_count}")
+    print(f"consolidation_failed_count={result.failed_count}")
+    for item in result.items:
+        print(
+            "consolidation_result="
+            f"{item.status} date={item.entry_date} entries={item.entry_count}"
+        )
+    return result.failed_count == 0
+
+
+def _pending_log_consolidation_count(config: AppConfig) -> int:
+    ledger = open_ledger(config.sqlite_path, initialize=True)
+    try:
+        return len(ledger.log_jobs_for_consolidation())
+    finally:
+        ledger.close()
 
 
 def _commit_pending_vault_changes(config: AppConfig) -> bool:
@@ -901,27 +1126,73 @@ def _routing_job_ids(config: AppConfig) -> tuple[int, ...]:
         ledger.close()
 
 
-def _sync_memory_graph_for_jobs(config: AppConfig, job_ids: tuple[int, ...]) -> None:
+def _sync_memory_graph_for_jobs(
+    config: AppConfig,
+    job_ids: tuple[int, ...],
+    *,
+    env_path: Path,
+    timeout_seconds: float = 90,
+) -> None:
     if config.memgraph is None:
         print("memory_graph_sync=skipped_missing_memgraph_config")
         return
 
     written_nodes = 0
     written_relationships = 0
-    try:
-        for job_id in job_ids:
-            plan = build_memory_graph_plan(config, job_id=job_id)
-            result = apply_memory_graph_plan(plan, Neo4jMemgraphClient(config.memgraph))
-            written_nodes += result.nodes_written
-            written_relationships += result.relationships_written
-    except RuntimeError as error:
-        print(f"memory_graph_sync=failed warning={error}")
-        return
+    timed_out = 0
+    failed = 0
+    for job_id in job_ids:
+        command = [
+            sys.executable,
+            "-m",
+            "logbook.cli",
+            "memory-graph-sync",
+            "--env",
+            str(env_path),
+            "--job-id",
+            str(job_id),
+            "--execute",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out += 1
+            print(f"memory_graph_sync=timed_out job_id={job_id}")
+            continue
+        if completed.returncode != 0:
+            failed += 1
+            warning = (completed.stderr or completed.stdout).strip().splitlines()
+            detail = warning[-1] if warning else f"exit_code={completed.returncode}"
+            print(f"memory_graph_sync=failed job_id={job_id} warning={detail}")
+            continue
+        nodes, relationships = _parse_memory_graph_sync_output(completed.stdout)
+        written_nodes += nodes
+        written_relationships += relationships
 
-    print("memory_graph_sync=ok")
+    status = "ok" if timed_out == 0 and failed == 0 else "partial"
+    print(f"memory_graph_sync={status}")
     print(f"memory_graph_jobs_synced={len(job_ids)}")
     print(f"memory_graph_nodes_written={written_nodes}")
     print(f"memory_graph_relationships_written={written_relationships}")
+    print(f"memory_graph_jobs_timed_out={timed_out}")
+    print(f"memory_graph_jobs_failed={failed}")
+
+
+def _parse_memory_graph_sync_output(output: str) -> tuple[int, int]:
+    nodes = 0
+    relationships = 0
+    for line in output.splitlines():
+        if line.startswith("nodes_written="):
+            nodes = int(line.split("=", 1)[1])
+        elif line.startswith("relationships_written="):
+            relationships = int(line.split("=", 1)[1])
+    return nodes, relationships
 
 
 def _fake_transcribe_copied(env_path: Path) -> int:
@@ -1019,6 +1290,15 @@ def _serve_odin_worker(
     port: int,
     worker_root: Path | None,
 ) -> int:
+    try:
+        from logbook.odin_worker import OdinWorkerConfig, create_odin_worker_app
+    except ModuleNotFoundError as error:
+        print(
+            f"config_error: {error.name} package is required to serve the odin worker",
+            file=sys.stderr,
+        )
+        return 2
+
     try:
         config = load_app_config(env_path)
     except ConfigError as error:
@@ -1367,19 +1647,20 @@ def _manage_dead_letters(
         return 0
 
     if job_id is None:
-        print("config_error: --job-id is required for assign and discard", file=sys.stderr)
+        print("config_error: --job-id is required for assign, rescue, and discard", file=sys.stderr)
         return 2
 
     target_vault = vault_root
+    if action in {"assign", "rescue"} and target_vault is None:
+        if config.obsidian is None:
+            print("config_error: missing Obsidian vault path", file=sys.stderr)
+            return 2
+        target_vault = config.obsidian.vault_local_path
+
     if action == "assign":
         if target != "log":
             print("config_error: only --target log is supported", file=sys.stderr)
             return 2
-        if target_vault is None:
-            if config.obsidian is None:
-                print("config_error: missing Obsidian vault path", file=sys.stderr)
-                return 2
-            target_vault = config.obsidian.vault_local_path
         result = assign_dead_letter_to_log(
             config=config,
             vault_root=target_vault,
@@ -1388,6 +1669,19 @@ def _manage_dead_letters(
             requested_by=requested_by,
             reason=reason,
             linker_months=linker_months,
+        )
+    elif action == "rescue":
+        if target != "meeting":
+            print("config_error: rescue currently supports only --target meeting", file=sys.stderr)
+            return 2
+        result = rescue_dead_letter_as_meeting(
+            config=config,
+            vault_root=target_vault,
+            job_id=job_id,
+            execute=execute,
+            requested_by=requested_by,
+            reason=reason,
+            client=HttpOdinClient(config.odin),
         )
     elif action == "discard":
         result = discard_dead_letter(
@@ -1405,7 +1699,7 @@ def _manage_dead_letters(
     print(f"env_path={env_path}")
     print(f"action={action}")
     print(f"job_id={job_id}")
-    print(f"target={target if action == 'assign' else '-'}")
+    print(f"target={target if action in {'assign', 'rescue'} else '-'}")
     print(f"execute={_yes_no(execute)}")
     print("delete_audio=no")
     print("delete_recorder_audio=no")
@@ -1415,7 +1709,18 @@ def _manage_dead_letters(
     print(f"blockers={','.join(result.blockers) if result.blockers else '-'}")
     print(f"audit_id={result.audit.id if result.audit is not None else '-'}")
     print(f"inbox_path={result.inbox_path if result.inbox_path is not None else '-'}")
+    print(f"meeting_path={result.meeting_path if result.meeting_path is not None else '-'}")
+    print(
+        "removed_dead_letter_path="
+        f"{result.removed_dead_letter_path if result.removed_dead_letter_path is not None else '-'}"
+    )
     print(f"daily_log_path={result.daily_log_path if result.daily_log_path is not None else '-'}")
+    if result.diarization is not None:
+        print(f"diarized_count={result.diarization.diarized_count}")
+        print(f"diarization_failed_count={result.diarization.failed_count}")
+    if result.routing is not None:
+        print(f"routed_count={result.routing.routed_count}")
+        print(f"routing_failed_count={result.routing.failed_count}")
     if result.consolidation is not None:
         print(f"consolidated_count={result.consolidation.consolidated_count}")
         print(f"consolidation_failed_count={result.consolidation.failed_count}")
@@ -1849,6 +2154,143 @@ def _serve_api(env_path: Path, host: str | None, port: int | None) -> int:
     return 0
 
 
+def _watch(
+    env_path: Path,
+    *,
+    api_url: str | None,
+    read_token_env: str | None,
+    once: bool,
+    json_output: bool,
+    refresh_interval: float,
+    max_refreshes: int | None,
+    theme: str,
+    no_color: bool,
+    ui: str,
+    status_filter: str,
+    fail_on: str,
+) -> int:
+    if json_output and not once and max_refreshes is None:
+        print("config_error: live JSON output requires --once or --max-refreshes", file=sys.stderr)
+        return 2
+
+    try:
+        config = None if api_url else load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    refreshes = 1 if once else max_refreshes
+    interactive_full_ui = (
+        ui == "full"
+        and not once
+        and not json_output
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+    )
+    terminal_settings = termios.tcgetattr(sys.stdin) if interactive_full_ui else None
+    if interactive_full_ui:
+        tty.setcbreak(sys.stdin.fileno())
+
+    count = 0
+    last_code = 0
+    try:
+        while True:
+            snapshot = (
+                _fetch_observer_snapshot(api_url, read_token_env)
+                if api_url
+                else build_observer_snapshot(config, probe_services=True)
+            )
+            snapshot = filter_observer_snapshot(snapshot, status_filter)
+            last_code = _watch_exit_code(snapshot, fail_on)
+            if json_output:
+                print(json.dumps(snapshot.to_dict(), indent=2, sort_keys=True))
+            else:
+                if not once:
+                    print("\033[2J\033[H", end="")
+                if ui == "full":
+                    terminal = shutil.get_terminal_size((100, 30))
+                    rendered = render_full_observer_dashboard(
+                        snapshot,
+                        theme=theme,
+                        color=not no_color and sys.stdout.isatty(),
+                        width=terminal.columns,
+                        height=terminal.lines,
+                    )
+                else:
+                    rendered = render_observer_snapshot(
+                        snapshot,
+                        theme=theme,
+                        color=not no_color and sys.stdout.isatty(),
+                    )
+                print(
+                    rendered,
+                    end="",
+                )
+            count += 1
+            if refreshes is not None and count >= refreshes:
+                return last_code
+            if once:
+                return last_code
+            try:
+                key = (
+                    _read_watch_key(refresh_interval)
+                    if interactive_full_ui
+                    else _sleep_for_watch_interval(refresh_interval)
+                )
+            except KeyboardInterrupt:
+                return last_code
+            if key == "q":
+                return last_code
+            if key == "f":
+                status_filter = "failed"
+            elif key == "a":
+                status_filter = "all"
+            elif key == "+":
+                refresh_interval = max(0.25, refresh_interval / 2)
+            elif key == "-":
+                refresh_interval = min(60.0, refresh_interval * 2)
+    finally:
+        if terminal_settings is not None:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, terminal_settings)
+
+
+def _sleep_for_watch_interval(refresh_interval: float) -> None:
+    time.sleep(max(0.0, refresh_interval))
+    return None
+
+
+def _read_watch_key(refresh_interval: float) -> str | None:
+    readable, _, _ = select.select([sys.stdin], [], [], max(0.0, refresh_interval))
+    if not readable:
+        return None
+    return sys.stdin.read(1).lower()
+
+
+def _fetch_observer_snapshot(api_url: str, read_token_env: str | None):
+    base_url = api_url.rstrip("/")
+    headers = {}
+    if read_token_env:
+        token = os.environ.get(read_token_env)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    http_request = request.Request(f"{base_url}/observer/snapshot", headers=headers)
+    with request.urlopen(http_request, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return observer_snapshot_from_dict(payload)
+
+
+def _watch_exit_code(snapshot, fail_on: str) -> int:
+    has_failure = bool(snapshot.recent_failures)
+    is_stale = bool(snapshot.current_run and snapshot.current_run.get("stale"))
+    if fail_on == "failure" and has_failure:
+        return 1
+    if fail_on == "stale" and is_stale:
+        return 1
+    if fail_on == "any" and (has_failure or is_stale):
+        return 1
+    return 0
+
+
 def _retention_status(env_path: Path) -> int:
     try:
         config = load_app_config(env_path)
@@ -1951,6 +2393,7 @@ def _launchd_render(
     print("load_launchd=no")
     print("start_openclaw=no")
     print("mount_trigger_command=process-mounted-recorder")
+    print(f"mount_runner_app={package.mount_runner.bundle_path}")
     print("retention_delete_audio=no")
     print("plists:")
     for path in paths:

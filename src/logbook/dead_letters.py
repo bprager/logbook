@@ -8,10 +8,13 @@ from pathlib import Path
 from logbook.classifier import PrefixClassification, classify_transcript
 from logbook.config import AppConfig
 from logbook.consolidation import ConsolidationResult, consolidate_daily_logs
+from logbook.diarization import DiarizationResult, diarize_dead_letter_as_meeting
 from logbook.entity_linker import EntityLinkResult, link_daily_log_entities
 from logbook.ledger import ActionAudit, RecordingJob, open_ledger
 from logbook.markdown import render_routed_note
-from logbook.paths import inbox_log_path, parse_recorded_at
+from logbook.odin import OdinClient
+from logbook.paths import inbox_log_path, meeting_note_path, parse_recorded_at
+from logbook.routing import RoutingResult, route_transcripts
 from logbook.writers import FilesystemNoteWriter, NoteWriteError, NoteWriter
 
 
@@ -35,9 +38,13 @@ class DeadLetterManageResult:
     execute: bool
     target_route_kind: str | None = None
     inbox_path: Path | None = None
+    meeting_path: Path | None = None
+    removed_dead_letter_path: Path | None = None
     daily_log_path: Path | None = None
     consolidation: ConsolidationResult | None = None
     entity_links: EntityLinkResult | None = None
+    diarization: DiarizationResult | None = None
+    routing: RoutingResult | None = None
     audit: ActionAudit | None = None
     blockers: tuple[str, ...] = ()
 
@@ -180,6 +187,136 @@ def assign_dead_letter_to_log(
     )
 
 
+def rescue_dead_letter_as_meeting(
+    *,
+    config: AppConfig,
+    vault_root: Path,
+    job_id: int,
+    execute: bool,
+    client: OdinClient,
+    requested_by: str = "operator",
+    reason: str | None = None,
+) -> DeadLetterManageResult:
+    ledger = open_ledger(config.sqlite_path, initialize=True)
+    try:
+        job = ledger.get_by_id(job_id)
+        blockers = _meeting_rescue_blockers(job)
+        if job is None:
+            return DeadLetterManageResult(
+                "rescue",
+                None,
+                "blocked",
+                execute,
+                "meeting",
+                blockers=blockers,
+            )
+        recorded_at = _try_recorded_at(job)
+        dead_letter_path = vault_root / job.obsidian_path if job.obsidian_path else None
+        meeting_path = (
+            meeting_note_path(vault_root, recorded_at, job.id) if recorded_at is not None else None
+        )
+        if blockers:
+            return DeadLetterManageResult(
+                "rescue",
+                job,
+                "blocked",
+                execute,
+                "meeting",
+                meeting_path=meeting_path,
+                removed_dead_letter_path=dead_letter_path,
+                blockers=blockers,
+            )
+        if not execute:
+            return DeadLetterManageResult(
+                "rescue",
+                job,
+                "would_rescue",
+                execute,
+                "meeting",
+                meeting_path=meeting_path,
+                removed_dead_letter_path=dead_letter_path,
+            )
+    finally:
+        ledger.close()
+
+    diarization = diarize_dead_letter_as_meeting(config=config, client=client, job_id=job_id)
+    if diarization.failed_count or not diarization.items or diarization.items[0].status != "diarized":
+        status = diarization.items[0].status if diarization.items else "failed_diarization"
+        return DeadLetterManageResult(
+            "rescue",
+            job,
+            f"failed_diarization:{status}",
+            execute,
+            "meeting",
+            meeting_path=meeting_path,
+            removed_dead_letter_path=dead_letter_path,
+            diarization=diarization,
+        )
+
+    routing = route_transcripts(config, vault_root, job_id=job_id)
+    if routing.failed_count or not routing.items or routing.items[0].status != "meeting_written":
+        status = routing.items[0].status if routing.items else "failed_route"
+        return DeadLetterManageResult(
+            "rescue",
+            diarization.items[0].job,
+            f"failed_route:{status}",
+            execute,
+            "meeting",
+            meeting_path=meeting_path,
+            removed_dead_letter_path=dead_letter_path,
+            diarization=diarization,
+            routing=routing,
+        )
+
+    routed_item = routing.items[0]
+    final_meeting_path = routed_item.output_path or meeting_path
+    removed_path = None
+    if dead_letter_path is not None and dead_letter_path.exists():
+        dead_letter_path.unlink()
+        removed_path = dead_letter_path
+
+    ledger = open_ledger(config.sqlite_path, initialize=True)
+    try:
+        final_job = ledger.get_by_id(job_id) or routed_item.job
+        audit = ledger.record_action(
+            action_type="dead_letter.rescue",
+            target_type="recording_job",
+            target_id=str(job_id),
+            requested_by=requested_by,
+            request_payload={
+                "reason": reason,
+                "target_route_kind": "meeting",
+                "previous_status": job.status,
+                "previous_obsidian_path": job.obsidian_path,
+                "new_obsidian_path": (
+                    final_meeting_path.relative_to(vault_root).as_posix()
+                    if final_meeting_path is not None
+                    else None
+                ),
+                "removed_dead_letter_path": (
+                    removed_path.relative_to(vault_root).as_posix()
+                    if removed_path is not None
+                    else None
+                ),
+            },
+        )
+    finally:
+        ledger.close()
+
+    return DeadLetterManageResult(
+        "rescue",
+        final_job,
+        "rescued",
+        execute,
+        "meeting",
+        meeting_path=final_meeting_path,
+        removed_dead_letter_path=removed_path,
+        diarization=diarization,
+        routing=routing,
+        audit=audit,
+    )
+
+
 def discard_dead_letter(
     *,
     config: AppConfig,
@@ -230,6 +367,16 @@ def _assignment_blockers(job: RecordingJob | None) -> tuple[str, ...]:
             blockers.append("missing_transcript_file")
         if _try_recorded_at(job) is None:
             blockers.append("missing_recorded_at")
+    return tuple(blockers)
+
+
+def _meeting_rescue_blockers(job: RecordingJob | None) -> tuple[str, ...]:
+    blockers = list(_assignment_blockers(job))
+    if job is not None:
+        if not job.copied_path:
+            blockers.append("missing_copied_path")
+        elif not Path(job.copied_path).exists():
+            blockers.append("missing_copied_audio")
     return tuple(blockers)
 
 

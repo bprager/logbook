@@ -81,10 +81,10 @@ def mark_vault_synced_jobs(
         for job in jobs:
             paths = _required_vault_paths(job)
             blockers = [*global_blockers, *_job_blockers(vault_root, job, paths)]
-            if job.vault_synced_at:
-                status = "already_synced"
-            elif blockers:
+            if blockers:
                 status = "blocked"
+            elif job.vault_synced_at:
+                status = "already_synced"
             elif dry_run:
                 status = "markable"
             else:

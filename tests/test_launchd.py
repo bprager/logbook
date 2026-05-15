@@ -33,10 +33,25 @@ class LaunchdPackagingTests(TestCase):
             mount_probe = _loads(package.mount_probe.content)
             self.assertEqual(mount_probe["Label"], "local.logbook.recorder.mount-probe")
             self.assertTrue(mount_probe["StartOnMount"])
-            self.assertIn("process-mounted-recorder", mount_probe["ProgramArguments"])
+            self.assertEqual(mount_probe["ProgramArguments"][0], "/usr/bin/open")
+            self.assertIn("-W", mount_probe["ProgramArguments"])
+            self.assertIn("-n", mount_probe["ProgramArguments"])
+            self.assertNotIn("-g", mount_probe["ProgramArguments"])
+            self.assertIn(str(package.mount_runner.bundle_path), mount_probe["ProgramArguments"])
+            self.assertNotIn("process-mounted-recorder", mount_probe["ProgramArguments"])
             self.assertNotIn("recorder-discover", mount_probe["ProgramArguments"])
             self.assertNotIn("copy-discovered", mount_probe["ProgramArguments"])
             self.assertNotIn("route-transcripts", mount_probe["ProgramArguments"])
+
+            runner_info = _loads(package.mount_runner.info_plist_content)
+            self.assertEqual(runner_info["CFBundleIdentifier"], "ws.prager.logbook.mount-runner")
+            self.assertEqual(runner_info["CFBundleExecutable"], "LogbookMountRunner")
+            self.assertIn("NSRemovableVolumesUsageDescription", runner_info)
+            self.assertIn("process-mounted-recorder", package.mount_runner.source_content)
+            self.assertIn("opendir", package.mount_runner.source_content)
+            self.assertIn("posix_spawn", package.mount_runner.source_content)
+            self.assertIn(str(root / "repo"), package.mount_runner.source_content)
+            self.assertIn("REC_FILE/FOLDER01", package.mount_runner.source_content)
 
             retention = _loads(package.retention_audit.content)
             self.assertEqual(retention["Label"], "local.logbook.retention-audit")
@@ -83,6 +98,15 @@ class LaunchdPackagingTests(TestCase):
                 self.assertTrue(path.exists())
                 self.assertEqual(path.suffix, ".plist")
                 _loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(package.mount_runner.bundle_path.exists())
+            self.assertTrue(package.mount_runner.info_plist_path.exists())
+            self.assertTrue(package.mount_runner.source_path.exists())
+            self.assertTrue(package.mount_runner.executable_path.exists())
+            self.assertTrue(package.mount_runner.executable_path.stat().st_mode & 0o111)
+            self.assertNotEqual(
+                package.mount_runner.executable_path.read_bytes()[:2],
+                b"#!",
+            )
 
 
 def _loads(content: str) -> dict:

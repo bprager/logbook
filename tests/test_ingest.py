@@ -5,9 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from logbook.config import AppConfig, OdinConfig, RecorderConfig
 from logbook.ingest import run_ingest_dry_run
+from logbook.recorder import RecorderAccessError
 
 
 class IngestDryRunTests(TestCase):
@@ -38,6 +40,21 @@ class IngestDryRunTests(TestCase):
             self.assertEqual(first.items[0].ledger_status, "new")
             self.assertEqual(second.items[0].ledger_status, "known")
             self.assertEqual(second.items[0].ledger_job_id, first.items[0].ledger_job_id)
+
+    def test_dry_run_reports_recorder_access_error_without_crashing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+
+            with patch(
+                "logbook.ingest.discover_recordings",
+                side_effect=RecorderAccessError("cannot read recordings directory: denied"),
+            ):
+                result = run_ingest_dry_run(app_config, record_discovery=False)
+
+            self.assertEqual(result.items, ())
+            self.assertEqual(result.discovery_error, "cannot read recordings directory: denied")
+            self.assertFalse(result.ledger_written)
 
 
 def _app_config(root: Path) -> AppConfig:

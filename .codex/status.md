@@ -1,12 +1,24 @@
 # Status
 
-Updated: 2026-05-05
+Updated: 2026-05-15
 
 ## Current Focus
 
-`1.0.1` patch release work has hardened the live mount-triggered ingest path. The live recorder-to-Obsidian system remains operational with meeting diarization, audited retention cleanup, Memgraph health, launchd jobs, Prometheus metrics, dead-letter management, and `saga` backup/restore evidence in place.
+`1.1.0` release preparation adds the observer/watch program and a versioned
+quality gate on top of the stable operational line. The live
+recorder-to-Obsidian system remains operational with meeting diarization,
+audited retention cleanup, launchd jobs, Prometheus metrics, dead-letter
+management, and `saga` backup/restore evidence in place.
 
-The May 5 meeting recording `260505_0919_01.mp3` / job 52 is now processed end to end. It was copied from the Sony recorder, transcribed, diarized after the `odin` worker MP3-to-WAV fix, routed to Obsidian as `30 - Meetings/2026/05-May/2026-05-05T09-19-00-job-000052-meeting.md`, pushed to the vault in commit `796346c`, marked vault-synced, and represented in Memgraph. The StartOnMount LaunchAgent now runs `process-mounted-recorder` rather than read-only discovery.
+The May 12 recorder recovery processed the 11 recorder files that were still unknown to the ledger. Jobs 79-89 were copied and transcribed; jobs 87 and 89 were diarized and routed as meetings; jobs 84 and 85 became dead letters; jobs 79-83, 86, and 88 were consolidated into canonical May 10, May 11, and May 12 daily logs. The vault is pushed and clean at commit `2c5027d Remove obsolete Logbook dead letter for job 77`. `ingest-dry-run --env .env` now reports `new_count=0` and `known_count=45`; `mark-vault-synced --env .env` reports `already_synced_count=78` and `blocked_count=0`; Memgraph health is `ok` with 5,251 nodes and 13,804 relationships.
+
+Root cause for repeated mount-trigger misses is macOS TCC/removable-volume attribution: iTerm had removable-volume access, but the LaunchAgent was running bare CommandLineTools Python (`com.apple.python3`) and was denied. Launchd packaging now renders `/Users/bernd/VoiceIngest/launchd/LogbookMountRunner.app`, a stable app bundle with bundle identifier `ws.prager.logbook.mount-runner`, a native launcher, and recorder-directory preflight before spawning the Python pipeline. The installed `local.logbook.recorder.mount-probe` now starts this app via `/usr/bin/open -W -n`. macOS still needs a one-time Full Disk Access or removable-volume approval for `LogbookMountRunner.app`; after approving, kickstart the mount probe and confirm the mount log no longer reports `Operation not permitted`.
+
+The May 9/10 recorder recovery processed the 13 recorder files that were still unknown to the ledger. Jobs 66-78 were copied and transcribed, jobs 66, 74, and 76 were diarized as meetings, job 77 became a dead letter, and the remaining new log jobs were consolidated. Earlier stuck log jobs 50, 59, and 60 were also consolidated and marked vault-synced.
+
+Vault commits `afb4b6b Update Logbook generated notes from mounted recorder` and `cb8313c Update Logbook daily logs from mounted recorder` are pushed. Follow-up vault-proof repair restored missing generated notes for jobs 51, 55, 57, and 64, ending at vault commit `bab44d8 Restore Logbook generated note for job 64`. `ingest-dry-run --env .env` now reports `new_count=0` and `known_count=34`; a repeat `process-mounted-recorder --env .env` run is idempotent with `copy_skipped_count=34`, `routing_candidate_count=0`, and `consolidation_candidate_count=0`.
+
+Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale managed-entry pruning restored `memory-graph-health --env .env` to `status=ok` with 4,726 nodes and 12,320 relationships.
 
 ## Active Request
 
@@ -19,13 +31,32 @@ The May 5 meeting recording `260505_0919_01.mp3` / job 52 is now processed end t
 - Keep post-`1.0.1` changes tracked under `[Unreleased]`.
 - Maintain `lessons-learned.md` whenever live operations expose a recoverable failure mode or prevention rule.
 - Continue concluding work summaries with a recommended next step.
+- Track the LGB-039 pipeline observer/watch design as the next operator
+  visibility slice: current run heartbeat, progress, ETAs, recent outcomes, and
+  path-safe statistics.
 
 ## Progress
 
 - [x] Processed May 5 recorder jobs 50-52 after the mount trigger missed them.
+- [x] Processed May 5 recorder jobs 53-58 after launchd hit removable-volume access failures.
+- [x] Processed missed May 6 recorder jobs 59-65 after StartOnMount hit a recorder access denial.
+- [x] Processed missed May 6-9 recorder jobs 66-78 after manual mounted-recorder recovery.
+- [x] Consolidated previously stuck log jobs 50, 59, and 60 into canonical daily logs.
+- [x] Updated `process-mounted-recorder` so mounted recovery consolidates log entries before vault-sync marking.
+- [x] Updated `process-mounted-recorder` so local pending work can finalize even when recorder copy/discovery fails.
+- [x] Fixed vault-sync proof so previously synced jobs with missing pushed paths are blocked, then restored missing generated notes for jobs 51, 55, 57, and 64.
+- [x] Repaired Memgraph drift after the May 9/10 recovery with full sync and stale managed-entry pruning.
+- [x] Wrote May 6 meeting notes for jobs 61-64 and pushed vault commit `9352837`.
+- [x] Extended mounted-recorder retry coverage to 24 attempts over roughly six minutes.
+- [x] Made non-server CLI command imports independent of FastAPI so operator recovery commands can run from lighter Python environments.
+- [x] Replayed jobs 59-65, 52, and 58 into Memgraph and restored proof-graph health to `ok`.
+- [x] Added Logbook Memgraph label-index setup and narrowed relationship health/repair queries to managed Logbook relationships.
 - [x] Wrote job 52 meeting note to Obsidian and marked jobs 51-52 vault-synced.
+- [x] Wrote job 58 meeting note to Obsidian and marked jobs 53-58 vault-synced.
+- [x] Added dry-run-first dead-letter rescue to the meeting pipeline for recordings misidentified as unknown.
+- [x] Rescued job 56 from dead letter to meeting, removed its obsolete dead-letter note, pushed vault commit `bee3374`, and marked the job vault-synced.
 - [x] Updated launchd so future recorder mounts run `process-mounted-recorder`.
-- [x] Added long-job timeout, recorder access, pyannote WAV normalization, vault workspace, generated-root, and pending-vault-change recovery hardening.
+- [x] Added long-job timeout, recorder access retry, dry-run access handling, pyannote WAV normalization, vault workspace, generated-root, bounded Memgraph sync, and pending-vault-change recovery hardening.
 - [x] Added `lessons-learned.md` and `1.0.1` release documentation.
 - [x] Created `.codex/status.md`.
 - [x] Reviewed `prager.ws` repository structure.
@@ -104,6 +135,30 @@ The May 5 meeting recording `260505_0919_01.mp3` / job 52 is now processed end t
 - [x] Executed eligible local audio cleanup for jobs 18-24 on 2026-05-03; all 24 copied audio files are now under `/Users/bernd/VoiceIngest/trash/local-audio`.
 - [x] Confirmed cleanup plan has 0 blocked jobs, 0 local pending actions, and 0 recorder pending actions while the recorder is unmounted.
 - [x] Confirmed memory graph health is `ok` after dead-letter rescue and cleanup checks.
+- [x] Documented the LGB-039 independent observer/watch approach in
+  `docs/pipeline-observer.md`, `.codex/backlog.md`, `.codex/decisions.md`, the
+  PRD, architecture plan, README, metrics docs, and changelog.
+- [x] Implemented LGB-039 Phase 1 with a ledger-derived `GET /observer/snapshot`
+  endpoint plus `logbook watch --once` and `--json` output.
+- [x] Implemented LGB-039 Phase 2 with SQLite run/stage telemetry, background
+  pipeline heartbeats, mounted-recorder stage events, active-stage observer
+  fields, stale-run detection, and path-redacted active details.
+- [x] Implemented LGB-039 Phase 3 with materialized stage-duration history,
+  legacy event-pair rebuild support, estimated active-stage progress/ETA from
+  p50 history, p90 risk duration, sample count, and collecting-baseline output
+  when history is sparse.
+- [x] Implemented LGB-039 Phase 4 with measured progress events, chunked copy
+  byte progress, mounted-recorder count progress for route/consolidate/vault
+  sync, and observer rendering that prefers measured progress over ETA history.
+- [x] Implemented LGB-039 Phase 5 with live refresh, one-shot and JSON modes,
+  remote API snapshots, read-token environment lookup, filters, failure/stale
+  exit policies, automatic day/night appearance, theme overrides, and no-color
+  fallback, plus optional full terminal dashboard mode with live key controls.
+- [x] Added bounded read-only Odin and Memgraph reachability probes to observer
+  snapshots so the watch health header reports configured service availability.
+- [x] Promoted Logbook to `1.1.0` and added a versioned pre-commit quality
+  gate with Ruff, markdownlint-cli2, full unittest coverage execution, and a
+  96% changed-line coverage ratchet.
 
 ## Notes
 

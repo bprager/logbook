@@ -79,3 +79,20 @@ The `odin` worker exposes `/metrics` with:
 Operator actions should remain bounded: inspect status, run dry-run repair or
 cleanup commands first, and only execute destructive cleanup through the
 retention gates.
+
+## Planned Observer Metrics
+
+LGB-039 will add path-safe metrics for the independent pipeline observer:
+
+- `logbook_pipeline_run_active`
+- `logbook_pipeline_run_stale`
+- `logbook_pipeline_stage_active{stage="..."}`
+- `logbook_pipeline_stage_progress_percent{stage="...",kind="measured|estimated|unknown"}`
+- `logbook_pipeline_eta_seconds{stage="..."}`
+- `logbook_pipeline_stage_duration_seconds{stage="...",quantile="0.5|0.9"}`
+- `logbook_pipeline_failures_recent`
+
+These metrics are for alerting and dashboards. The watch program should prefer
+the read-only observer snapshot API or a local SQLite read-only snapshot for
+per-job detail, because Prometheus is aggregate and may scrape between stage
+events.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
 from contextlib import redirect_stdout
 from dataclasses import replace
 from datetime import datetime
@@ -14,8 +15,15 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from logbook.api import create_app
-from logbook.cli import main
-from logbook.config import ApiConfig, AppConfig, OdinConfig, RecorderConfig, load_app_config
+from logbook.cli import main, _sync_memory_graph_for_jobs
+from logbook.config import (
+    ApiConfig,
+    AppConfig,
+    MemgraphConfig,
+    OdinConfig,
+    RecorderConfig,
+    load_app_config,
+)
 from logbook.copying import copy_discovered_recordings
 from logbook.insights import extract_insights
 from logbook.ledger import open_ledger
@@ -32,6 +40,35 @@ from logbook.transcription import transcribe_copied_with_fake_odin
 
 
 class MemoryGraphTests(TestCase):
+    def test_mount_pipeline_memory_sync_timeout_is_nonfatal(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = AppConfig(
+                processing_root=root / "VoiceIngest",
+                sqlite_path=root / "VoiceIngest" / "voice_ingest.sqlite",
+                recorder=RecorderConfig(
+                    volume_name="IC RECORDER",
+                    mount_path=root / "IC RECORDER",
+                    recordings_path="/REC_FILE/FOLDER01",
+                ),
+                odin=_odin_config(),
+                memgraph=MemgraphConfig(uri="bolt://memgraph.test:7687"),
+            )
+            output = io.StringIO()
+
+            with patch(
+                "logbook.cli.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(["logbook"], timeout=1),
+            ), redirect_stdout(output):
+                _sync_memory_graph_for_jobs(
+                    config,
+                    (58,),
+                    env_path=Path(".env"),
+                    timeout_seconds=1,
+                )
+
+            self.assertIn("memory_graph_sync=timed_out job_id=58", output.getvalue())
+
     def test_builds_proof_carrying_graph_without_source_audio_paths(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -114,10 +151,62 @@ class MemoryGraphTests(TestCase):
             self.assertTrue(client.runs)
             self.assertEqual(result.nodes_written, plan.node_count)
             self.assertEqual(result.relationships_written, plan.relationship_count)
-            self.assertTrue(all("MERGE" in cypher for cypher, _ in client.runs))
+            merge_runs = [
+                (cypher, params)
+                for cypher, params in client.runs
+                if "CREATE INDEX" not in cypher
+            ]
+            self.assertTrue(all("MERGE" in cypher for cypher, _ in merge_runs))
             serialized_params = json.dumps([params for _, params in client.runs], sort_keys=True)
             self.assertNotIn(str(app_config.processing_root), serialized_params)
             self.assertNotIn(str(app_config.recorder.mount_path), serialized_params)
+
+    def test_apply_memory_graph_plan_ensures_label_id_indexes_before_writes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config, job_id=1)
+            client = RecordingGraphClient()
+
+            apply_memory_graph_plan(plan, client)
+
+            index_cyphers = [
+                cypher for cypher, _ in client.runs if cypher.startswith("CREATE INDEX")
+            ]
+            first_merge_index = next(
+                index for index, (cypher, _) in enumerate(client.runs) if "MERGE" in cypher
+            )
+            self.assertTrue(index_cyphers)
+            self.assertLess(
+                max(index for index, (cypher, _) in enumerate(client.runs) if cypher in index_cyphers),
+                first_merge_index,
+            )
+            self.assertIn("CREATE INDEX ON :LogbookJob(id)", index_cyphers)
+            self.assertIn("CREATE INDEX ON :TranscriptSegment(id)", index_cyphers)
+            self.assertIn("CREATE INDEX ON :SourceEvidence(id)", index_cyphers)
+
+    def test_apply_memory_graph_plan_retries_transient_index_storage_conflict(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config, job_id=1)
+            client = FlakyIndexGraphClient()
+
+            with patch("logbook.memory_graph.time.sleep"):
+                apply_memory_graph_plan(plan, client)
+
+            self.assertGreaterEqual(client.index_attempts, 2)
+            self.assertTrue(any("MERGE" in cypher for cypher, _ in client.runs))
+
+    def test_apply_memory_graph_plan_continues_after_persistent_transient_index_conflict(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config, job_id=1)
+            client = AlwaysLockedIndexGraphClient()
+
+            with patch("logbook.memory_graph.time.sleep"):
+                apply_memory_graph_plan(plan, client)
+
+            self.assertGreater(client.index_attempts, 0)
+            self.assertTrue(any("MERGE" in cypher for cypher, _ in client.runs))
 
     def test_memory_queries_and_api_are_bounded_and_path_safe(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -253,6 +342,45 @@ class MemoryGraphTests(TestCase):
                 (stale_relationship_id, stale_evidence_relationship_id),
             )
             self.assertTrue(client.closed)
+
+    def test_repair_plan_queries_relationship_ids_from_logbook_endpoint_types(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _seed_memory_fixture(Path(tmp))
+            plan = build_memory_graph_plan(app_config)
+            client = RepairGraphClient(
+                live_node_ids=[node.id for node in plan.nodes],
+                live_relationship_ids=[relationship.id for relationship in plan.relationships],
+            )
+
+            build_memory_graph_repair_plan(plan, client)
+
+            relationship_query = next(
+                cypher
+                for cypher, _ in client.queries
+                if "RETURN r.id AS id" in cypher
+            )
+            relationship_params = next(
+                params
+                for cypher, params in client.queries
+                if "RETURN r.id AS id" in cypher
+            )
+            self.assertIn("a.project = $project", relationship_query)
+            self.assertIn("b.project = $project", relationship_query)
+            self.assertIn("type(r) IN $relationship_types", relationship_query)
+            self.assertNotIn("r.id STARTS WITH", relationship_query)
+            self.assertEqual(
+                set(relationship_params["relationship_types"]),
+                set(plan.counts_by_relationship),
+            )
+
+    def test_live_relationship_count_queries_ignore_unmanaged_relationships_without_ids(self) -> None:
+        from logbook.memory_graph import _live_relationship_counts_cypher
+
+        cypher = _live_relationship_counts_cypher()
+
+        self.assertIn("r.id IS NOT NULL", cypher)
+        self.assertIn("a.project = $project", cypher)
+        self.assertIn("b.project = $project", cypher)
 
     def test_apply_memory_graph_repair_plan_upserts_missing_and_prunes_stale(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -453,6 +581,31 @@ class RecordingGraphClient:
         self.closed = True
 
 
+class FlakyIndexGraphClient(RecordingGraphClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.index_attempts = 0
+
+    def run(self, cypher: str, parameters: dict[str, object]) -> None:
+        if cypher.startswith("CREATE INDEX"):
+            self.index_attempts += 1
+            if self.index_attempts == 1:
+                raise RuntimeError("Cannot get read only access to the storage")
+        super().run(cypher, parameters)
+
+
+class AlwaysLockedIndexGraphClient(RecordingGraphClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.index_attempts = 0
+
+    def run(self, cypher: str, parameters: dict[str, object]) -> None:
+        if cypher.startswith("CREATE INDEX"):
+            self.index_attempts += 1
+            raise RuntimeError("Cannot get read only access to the storage")
+        super().run(cypher, parameters)
+
+
 class HealthGraphClient:
     def __init__(
         self,
@@ -499,6 +652,7 @@ class RepairGraphClient:
         self.live_node_ids = live_node_ids
         self.live_relationship_ids = live_relationship_ids
         self.runs: list[tuple[str, dict[str, object]]] = []
+        self.queries: list[tuple[str, dict[str, object]]] = []
         self.closed = False
 
     def query(
@@ -506,7 +660,7 @@ class RepairGraphClient:
         cypher: str,
         parameters: dict[str, object] | None = None,
     ) -> list[dict[str, object]]:
-        del parameters
+        self.queries.append((cypher, parameters or {}))
         if "RETURN r.id AS id" in cypher:
             return [{"id": relationship_id} for relationship_id in self.live_relationship_ids]
         return [{"id": node_id} for node_id in self.live_node_ids]

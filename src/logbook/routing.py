@@ -137,7 +137,8 @@ def _route_job(
     except ValueError:
         return RoutingItem(job, "failed_missing_recorded_at", None, None)
 
-    classification = classify_transcript(_transcript_text(transcript_path))
+    transcript_text = _transcript_text(transcript_path)
+    classification = _classification_for_job(job, transcript_text)
     classification = _without_fake_audio_reference(job, classification)
     if classification.route_kind == "meeting" and not job.diarization_path:
         return RoutingItem(job, "failed_missing_diarization", classification, None)
@@ -160,6 +161,17 @@ def _route_job(
 def _transcript_text(path: Path) -> str:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return str(payload.get("text") or "")
+
+
+def _classification_for_job(job: RecordingJob, transcript_text: str) -> PrefixClassification:
+    if job.classification == "meeting":
+        return PrefixClassification(
+            route_kind="meeting",
+            category=None,
+            matched_alias="manual-dead-letter-rescue",
+            content=transcript_text.strip(),
+        )
+    return classify_transcript(transcript_text)
 
 
 def _render_note(

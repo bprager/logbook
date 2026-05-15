@@ -51,6 +51,8 @@ This means:
 * Process meetings with speaker diarization.
 * Route unknown items into dead letters.
 * Allow OpenClaw to observe system state and request bounded actions.
+* Provide an independent read-only observer/watch program for current pipeline
+  progress, recent completions, failures, and duration statistics.
 
 ## 3.2 Non-goals for MVP
 
@@ -140,6 +142,7 @@ node "Mac Mini" as Mac {
   component "Log consolidator" as Consolidator
   folder "Obsidian Vault" as Vault
   component "Status API" as Status
+  component "Observer watch" as Observer
   component "OpenClaw" as OpenClaw
 }
 
@@ -162,8 +165,10 @@ Router --> Vault : voice notes, meetings, dead letters
 LogInbox --> Consolidator : pending log entries
 Consolidator --> Vault : one final daily log
 Ingest --> Status : events
+Observer --> Status : read observer snapshot
 OpenClaw --> Status : observe and request bounded actions
 User --> OpenClaw : ask status or rescue item
+User --> Observer : watch compact progress
 
 @enduml
 ```
@@ -631,6 +636,53 @@ POST /dead-letters/{id}/rescue
 POST /logs/{date}/rebuild
 ```
 
+## 12.1 Independent observer/watch program
+
+Logbook should also provide a compact read-only observer program for direct
+operator use. The observer is not a supervisor and does not mutate pipeline
+state. It consumes a consistent status snapshot from the API or reads the SQLite
+ledger in read-only mode.
+
+The observer should show:
+
+* Current active pipeline run, command, stage, heartbeat age, elapsed time, and
+  stale-run warning.
+* Current active job, route kind, ledger status, safe filename or job ID, input
+  size, and progress bar.
+* Recent finished jobs with success/dead-letter/failure status, classification,
+  finish time, and total duration.
+* Recent failures and blocked states with safe, actionable detail.
+* Basic 24-hour and 7-day statistics: jobs seen, succeeded, failed, dead letters,
+  queue depth, p50 duration, and p90 duration.
+* Cleanup, `odin`, vault-sync, and memory-graph health summaries.
+
+Progress must be labelled by source:
+
+```text
+measured
+estimated
+unknown
+```
+
+Measured progress is used only when the pipeline can report real work completed,
+for example copied bytes or completed files. If a stage cannot report real
+progress, the observer estimates ETA from rolling stage-duration history keyed by
+stage, route kind, model, and input size. If there is not enough history, it
+shows elapsed time and `collecting baseline` rather than inventing precision.
+
+Recommended interfaces:
+
+```text
+GET /observer/snapshot
+logbook watch --env .env
+logbook watch --env .env --once
+logbook watch --env .env --json
+logbook watch --api http://127.0.0.1:8788
+```
+
+The observer must not expose source audio paths, copied audio paths, transcript
+paths, bearer tokens, or transcript text by default.
+
 ---
 
 ## 13. Data model
@@ -682,6 +734,63 @@ daily_log:
   generated_at: datetime
   source_inbox_folder: string
   checksum: string
+```
+
+## 13.4 Pipeline observer telemetry
+
+Observer telemetry is separate from durable job state. SQLite remains the source
+of truth for idempotency and recovery; telemetry records what the running
+pipeline is doing so independent programs can watch it.
+
+```yaml
+pipeline_run:
+  id: string
+  command: string
+  host: string
+  pid: integer
+  started_at: datetime
+  heartbeat_at: datetime
+  finished_at: datetime
+  status:
+    - running
+    - succeeded
+    - failed
+    - abandoned
+  exit_code: integer
+
+pipeline_stage_event:
+  run_id: string
+  recording_job_id: string
+  stage: string
+  event:
+    - queued
+    - started
+    - progress
+    - succeeded
+    - failed
+    - skipped
+  occurred_at: datetime
+  progress_current: number
+  progress_total: number
+  progress_percent: number
+  progress_kind:
+    - measured
+    - estimated
+    - unknown
+  input_bytes: integer
+  audio_seconds: number
+  safe_detail: string
+
+pipeline_stage_duration:
+  stage: string
+  route_kind: string
+  model: string
+  input_size_bucket: string
+  sample_count: integer
+  duration_p50_seconds: number
+  duration_p90_seconds: number
+  average_seconds_per_mb: number
+  updated_at: datetime
 ```
 
 ---
@@ -740,6 +849,18 @@ daily_log:
 * OpenClaw can show health, queue status, inbox status, and dead letters.
 * OpenClaw can request bounded reprocessing.
 * OpenClaw cannot perform arbitrary deletion or uncontrolled shell execution.
+
+## 14.8 Observer/watch program
+
+* The observer can report a current run, current stage, heartbeat age, elapsed
+  time, recent completions, failures, successes, and summary statistics.
+* A running job displays a progress bar labelled as measured, estimated, or
+  unknown.
+* Estimated progress uses rolling historical duration data based on stage and
+  input size, and includes confidence or sample count.
+* Stale pipeline heartbeats are visible.
+* The observer has `--once`, live refresh, and JSON output modes.
+* The observer is read-only and path-safe.
 
 ---
 
@@ -812,6 +933,20 @@ Mitigation:
 
 Expose a narrow API. Do not give OpenClaw broad shell or filesystem control.
 
+## 15.6 Misleading progress estimates
+
+Risk:
+
+Estimated progress can look more precise than it is, especially for `odin`
+transcription and diarization where runtime depends on model, audio duration,
+silence, and GPU state.
+
+Mitigation:
+
+Label progress as measured, estimated, or unknown. Show sample count and
+confidence for ETA, cap estimated progress below completion until the stage
+actually finishes, and show `collecting baseline` when history is too sparse.
+
 ---
 
 ## 16. Implementation phases
@@ -852,7 +987,15 @@ Expose a narrow API. Do not give OpenClaw broad shell or filesystem control.
 * Add dead-letter rescue.
 * Add log rebuild endpoint.
 
-## Phase 6: Refinement
+## Phase 6: Independent observer
+
+* Add observer telemetry for pipeline runs, stage events, and duration history.
+* Add read-only observer snapshot API.
+* Add compact `logbook watch` CLI with live, once, and JSON modes.
+* Add measured progress where available and historical ETA where progress is not
+  directly measurable.
+
+## Phase 7: Refinement
 
 * Add summaries.
 * Add action item extraction.

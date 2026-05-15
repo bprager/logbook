@@ -17,7 +17,7 @@ $LOGBOOK_PROCESSING_ROOT/launchd
 Generated jobs:
 
 - `local.logbook.api`: runs `logbook serve-api --env .env`, keeps the FastAPI status/action API alive, and lets `launchd` send the normal termination signal on shutdown.
-- `local.logbook.recorder.mount-probe`: uses `StartOnMount` and runs `logbook process-mounted-recorder --env .env`. It copies discovered audio into the local inbox, transcribes through `odin`, diarizes meetings, routes generated notes into Obsidian, marks pushed vault artifacts as synced, and never deletes recorder or local audio.
+- `local.logbook.recorder.mount-probe`: uses `StartOnMount` and opens the generated `LogbookMountRunner.app`, which runs `logbook process-mounted-recorder --env .env`. It copies discovered audio into the local inbox, transcribes through `odin`, diarizes meetings, routes generated notes into Obsidian, consolidates routed log entries into canonical daily logs, marks pushed vault artifacts as synced, and never deletes recorder or local audio. Recorder discovery/copy is retried briefly to tolerate removable-volume readiness and permission timing; if recorder access still fails, already-local copied/transcribed/routed work is allowed to finish before the command exits nonzero. Memgraph sync is bounded per job so graph latency does not hold the mount processor open indefinitely.
 - `local.logbook.retention-audit`: runs hourly at minute 17 and calls `logbook retention-status --env .env`. It reports retention configuration but does not delete audio.
 - `local.logbook.entity-linker`: runs daily at 03:37 and calls `logbook link-daily-log-entities --env .env --months 3 --execute`. It scans canonical daily logs for existing people, event, and object notes, then adds Obsidian links without touching source audio.
 
@@ -69,14 +69,21 @@ tail -n 60 "$LOGBOOK_PROCESSING_ROOT/logs/logbook-retention-audit.out.log"
 
 The mount probe is bounded but mutating: it may copy source audio, write the
 SQLite ledger, submit work to `odin`, and write generated Obsidian notes. If the
-recorder is not mounted or macOS denies access to the removable volume, it should
-report `operational=no` or `copy_failed_count=1` and exit nonzero without deleting
+recorder is not mounted or macOS denies access to the removable volume, it retries
+briefly, finishes any already-local pending processing that can still proceed, then
+reports `operational=no` or `copy_failed_count=1` and exits nonzero without deleting
 anything. The retention audit is read-only and must print
 `delete_audio=no` and `delete_recorder_audio=no`.
 
 Do not manually `kickstart` `local.logbook.entity-linker` during a rollout check
 unless vault mutation is explicitly intended. It is scheduled and runs with
 `--execute`.
+
+macOS removable-volume privacy:
+
+- The mount processor is packaged as `$LOGBOOK_PROCESSING_ROOT/launchd/LogbookMountRunner.app`.
+- Grant that app Full Disk Access, or at minimum removable-volume access when macOS prompts. Granting iTerm or VS Code is not enough because `launchd` runs a different privacy identity.
+- After granting access, verify with `launchctl kickstart -k "gui/$(id -u)/local.logbook.recorder.mount-probe"` and confirm the mount log no longer reports `Operation not permitted`.
 
 Rollback all Logbook launchd jobs:
 

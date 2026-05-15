@@ -148,6 +148,50 @@ Required safety gates:
 
 Expose `/health` and `/metrics` on both the recorder host service and `odin` worker. Let Prometheus on `odin` scrape them over the LAN. Keep Prometheus and Loki internal-only as already documented in `prager.ws`.
 
+Add a separate observer/watch layer for human-scale pipeline visibility. The
+watch layer should consume a single read-only observer snapshot from the Logbook
+API, or the SQLite ledger in read-only mode for local CLI use. It should not
+supervise jobs, mutate ledger state, invoke bounded actions, or hold the vault
+write lock.
+
+The observer data model should be telemetry beside the ledger, not a replacement
+for ledger job state:
+
+- `pipeline_runs` records active command runs, heartbeats, exit status, and
+  stale-run detection.
+- `pipeline_stage_events` records stage start/progress/success/failure events
+  with safe details and progress source labels.
+- `pipeline_stage_durations` stores rolling duration history by stage, route
+  kind, model, and input-size bucket for ETA estimates.
+
+As of the LGB-039 Phase 3 slice, `pipeline_runs`, `pipeline_stage_events`, and
+`pipeline_stage_durations` are implemented for `process-mounted-recorder`,
+including a background run heartbeat, active-stage observer reporting, and
+estimated ETA/progress from comparable stage-duration history.
+Phase 4 adds measured `progress` events for chunked copy bytes and countable
+mounted-recorder stages, with measured progress taking precedence over ETA
+history in observer output.
+Phase 5 completes the operator-facing watch UI with live terminal refresh,
+remote API snapshots, status filters, failure/stale exit policies, JSON mode,
+automatic day/night appearance, explicit theme overrides, no-color fallback, and
+an optional full terminal dashboard with live key controls.
+Observer snapshots also run bounded read-only reachability probes for Odin and
+Memgraph so the health header distinguishes `ok`, `unavailable`, and
+`not_configured`.
+
+Progress must be honest:
+
+- Use measured progress for byte-copy and countable stages.
+- Use historical ETA for transcription, diarization, and other stages that
+  cannot yet report true progress.
+- Show sample count and confidence for estimated progress.
+- Show `unknown` or `collecting baseline` when there is not enough evidence.
+
+The compact terminal view should fit in a normal 80-column operator session and
+show the active run, progress bar, ETA, recent finished jobs, recent failures,
+and 24-hour statistics. It should also support `--once`, `--json`, filters, and
+API-backed remote mode for OpenClaw or scripts.
+
 ### Storage And Backups
 
 Keep active state local:

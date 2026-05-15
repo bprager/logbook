@@ -13,6 +13,13 @@ class ClassifierTests(TestCase):
         self.assertEqual(result.matched_alias, "log entry")
         self.assertEqual(result.content, "finished the router tests.")
 
+    def test_routes_article_log_entry_and_strips_prefix(self) -> None:
+        result = classify_transcript("A log entry, pick up the kids at 4 p.m.")
+
+        self.assertEqual(result.route_kind, "log")
+        self.assertEqual(result.matched_alias, "a log entry")
+        self.assertEqual(result.content, "pick up the kids at 4 p.m.")
+
     def test_routes_constrained_log_entry_variant(self) -> None:
         result = classify_transcript("Okay lock entry follow up on recorder cleanup.")
 

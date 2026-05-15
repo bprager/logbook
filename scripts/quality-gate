@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+python_bin="${LOGBOOK_PYTHON:-$repo_root/.venv/bin/python}"
+python_dir="$(cd "$(dirname "$python_bin")" && pwd)"
+diff_cover_bin="${LOGBOOK_DIFF_COVER:-$python_dir/diff-cover}"
+compare_ref="${LOGBOOK_COVERAGE_COMPARE_REF:-HEAD}"
+coverage_xml="${LOGBOOK_COVERAGE_XML:-coverage.xml}"
+coverage_threshold="${LOGBOOK_COVERAGE_THRESHOLD:-96}"
+
+export PYTHONPATH="$repo_root/src${PYTHONPATH:+:$PYTHONPATH}"
+
+require_python_module() {
+  local module="$1"
+  local install_hint="$2"
+  if ! "$python_bin" -c "import ${module}" >/dev/null 2>&1; then
+    echo "quality-gate: missing Python module '${module}'." >&2
+    echo "quality-gate: install dev tools with: ${install_hint}" >&2
+    exit 2
+  fi
+}
+
+require_command() {
+  local command_name="$1"
+  local install_hint="$2"
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "quality-gate: missing command '${command_name}'." >&2
+    echo "quality-gate: install it with: ${install_hint}" >&2
+    exit 2
+  fi
+}
+
+require_python_module coverage "$python_bin -m pip install -e '.[dev]'"
+require_python_module diff_cover "$python_bin -m pip install -e '.[dev]'"
+require_python_module ruff "$python_bin -m pip install ruff"
+require_command npx "npm install, or install Node.js/npm"
+if [[ ! -x "$diff_cover_bin" ]]; then
+  echo "quality-gate: missing executable '${diff_cover_bin}'." >&2
+  echo "quality-gate: install dev tools with: $python_bin -m pip install -e '.[dev]'" >&2
+  exit 2
+fi
+
+echo "quality-gate: linting Python with ruff"
+"$python_bin" -m ruff check .
+
+echo "quality-gate: linting Markdown with markdownlint-cli2"
+npx --yes markdownlint-cli2@0.22.1 \
+  --config .markdownlint-cli2.yaml \
+  "**/*.md" \
+  "#**/.venv/**" \
+  "#**/.pytest_cache/**" \
+  "#**/.ruff_cache/**"
+
+echo "quality-gate: running unit tests under coverage"
+"$python_bin" -m coverage erase
+"$python_bin" -m coverage run --branch -m unittest discover -s tests -v
+"$python_bin" -m coverage xml -o "$coverage_xml"
+
+echo "quality-gate: enforcing changed-line coverage >= ${coverage_threshold}%"
+"$diff_cover_bin" "$coverage_xml" \
+  --compare-branch="$compare_ref" \
+  --fail-under="$coverage_threshold" \
+  --include-untracked
+
+echo "quality-gate: coverage report"
+"$python_bin" -m coverage report

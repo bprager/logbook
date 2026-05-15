@@ -171,6 +171,79 @@ class Ledger:
                 )
                 """
             )
+            self.connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_runs (
+                    id TEXT PRIMARY KEY,
+                    command TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    pid INTEGER NOT NULL,
+                    started_at TEXT NOT NULL,
+                    heartbeat_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    status TEXT NOT NULL,
+                    exit_code INTEGER,
+                    version TEXT
+                )
+                """
+            )
+            self.connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_stage_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    job_id INTEGER,
+                    stage TEXT NOT NULL,
+                    event TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    progress_current REAL,
+                    progress_total REAL,
+                    progress_percent REAL,
+                    progress_kind TEXT NOT NULL,
+                    input_bytes INTEGER,
+                    audio_seconds REAL,
+                    route_kind TEXT,
+                    model TEXT,
+                    input_size_bucket TEXT,
+                    duration_seconds REAL,
+                    message_code TEXT,
+                    safe_detail TEXT,
+                    FOREIGN KEY(run_id) REFERENCES pipeline_runs(id)
+                )
+                """
+            )
+            self.connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_stage_durations (
+                    stage TEXT NOT NULL,
+                    route_kind TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    input_size_bucket TEXT NOT NULL,
+                    sample_count INTEGER NOT NULL,
+                    duration_p50_seconds INTEGER NOT NULL,
+                    duration_p90_seconds INTEGER NOT NULL,
+                    average_seconds_per_mb REAL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(stage, route_kind, model, input_size_bucket)
+                )
+                """
+            )
+            self.connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status_started
+                ON pipeline_runs (status, started_at)
+                """
+            )
+            self.connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_pipeline_stage_events_run_id
+                ON pipeline_stage_events (run_id, id)
+                """
+            )
+            self._ensure_column("pipeline_stage_events", "route_kind", "TEXT")
+            self._ensure_column("pipeline_stage_events", "model", "TEXT")
+            self._ensure_column("pipeline_stage_events", "input_size_bucket", "TEXT")
+            self._ensure_column("pipeline_stage_events", "duration_seconds", "REAL")
             self._ensure_column("action_audit", "idempotency_key", "TEXT")
             self.connection.execute(
                 """
@@ -708,6 +781,53 @@ class Ledger:
         job = self.get_by_checksum(checksum_sha256)
         if job is None:
             raise RuntimeError("rescued dead-letter recording job was not found")
+        return job
+
+    def rescue_dead_letter_as_meeting_diarized(
+        self,
+        checksum_sha256: str,
+        odin_job_id: str,
+        diarization_path: Path,
+        diarization_model: str,
+        diarized_at: str | None = None,
+    ) -> RecordingJob:
+        diarized_at = diarized_at or utc_now_iso()
+        with self.connection:
+            self.connection.execute(
+                """
+                UPDATE recording_jobs
+                SET status = 'diarized',
+                    classification = 'meeting',
+                    odin_job_id = ?,
+                    submitted_to_odin_at = COALESCE(submitted_to_odin_at, ?),
+                    diarization_path = ?,
+                    diarized_at = ?,
+                    diarization_model = ?,
+                    obsidian_path = NULL,
+                    routed_at = NULL,
+                    daily_log_path = NULL,
+                    consolidated_at = NULL,
+                    late_arrival_at = NULL,
+                    vault_synced_at = NULL,
+                    cleanup_eligible_at = NULL,
+                    last_seen_at = ?
+                WHERE checksum_sha256 = ?
+                  AND status = 'dead_letter_written'
+                  AND classification = 'dead_letter'
+                """,
+                (
+                    odin_job_id,
+                    diarized_at,
+                    str(diarization_path),
+                    diarized_at,
+                    diarization_model,
+                    diarized_at,
+                    checksum_sha256,
+                ),
+            )
+        job = self.get_by_checksum(checksum_sha256)
+        if job is None:
+            raise RuntimeError("rescued meeting recording job was not found")
         return job
 
     def discard_dead_letter(

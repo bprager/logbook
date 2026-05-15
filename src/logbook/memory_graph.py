@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -177,7 +178,7 @@ def build_memory_graph_repair_plan(
         live_relationship_ids = _id_rows(
             client.query(
                 _live_relationship_ids_cypher(),
-                {"id_prefixes": _id_prefixes()},
+                _live_relationship_parameters(plan),
             )
         )
     finally:
@@ -314,7 +315,7 @@ def check_memory_graph_health(
         live_relationships = _count_rows(
             graph.query(
                 _live_relationship_counts_cypher(),
-                {"id_prefixes": _id_prefixes()},
+                _live_relationship_parameters(plan),
             ),
             key_name="type",
         )
@@ -426,7 +427,7 @@ def query_memory_graph_plan(plan: MemoryGraphPlan, query: str) -> list[dict[str,
 
 
 class Neo4jMemgraphClient:
-    def __init__(self, config: MemgraphConfig) -> None:
+    def __init__(self, config: MemgraphConfig, *, connection_timeout_seconds: float = 5.0) -> None:
         try:
             from neo4j import GraphDatabase
         except ImportError as error:
@@ -439,7 +440,7 @@ class Neo4jMemgraphClient:
         self._driver = GraphDatabase.driver(
             config.uri,
             auth=auth,
-            connection_timeout=5.0,
+            connection_timeout=connection_timeout_seconds,
             keep_alive=False,
             max_connection_lifetime=30.0,
         )
@@ -941,6 +942,7 @@ def _relationships_by_signature(
 
 
 def _write_memory_graph_plan(plan: MemoryGraphPlan, client: GraphClient) -> None:
+    _ensure_memory_graph_indexes(plan, client)
     for labels, nodes in _nodes_by_labels(plan).items():
         client.run(
             _merge_nodes_cypher(labels),
@@ -972,6 +974,42 @@ def _write_memory_graph_plan(plan: MemoryGraphPlan, client: GraphClient) -> None
         )
 
 
+def _ensure_memory_graph_indexes(plan: MemoryGraphPlan, client: GraphClient) -> None:
+    labels = sorted({label for node in plan.nodes for label in node.labels})
+    for label in labels:
+        try:
+            _run_with_transient_storage_retry(client, _create_label_id_index_cypher(label), {})
+        except Exception as error:
+            if not _is_transient_storage_access_error(error):
+                raise
+
+
+def _create_label_id_index_cypher(label: str) -> str:
+    return f"CREATE INDEX ON :{_safe_label(label)}(id)"
+
+
+def _run_with_transient_storage_retry(
+    client: GraphClient,
+    cypher: str,
+    parameters: dict[str, object],
+    *,
+    attempts: int = 6,
+    delay_seconds: float = 2.0,
+) -> None:
+    for attempt in range(1, attempts + 1):
+        try:
+            client.run(cypher, parameters)
+            return
+        except Exception as error:
+            if attempt >= attempts or not _is_transient_storage_access_error(error):
+                raise
+            time.sleep(delay_seconds)
+
+
+def _is_transient_storage_access_error(error: Exception) -> bool:
+    return "Cannot get read only access to the storage" in str(error)
+
+
 def _id_prefixes() -> list[str]:
     return [
         f"{PROJECT}:job:",
@@ -1001,16 +1039,22 @@ def _live_label_counts_cypher() -> str:
 
 def _live_relationship_count_cypher() -> str:
     return (
-        "MATCH ()-[r]->() "
-        "WHERE any(prefix IN $id_prefixes WHERE r.id STARTS WITH prefix) "
+        "MATCH (a)-[r]->(b) "
+        "WHERE a.project = $project "
+        "AND b.project = $project "
+        "AND r.id IS NOT NULL "
+        "AND type(r) IN $relationship_types "
         "RETURN count(r) AS count"
     )
 
 
 def _live_relationship_counts_cypher() -> str:
     return (
-        "MATCH ()-[r]->() "
-        "WHERE any(prefix IN $id_prefixes WHERE r.id STARTS WITH prefix) "
+        "MATCH (a)-[r]->(b) "
+        "WHERE a.project = $project "
+        "AND b.project = $project "
+        "AND r.id IS NOT NULL "
+        "AND type(r) IN $relationship_types "
         "RETURN type(r) AS type, count(r) AS count "
         "ORDER BY type"
     )
@@ -1027,11 +1071,21 @@ def _live_node_ids_cypher() -> str:
 
 def _live_relationship_ids_cypher() -> str:
     return (
-        "MATCH ()-[r]->() "
-        "WHERE any(prefix IN $id_prefixes WHERE r.id STARTS WITH prefix) "
+        "MATCH (a)-[r]->(b) "
+        "WHERE a.project = $project "
+        "AND b.project = $project "
+        "AND r.id IS NOT NULL "
+        "AND type(r) IN $relationship_types "
         "RETURN r.id AS id "
         "ORDER BY id"
     )
+
+
+def _live_relationship_parameters(plan: MemoryGraphPlan) -> dict[str, object]:
+    return {
+        "project": PROJECT,
+        "relationship_types": sorted(plan.counts_by_relationship),
+    }
 
 
 def _delete_relationships_by_id_cypher() -> str:

@@ -8,7 +8,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from logbook.config import AppConfig, OdinConfig, RecorderConfig
-from logbook.copying import copy_discovered_recordings
+from logbook.copying import copy_discovered_recordings, copy_discovered_recordings_with_retries
 from logbook.ledger import open_ledger
 from logbook.recorder import RecorderAccessError
 
@@ -38,6 +38,27 @@ class CopyingTests(TestCase):
             self.assertIsNotNone(job)
             self.assertEqual(job.status, "copied")
             self.assertEqual(job.copied_path, str(copied_path))
+
+    def test_copy_discovered_recordings_reports_measured_byte_progress(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            first = app_config.recorder.recordings_dir / "260429_0821.mp3"
+            second = app_config.recorder.recordings_dir / "260429_0822.mp3"
+            _write_recording(first, b"a" * 10)
+            _write_recording(second, b"b" * 6)
+            progress: list[tuple[int, int]] = []
+
+            result = copy_discovered_recordings(
+                app_config,
+                progress_callback=lambda current, total: progress.append((current, total)),
+            )
+
+            self.assertEqual(result.copied_count, 2)
+            self.assertGreaterEqual(len(progress), 2)
+            self.assertEqual(progress[-1], (16, 16))
+            self.assertTrue(all(current <= total for current, total in progress))
+            self.assertTrue(all(total == 16 for _, total in progress))
 
     def test_copy_discovered_recordings_is_idempotent(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -105,8 +126,7 @@ class CopyingTests(TestCase):
             source = app_config.recorder.recordings_dir / "260429_0821.mp3"
             _write_recording(source, b"audio")
 
-            with patch("logbook.copying.shutil.copy2", side_effect=PermissionError("chflags")):
-                result = copy_discovered_recordings(app_config)
+            result = copy_discovered_recordings(app_config)
 
             self.assertEqual(result.copied_count, 1)
             self.assertEqual(result.failed_count, 0)
@@ -126,6 +146,55 @@ class CopyingTests(TestCase):
             self.assertEqual(result.copied_count, 0)
             self.assertEqual(result.failed_count, 1)
             self.assertEqual(result.discovery_error, "cannot read recordings directory: denied")
+
+    def test_copy_retry_recovers_after_transient_recorder_access_error(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            _write_recording(app_config.recorder.recordings_dir / "260429_0821.mp3", b"audio")
+            attempts = 0
+
+            def flaky_discovery(recordings_dir: Path):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise RecorderAccessError("cannot read recordings directory: denied")
+                from logbook.recorder import discover_recordings
+
+                return discover_recordings(recordings_dir)
+
+            with patch("logbook.copying.discover_recordings", side_effect=flaky_discovery):
+                result = copy_discovered_recordings_with_retries(
+                    app_config,
+                    attempts=2,
+                    delay_seconds=0,
+                )
+
+            self.assertEqual(attempts, 2)
+            self.assertEqual(result.discovery_error, None)
+            self.assertEqual(result.copied_count, 1)
+            self.assertEqual(result.failed_count, 0)
+
+    def test_copy_retry_default_covers_slow_mount_access(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            attempts = 0
+
+            def unavailable(recordings_dir: Path):
+                nonlocal attempts
+                attempts += 1
+                raise RecorderAccessError("cannot read recordings directory: denied")
+
+            with patch("logbook.copying.discover_recordings", side_effect=unavailable):
+                result = copy_discovered_recordings_with_retries(
+                    app_config,
+                    delay_seconds=0,
+                )
+
+            self.assertEqual(attempts, 24)
+            self.assertEqual(result.attempt_count, 24)
+            self.assertEqual(result.failed_count, 1)
 
 
 def _app_config(root: Path) -> AppConfig:

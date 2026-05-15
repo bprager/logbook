@@ -19,11 +19,12 @@ from logbook.memory_graph import (
     query_memory_graph_plan,
 )
 from logbook.metrics import MetricSample, render_prometheus_metrics
+from logbook.observer import build_observer_snapshot
 from logbook.retention import plan_audio_cleanup
 
 
 API_TITLE = "Logbook API"
-API_VERSION = "0.1.0"
+API_VERSION = "1.1.0"
 
 
 class HealthResponse(BaseModel):
@@ -189,6 +190,51 @@ class MemoryActionReviewResponse(BaseModel):
     audit_id: int
 
 
+class ObserverHealthResponse(BaseModel):
+    api: str
+    sqlite: str
+    odin: str
+    memgraph: str
+
+
+class ObserverJobOutcomeResponse(BaseModel):
+    job_id: int
+    status: str
+    classification: Optional[str]
+    recorded_at: Optional[str]
+    finished_at: str
+    duration_seconds: Optional[int]
+    vault_synced: bool
+
+
+class ObserverFailureResponse(BaseModel):
+    job_id: int
+    status: str
+    classification: Optional[str]
+    occurred_at: str
+    safe_detail: str
+
+
+class ObserverStatsResponse(BaseModel):
+    window: str
+    jobs_seen: int
+    succeeded: int
+    failed: int
+    dead_letters: int
+    p50_duration_seconds: int
+    p90_duration_seconds: int
+
+
+class ObserverSnapshotResponse(BaseModel):
+    generated_at: str
+    health: ObserverHealthResponse
+    current_run: Optional[dict]
+    active_stage: Optional[dict]
+    recent_finished: list[ObserverJobOutcomeResponse]
+    recent_failures: list[ObserverFailureResponse]
+    stats: ObserverStatsResponse
+
+
 class ActionRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
     requested_by: str = Field(default="openclaw", max_length=80)
@@ -266,6 +312,7 @@ def create_app(config: AppConfig) -> FastAPI:
             {"name": "dead letters", "description": "Unknown-prefix transcripts awaiting review."},
             {"name": "cleanup", "description": "Read-only audio retention cleanup status."},
             {"name": "memory", "description": "Proof-carrying local memory graph queries."},
+            {"name": "observer", "description": "Compact read-only pipeline observer snapshot."},
             {"name": "actions", "description": "Token-protected bounded action requests."},
         ],
     )
@@ -507,6 +554,16 @@ def create_app(config: AppConfig) -> FastAPI:
     )
     def memory_graph_health() -> MemoryGraphHealthResponse:
         return _memory_graph_health_response(check_memory_graph_health(config))
+
+    @app.get(
+        "/observer/snapshot",
+        tags=["observer"],
+        response_model=ObserverSnapshotResponse,
+        dependencies=read_dependencies,
+    )
+    def observer_snapshot() -> ObserverSnapshotResponse:
+        snapshot = build_observer_snapshot(config, probe_services=True)
+        return ObserverSnapshotResponse(**snapshot.to_dict())
 
     @app.post(
         "/memory/actions/{action_id}/resolve",
