@@ -5,6 +5,7 @@ import json
 import os
 from types import SimpleNamespace
 from contextlib import redirect_stdout
+from contextlib import redirect_stderr
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -22,6 +23,7 @@ from logbook.observer import (
 )
 from logbook.recorder import discover_recordings
 from logbook.telemetry import SQLitePipelineReporter
+from logbook.watch_curses import render_curses_frame
 
 
 MB = 1024 * 1024
@@ -94,13 +96,22 @@ class ObserverSnapshotTests(TestCase):
             config = load_app_config(env_path)
             _seed_observer_fixture(config)
 
-            plain = io.StringIO()
-            with redirect_stdout(plain):
-                plain_code = main(["watch", "--env", str(env_path), "--once"])
+            def fixed_snapshot(config, probe_services=False):
+                return build_observer_snapshot(
+                    config,
+                    generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+                    probe_services=probe_services,
+                )
 
-            as_json = io.StringIO()
-            with redirect_stdout(as_json):
-                json_code = main(["watch", "--env", str(env_path), "--once", "--json"])
+            plain = io.StringIO()
+            with patch("logbook.cli.build_observer_snapshot", side_effect=fixed_snapshot):
+                with redirect_stdout(plain):
+                    plain_code = main(["watch", "--env", str(env_path), "--once"])
+
+            with patch("logbook.cli.build_observer_snapshot", side_effect=fixed_snapshot):
+                as_json = io.StringIO()
+                with redirect_stdout(as_json):
+                    json_code = main(["watch", "--env", str(env_path), "--once", "--json"])
 
             self.assertEqual(plain_code, 0)
             self.assertIn("Recent finished", plain.getvalue())
@@ -117,23 +128,31 @@ class ObserverSnapshotTests(TestCase):
             config = load_app_config(env_path)
             _seed_observer_fixture(config)
 
-            plain = io.StringIO()
-            with redirect_stdout(plain):
-                code = main(
-                    [
-                        "watch",
-                        "--env",
-                        str(env_path),
-                        "--once",
-                        "--theme",
-                        "day",
-                        "--no-color",
-                        "--status",
-                        "failed",
-                        "--fail-on",
-                        "failure",
-                    ]
+            def fixed_snapshot(config, probe_services=False):
+                return build_observer_snapshot(
+                    config,
+                    generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+                    probe_services=probe_services,
                 )
+
+            plain = io.StringIO()
+            with patch("logbook.cli.build_observer_snapshot", side_effect=fixed_snapshot):
+                with redirect_stdout(plain):
+                    code = main(
+                        [
+                            "watch",
+                            "--env",
+                            str(env_path),
+                            "--once",
+                            "--theme",
+                            "day",
+                            "--no-color",
+                            "--status",
+                            "failed",
+                            "--fail-on",
+                            "failure",
+                        ]
+                    )
 
             output = plain.getvalue()
             self.assertEqual(code, 1)
@@ -229,6 +248,135 @@ class ObserverSnapshotTests(TestCase):
             self.assertIn("view night", output)
             self.assertIn("CONTROLS", output)
             self.assertIn("RECENT FINISHED", output)
+
+    def test_curses_frame_is_compact_modern_and_path_safe(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+            reporter = SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="process-mounted-recorder",
+                host="mimir",
+                pid=123,
+                now=lambda: datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+            reporter.start_stage(
+                "route",
+                progress_total=5,
+                now=lambda: datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+            reporter.advance_stage(
+                "route",
+                progress_current=2,
+                progress_total=5,
+                now=lambda: datetime(2026, 5, 15, 12, 2, tzinfo=timezone.utc),
+            )
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 3, tzinfo=timezone.utc),
+            )
+
+            frame = render_curses_frame(
+                snapshot,
+                width=92,
+                height=22,
+                theme="day",
+                status_filter="all",
+                refresh_interval=1.5,
+            )
+            rendered = frame.text()
+
+            self.assertEqual(frame.theme, "day")
+            self.assertIn("Logbook Watch", rendered)
+            self.assertIn("Health  api ok  sqlite ok", rendered)
+            self.assertIn("Run  process-mounted-recorder", rendered)
+            self.assertIn("Stage  route  elapsed 03:00", rendered)
+            self.assertIn("40% measured", rendered)
+            self.assertIn("Recent finished", rendered)
+            self.assertIn("Failures and review", rendered)
+            self.assertIn("q quit", rendered)
+            self.assertNotIn(str(config.processing_root), rendered)
+            self.assertTrue(all(len(line) <= 92 for line in rendered.splitlines()))
+
+    def test_curses_frame_handles_truncation_idle_stage_and_sparse_eta(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+            reporter = SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="process-mounted-recorder",
+                host="mimir",
+                pid=123,
+                now=lambda: datetime(2026, 5, 15, 10, 0, tzinfo=timezone.utc),
+            )
+            snapshot_without_stage = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 11, 2, tzinfo=timezone.utc),
+            )
+            no_stage = render_curses_frame(snapshot_without_stage, width=72, height=12)
+            self.assertIn("Stage  none", no_stage.text())
+            self.assertEqual(len(no_stage.lines), 12)
+
+            reporter.start_stage(
+                "diarize",
+                input_bytes=42 * MB,
+                now=lambda: datetime(2026, 5, 15, 11, 3, tzinfo=timezone.utc),
+            )
+            snapshot_sparse = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 11, 7, tzinfo=timezone.utc),
+            )
+            sparse = render_curses_frame(snapshot_sparse, width=100, height=8)
+
+            self.assertIn("collecting baseline", sparse.text())
+            self.assertEqual(len(sparse.lines), 12)
+            self.assertTrue(all(len(line) <= 100 for line in sparse.lines))
+
+    def test_watch_once_curses_ui_renders_frame(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+
+            plain = io.StringIO()
+            with redirect_stdout(plain):
+                code = main(
+                    [
+                        "watch",
+                        "--env",
+                        str(env_path),
+                        "--once",
+                        "--ui",
+                        "curses",
+                        "--theme",
+                        "night",
+                    ]
+                )
+
+            output = plain.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("Logbook Watch", output)
+            self.assertIn("night", output)
+            self.assertIn("Recent finished", output)
+
+    def test_watch_live_curses_requires_tty(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                code = main(["watch", "--env", str(env_path), "--ui", "curses"])
+
+            self.assertEqual(code, 2)
+            self.assertIn("requires an interactive terminal", stderr.getvalue())
 
     def test_snapshot_can_probe_odin_and_memgraph_health(self) -> None:
         with TemporaryDirectory() as tmp:

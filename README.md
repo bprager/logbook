@@ -109,10 +109,11 @@ scripts/quality-gate
 ```
 
 The gate runs Ruff over Python files, markdownlint-cli2 over every tracked
-Markdown file, the full unittest suite under coverage, and `diff-cover` with a
-96% changed-line coverage threshold for Python changes. The full coverage report
-is still printed so legacy coverage debt remains visible while new changes are
-ratcheted upward.
+Markdown file, `mypy` over the Python package, the watcher web UI production
+build, the full unittest suite under coverage, and `diff-cover` with a 97%
+changed-line coverage threshold for Python changes. That threshold guarantees
+more than 96% changed-line coverage. The full coverage report is still printed
+so legacy coverage debt remains visible while new changes are ratcheted upward.
 
 ## Development
 
@@ -235,8 +236,22 @@ PYTHONPATH=src python3 -m logbook.cli watch --env .env --once
 PYTHONPATH=src python3 -m logbook.cli watch --env .env --once --json
 PYTHONPATH=src python3 -m logbook.cli watch --env .env --theme auto
 PYTHONPATH=src python3 -m logbook.cli watch --env .env --ui full
+PYTHONPATH=src python3 -m logbook.cli watch --env .env --ui curses
 PYTHONPATH=src python3 -m logbook.cli watch --api http://127.0.0.1:8788 --read-token-env LOGBOOK_READ_TOKEN
 ```
+
+Start the modern web watcher UI on loopback:
+
+```bash
+PYTHONPATH=src python3 -m logbook.cli watch-web --env .env
+```
+
+The web watcher serves a compact React/Vite interface built with shadcn-style
+components from `web/observer` and packaged static assets under
+`src/logbook/static/watch`. It polls `/observer/snapshot`, shows active work,
+progress, ETA confidence, recent outcomes, failures, and rolling statistics,
+and automatically switches between day and night appearance from the local
+computer time.
 
 The matching API endpoint is `GET /observer/snapshot`. The observer reports
 recent finished jobs, failures visible in durable state, dead letters, basic
@@ -247,9 +262,10 @@ comparable stage-duration history exists. Copy, route, consolidation, and
 vault-sync stages report measured progress when they know their byte or item
 counts. The live terminal UI supports automatic day/night appearance,
 `--theme day|night|auto`, `--no-color`, status filters, script-friendly
-failure/stale exit policies, and an optional full terminal dashboard with
-`--ui full`. In a live interactive terminal the full dashboard also supports
-`q`, `r`, `f`, `a`, and `+/-` key controls.
+failure/stale exit policies, and optional full-screen terminal dashboards with
+`--ui full` or `--ui curses`. In a live interactive terminal the dashboards
+support `q`, `r`, `f`, `a`, and `+/-` key controls; the curses version also
+supports `s` for successes and `d` for dead letters.
 
 Inspect audio retention cleanup eligibility without deleting anything:
 

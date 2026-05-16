@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a modern `logbook watch-web` observer UI served from FastAPI with a
+  packaged React/Vite frontend, shadcn-style components, Lucide icons, compact
+  progress/stat panels, and automatic day/night appearance from local time.
+- Added `logbook watch --ui curses` for a full terminal-only observer dashboard
+  with resize-safe panels, progress bars, filters, and live key controls.
+- Added `mypy` to the quality gate and raised the changed-line coverage ratchet
+  to 97%, guaranteeing more than 96% coverage for changed Python lines.
+
 ### Fixed
 
 - Dead-letter assignment to the log route now removes the obsolete generated

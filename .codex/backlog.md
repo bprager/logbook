@@ -1,6 +1,6 @@
 # Backlog
 
-Updated: 2026-05-15
+Updated: 2026-05-16
 
 Project key in memgraph: `logbook`
 
@@ -42,6 +42,7 @@ LGB-034 + LGB-035 + LGB-036 -> LGB-037 1.0.0 stable release promotion
 LGB-037 -> LGB-038 1.0.1 mount ingest hardening patch release
 LGB-003 + LGB-019 + LGB-021 + LGB-031 + LGB-038 -> LGB-039 Pipeline observer and watch program
 LGB-039 -> LGB-040 1.1.0 quality gate release
+LGB-039 + LGB-040 -> LGB-041 Modern observer UI surfaces
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -1058,7 +1059,7 @@ Acceptance:
 - Python files pass Ruff.
 - Markdown files pass markdownlint-cli2 under the project style configuration.
 - The full unittest suite runs under coverage.
-- Python changes must meet at least 96% changed-line coverage through
+- Python changes must meet at least 97% changed-line coverage through
   diff-cover.
 - The versioned hook can be installed with `git config core.hooksPath .githooks`.
 
@@ -1067,3 +1068,38 @@ Notes:
 - Implemented on 2026-05-15. The gate is a coverage ratchet over changed Python
   lines, not a claim that the existing legacy global source coverage is already
   above 96%.
+
+### LGB-041 - Modern Observer UI Surfaces
+
+Status: Done
+
+Priority: P1
+
+Dependencies: LGB-039, LGB-040
+
+Deliverables:
+
+- Add `logbook watch-web` for a packaged web observer UI served on loopback.
+- Build the web UI from React, Vite, Tailwind CSS, shadcn-style local
+  components, and Lucide icons.
+- Add `logbook watch --ui curses` for a full terminal-only dashboard using the
+  Python standard-library curses runtime.
+- Keep both UIs read-only over the observer snapshot contract.
+- Add `mypy` to the quality gate and build the web UI as part of the hook.
+
+Acceptance:
+
+- The web UI starts from one Python command and polls `/observer/snapshot`.
+- The web UI automatically chooses day or night appearance from local time.
+- The curses UI shows health, current work, progress, ETA context, recent
+  finished jobs, failures, and statistics in a compact resize-safe frame.
+- Existing compact, full, JSON, once, and remote API watcher modes still work.
+- The pre-commit hook runs Ruff, mypy, markdownlint, the web production build,
+  unittest coverage, and more-than-96% changed-line coverage.
+
+Notes:
+
+- Implemented on 2026-05-16. The mypy gate starts as an incremental ratchet:
+  legacy modules are scanned while the new watcher modules are enforced
+  strictly; future work can narrow the legacy ignore surface as typing debt is
+  paid down.

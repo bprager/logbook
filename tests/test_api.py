@@ -4,14 +4,24 @@ import os
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from unittest import TestCase
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from logbook.cli import main
 from logbook.api import create_app
 from logbook.config import ApiConfig, AppConfig, OdinConfig, RecorderConfig
 from logbook.ledger import open_ledger
 from logbook.recorder import discover_recordings
+from logbook.watch_web import (
+    _format_duration,
+    _snapshot_fallback_html,
+    create_watch_web_app,
+    watch_static_root,
+)
 
 
 class StatusApiTests(TestCase):
@@ -45,6 +55,94 @@ class StatusApiTests(TestCase):
             self.assertEqual(docs.status_code, 200)
             self.assertIn("Swagger UI", docs.text)
             self.assertIn("/openapi.json", docs.text)
+
+    def test_watch_web_app_serves_static_ui_and_observer_snapshot(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            _seed_status_fixture(app_config)
+            static_root = root / "static-watch"
+            static_root.mkdir()
+            (static_root / "index.html").write_text(
+                "<!doctype html><title>Logbook Watch</title><div id=\"root\"></div>",
+                encoding="utf-8",
+            )
+            client = TestClient(create_watch_web_app(app_config, static_root=static_root))
+
+            index = client.get("/")
+            snapshot = client.get("/observer/snapshot")
+            favicon = client.get("/favicon.ico")
+
+            self.assertEqual(index.status_code, 200)
+            self.assertIn("Logbook Watch", index.text)
+            self.assertIn("server-rendered", index.text)
+            self.assertIn("Recent finished", index.text)
+            self.assertIn("#", index.text)
+            self.assertEqual(snapshot.status_code, 200)
+            self.assertEqual(snapshot.json()["health"]["sqlite"], "ok")
+            self.assertEqual(snapshot.json()["stats"]["jobs_seen"], 3)
+            self.assertEqual(favicon.status_code, 204)
+
+    def test_watch_web_app_reports_missing_built_assets(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app_config = _app_config(root)
+            client = TestClient(create_watch_web_app(app_config, static_root=root / "missing"))
+
+            response = client.get("/")
+
+            self.assertEqual(response.status_code, 503)
+            self.assertIn("Logbook Watch UI is not built", response.text)
+
+    def test_watch_web_server_fallback_handles_empty_and_hour_duration(self) -> None:
+        html = _snapshot_fallback_html(
+            {
+                "generated_at": "2026-05-16T20:28:02+00:00",
+                "health": {"api": "ok"},
+                "stats": {},
+                "recent_finished": [],
+            }
+        )
+
+        self.assertIn("No finished jobs in the window", html)
+        self.assertIn("server-rendered", html)
+        self.assertEqual(_format_duration(None), "00:00")
+        self.assertEqual(_format_duration(3661), "1:01:01")
+
+    def test_watch_static_root_points_to_packaged_assets(self) -> None:
+        self.assertTrue(str(watch_static_root()).endswith("logbook/static/watch"))
+
+    def test_watch_web_command_starts_loopback_app(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_watch_env(root)
+            stdout = StringIO()
+            with patch("uvicorn.run") as run:
+                with redirect_stdout(stdout):
+                    code = main(
+                        [
+                            "watch-web",
+                            "--env",
+                            str(env_path),
+                            "--host",
+                            "127.0.0.1",
+                            "--port",
+                            "8791",
+                        ]
+                    )
+
+            self.assertEqual(code, 0)
+            self.assertIn("http://127.0.0.1:8791", stdout.getvalue())
+            self.assertEqual(run.call_args.kwargs["host"], "127.0.0.1")
+            self.assertEqual(run.call_args.kwargs["port"], 8791)
+
+    def test_watch_web_command_reports_config_error(self) -> None:
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            code = main(["watch-web", "--env", "/no/such/env"])
+
+        self.assertEqual(code, 2)
+        self.assertIn("config_error", stderr.getvalue())
 
     def test_read_token_is_required_when_configured(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -452,6 +550,25 @@ def _app_config(
             action_token=action_token,
         ),
     )
+
+
+def _write_watch_env(root: Path) -> Path:
+    env_path = root / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                f"LOGBOOK_PROCESSING_ROOT={root / 'VoiceIngest'}",
+                "SONY_RECORDER_VOLUME_NAME=IC RECORDER",
+                f"SONY_RECORDER_MOUNT_PATH={root / 'IC RECORDER'}",
+                "SONY_RECORDER_RECORDINGS_PATH=/REC_FILE/FOLDER01",
+                "ODIN_API_BASE_URL=http://odin.test",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (root / "IC RECORDER" / "REC_FILE" / "FOLDER01").mkdir(parents=True)
+    return env_path
 
 
 def _write_recording(path: Path, hour: int, minute: int) -> None:

@@ -438,6 +438,14 @@ def main(argv: list[str] | None = None) -> int:
     serve_api_parser.add_argument("--host", default=None)
     serve_api_parser.add_argument("--port", type=int, default=None)
 
+    watch_web_parser = subparsers.add_parser(
+        "watch-web",
+        help="start the modern read-only web observer UI",
+    )
+    watch_web_parser.add_argument("--env", type=Path, default=Path(".env"))
+    watch_web_parser.add_argument("--host", default="127.0.0.1")
+    watch_web_parser.add_argument("--port", type=int, default=8790)
+
     watch_parser = subparsers.add_parser(
         "watch",
         help="print a compact read-only observer snapshot of recent pipeline state",
@@ -465,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     watch_parser.add_argument(
         "--ui",
-        choices=("compact", "full"),
+        choices=("compact", "full", "curses"),
         default="compact",
         help="terminal layout for text output",
     )
@@ -663,6 +671,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "serve-api":
         return _serve_api(args.env, args.host, args.port)
+    if args.command == "watch-web":
+        return _watch_web(args.env, args.host, args.port)
     if args.command == "watch":
         return _watch(
             args.env,
@@ -2154,6 +2164,27 @@ def _serve_api(env_path: Path, host: str | None, port: int | None) -> int:
     return 0
 
 
+def _watch_web(env_path: Path, host: str, port: int) -> int:
+    try:
+        config = load_app_config(env_path)
+    except ConfigError as error:
+        print(f"config_error: {error}", file=sys.stderr)
+        return 2
+
+    from logbook.watch_web import create_watch_web_app
+
+    try:
+        import uvicorn
+    except ImportError:  # pragma: no cover - dependency is validated by the quality gate
+        print("config_error: uvicorn is required to serve the watcher web UI", file=sys.stderr)
+        return 2
+
+    app = create_watch_web_app(config)
+    print(f"Logbook Watch web UI: http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)
+    return 0
+
+
 def _watch(
     env_path: Path,
     *,
@@ -2180,6 +2211,41 @@ def _watch(
         return 2
 
     refreshes = 1 if once else max_refreshes
+    if ui == "curses" and not json_output:
+        from logbook.watch_curses import render_curses_frame, run_curses_watch
+
+        def snapshot_provider():
+            snapshot = (
+                _fetch_observer_snapshot(api_url, read_token_env)
+                if api_url
+                else build_observer_snapshot(config, probe_services=True)
+            )
+            return snapshot
+
+        if once:
+            snapshot = filter_observer_snapshot(snapshot_provider(), status_filter)
+            terminal = shutil.get_terminal_size((100, 30))
+            frame = render_curses_frame(
+                snapshot,
+                width=terminal.columns,
+                height=terminal.lines,
+                theme=theme,
+                status_filter=status_filter,
+                refresh_interval=refresh_interval,
+            )
+            print(frame.text(), end="")
+            return _watch_exit_code(snapshot, fail_on)
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            print("config_error: --ui curses requires an interactive terminal", file=sys.stderr)
+            return 2
+        return run_curses_watch(  # pragma: no cover - requires an interactive terminal
+            snapshot_provider,
+            refresh_interval=refresh_interval,
+            theme=theme,
+            status_filter=status_filter,
+            fail_on=lambda snapshot: _watch_exit_code(snapshot, fail_on),
+        )
+
     interactive_full_ui = (
         ui == "full"
         and not once

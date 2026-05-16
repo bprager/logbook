@@ -9,7 +9,7 @@ python_dir="$(cd "$(dirname "$python_bin")" && pwd)"
 diff_cover_bin="${LOGBOOK_DIFF_COVER:-$python_dir/diff-cover}"
 compare_ref="${LOGBOOK_COVERAGE_COMPARE_REF:-HEAD}"
 coverage_xml="${LOGBOOK_COVERAGE_XML:-coverage.xml}"
-coverage_threshold="${LOGBOOK_COVERAGE_THRESHOLD:-96}"
+coverage_threshold="${LOGBOOK_COVERAGE_THRESHOLD:-97}"
 
 export PYTHONPATH="$repo_root/src${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -36,6 +36,7 @@ require_command() {
 require_python_module coverage "$python_bin -m pip install -e '.[dev]'"
 require_python_module diff_cover "$python_bin -m pip install -e '.[dev]'"
 require_python_module ruff "$python_bin -m pip install ruff"
+require_python_module mypy "$python_bin -m pip install -e '.[dev]'"
 require_command npx "npm install, or install Node.js/npm"
 if [[ ! -x "$diff_cover_bin" ]]; then
   echo "quality-gate: missing executable '${diff_cover_bin}'." >&2
@@ -46,20 +47,29 @@ fi
 echo "quality-gate: linting Python with ruff"
 "$python_bin" -m ruff check .
 
+echo "quality-gate: type-checking Python with mypy"
+"$python_bin" -m mypy
+
 echo "quality-gate: linting Markdown with markdownlint-cli2"
 npx --yes markdownlint-cli2@0.22.1 \
   --config .markdownlint-cli2.yaml \
   "**/*.md" \
   "#**/.venv/**" \
   "#**/.pytest_cache/**" \
-  "#**/.ruff_cache/**"
+  "#**/.ruff_cache/**" \
+  "#**/node_modules/**"
+
+if [[ -f web/observer/package.json ]]; then
+  echo "quality-gate: building watcher web UI"
+  npm --prefix web/observer run build
+fi
 
 echo "quality-gate: running unit tests under coverage"
 "$python_bin" -m coverage erase
 "$python_bin" -m coverage run --branch -m unittest discover -s tests -v
 "$python_bin" -m coverage xml -o "$coverage_xml"
 
-echo "quality-gate: enforcing changed-line coverage >= ${coverage_threshold}%"
+echo "quality-gate: enforcing changed-line coverage > 96% (${coverage_threshold}% threshold)"
 "$diff_cover_bin" "$coverage_xml" \
   --compare-branch="$compare_ref" \
   --fail-under="$coverage_threshold" \

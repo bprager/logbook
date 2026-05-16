@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-05-15
+Updated: 2026-05-16
 
 ## Current Focus
 
@@ -9,6 +9,11 @@ quality gate on top of the stable operational line. The live
 recorder-to-Obsidian system remains operational with meeting diarization,
 audited retention cleanup, launchd jobs, Prometheus metrics, dead-letter
 management, and `saga` backup/restore evidence in place.
+
+The active post-`1.1.0` slice modernizes the watcher presentation: a packaged
+web UI started by `logbook watch-web`, an interactive curses terminal UI via
+`logbook watch --ui curses`, and a stricter quality gate that includes `mypy`
+plus more-than-96% changed-line coverage.
 
 The May 12 recorder recovery processed the 11 recorder files that were still unknown to the ledger. Jobs 79-89 were copied and transcribed; jobs 87 and 89 were diarized and routed as meetings; jobs 84 and 85 became dead letters; jobs 79-83, 86, and 88 were consolidated into canonical May 10, May 11, and May 12 daily logs. The vault is pushed and clean at commit `2c5027d Remove obsolete Logbook dead letter for job 77`. `ingest-dry-run --env .env` now reports `new_count=0` and `known_count=45`; `mark-vault-synced --env .env` reports `already_synced_count=78` and `blocked_count=0`; Memgraph health is `ok` with 5,251 nodes and 13,804 relationships.
 
@@ -158,7 +163,10 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
   snapshots so the watch health header reports configured service availability.
 - [x] Promoted Logbook to `1.1.0` and added a versioned pre-commit quality
   gate with Ruff, markdownlint-cli2, full unittest coverage execution, and a
-  96% changed-line coverage ratchet.
+  97% changed-line coverage ratchet.
+- [x] Added the modern observer UI implementation for LGB-041, covering
+  packaged shadcn-style web assets, a loopback `watch-web` server, a curses
+  terminal dashboard, and quality-gate reinforcement with `mypy`.
 
 ## Notes
 

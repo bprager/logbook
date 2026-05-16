@@ -1,6 +1,6 @@
 # Pipeline Observer And Watch Program
 
-Updated: 2026-05-15
+Updated: 2026-05-16
 
 ## Intent
 
@@ -11,6 +11,10 @@ outside the processing path. It must answer four operator questions quickly:
 - What finished recently, and did it succeed?
 - What failed or needs review?
 - How long is the current or next job likely to take?
+
+The May 2026 UI refactor adds two first-class observer presentations on top of
+the same snapshot contract: a packaged web dashboard and an interactive curses
+terminal dashboard. Both remain read-only and path-safe.
 
 The observer is read-only. The pipeline may write progress telemetry to SQLite,
 but the watch program must not mutate job state, delete files, invoke recovery
@@ -258,6 +262,7 @@ logbook watch --env .env --once
 logbook watch --env .env --json
 logbook watch --env .env --status failed --since 24h
 logbook watch --api http://127.0.0.1:8788 --read-token-env LOGBOOK_READ_TOKEN
+logbook watch --ui curses
 ```
 
 Default terminal layout:
@@ -281,7 +286,33 @@ Stats 24h  jobs 11  ok 9  dead_letters 2  failed 0  p50 02:04  p90 09:12
 The display should avoid large boxes, verbose prose, and wide tables. It should
 fall back to plain text when stdout is not a TTY.
 
-### 7. Metrics And Alerts
+The curses implementation uses the Python standard library, keeps a stable
+layout during terminal resize, and preserves script-friendly `--once` rendering
+for screenshots, tests, and incident notes.
+
+### 7. Web Watch UI
+
+Start the packaged web UI with:
+
+```bash
+logbook watch-web --env .env --host 127.0.0.1 --port 8790
+```
+
+The command starts a loopback FastAPI app that serves the built watcher assets
+and the same `/observer/snapshot` contract. The frontend source lives in
+`web/observer` and follows the current shadcn/ui Vite setup: React,
+TypeScript, Tailwind CSS, `components.json`, local `components/ui/*` primitives,
+and Lucide icons. The production bundle is emitted to
+`src/logbook/static/watch` so the Python command can start the UI without a
+separate Node process.
+
+The web interface is compact rather than marketing-like: health chips, active
+work, measured or estimated progress, ETA notes, rolling statistics, recent
+successes, and failures are visible on the first screen. It automatically
+switches day/night appearance from the browser's local clock and refreshes the
+snapshot without requiring a page reload.
+
+### 8. Metrics And Alerts
 
 Keep Prometheus for fleet-level and alerting concerns. Add path-safe metrics
 after the telemetry table exists:
@@ -377,6 +408,18 @@ for quit, refresh, failure/all filtering, and refresh interval changes. Local
 CLI and API snapshots also run short read-only Odin and Memgraph reachability
 probes so the health header reports `ok`, `unavailable`, or `not_configured`
 instead of leaving configured services at `unknown`.
+
+### Phase 6: Modern Web And Curses Surfaces
+
+Add `logbook watch-web` and `logbook watch --ui curses` while keeping the
+observer snapshot contract unchanged.
+
+Implementation note: Phase 6 landed on 2026-05-16. The web watcher serves a
+packaged React/Vite UI with shadcn-style local components and automatic
+day/night appearance from local time. The curses watcher adds a full
+terminal-only view with compact panels, progress bars, filters, and live key
+controls. The quality gate now includes `mypy`, the web production build, and a
+97% changed-line coverage threshold.
 
 ## Acceptance Criteria
 
