@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `.codex/lessons-learned.md` for durable Codex workflow, debugging, and
+  collaboration lessons separate from the production incident log.
+
 ## [1.2.0] - 2026-05-17
 
 ### Added

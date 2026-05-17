@@ -67,6 +67,8 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 - Put implementation decisions in `.codex/decisions.md`.
 - Keep backlog dependencies in `.codex/backlog.md` and memgraph.
 - Keep live operational failure modes and prevention rules in `lessons-learned.md`.
+- Keep Codex workflow, debugging, and collaboration lessons in
+  `.codex/lessons-learned.md`.
 - Use test fixtures for synthetic transcripts and tiny sample audio; do not commit personal recordings.
 - Install `.githooks/pre-commit` with `git config core.hooksPath .githooks`;
   run `scripts/quality-gate` before release commits.
