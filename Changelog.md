@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-17
+
 ### Added
 
 - Added a modern `logbook watch-web` observer UI served from FastAPI with a
@@ -22,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dead-letter assignment to the log route now removes the obsolete generated
   dead-letter note after the replacement log inbox note is written and audited.
+- The curses watcher now displays an explicit `[q] quit` control hint and uses
+  the same tested quit-key path for `q` and Escape.
+
+### Changed
+
+- Promoted project metadata, API metadata, web UI package metadata, release
+  documentation, and packaged watcher assets to `1.2.0`.
 
 ## [1.1.0] - 2026-05-15
 

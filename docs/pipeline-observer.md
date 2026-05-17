@@ -288,7 +288,9 @@ fall back to plain text when stdout is not a TTY.
 
 The curses implementation uses the Python standard library, keeps a stable
 layout during terminal resize, and preserves script-friendly `--once` rendering
-for screenshots, tests, and incident notes.
+for screenshots, tests, and incident notes. Interactive curses frames display
+`[q] quit` in the control footer; pressing `q` or Escape exits the watcher
+cleanly with the current failure-policy exit code.
 
 ### 7. Web Watch UI
 
@@ -418,8 +420,8 @@ Implementation note: Phase 6 landed on 2026-05-16. The web watcher serves a
 packaged React/Vite UI with shadcn-style local components and automatic
 day/night appearance from local time. The curses watcher adds a full
 terminal-only view with compact panels, progress bars, filters, and live key
-controls. The quality gate now includes `mypy`, the web production build, and a
-97% changed-line coverage threshold.
+controls, including a visible `[q] quit` command. The quality gate now includes
+`mypy`, the web production build, and a 97% changed-line coverage threshold.
 
 ## Acceptance Criteria
 

@@ -1,19 +1,20 @@
 # Status
 
-Updated: 2026-05-16
+Updated: 2026-05-17
 
 ## Current Focus
 
-`1.1.0` release preparation adds the observer/watch program and a versioned
-quality gate on top of the stable operational line. The live
-recorder-to-Obsidian system remains operational with meeting diarization,
-audited retention cleanup, launchd jobs, Prometheus metrics, dead-letter
-management, and `saga` backup/restore evidence in place.
+`1.2.0` release preparation promotes the modern observer/watch surfaces on top
+of the stable operational line. The live recorder-to-Obsidian system remains
+operational with meeting diarization, audited retention cleanup, launchd jobs,
+Prometheus metrics, dead-letter management, and `saga` backup/restore evidence
+in place.
 
-The active post-`1.1.0` slice modernizes the watcher presentation: a packaged
-web UI started by `logbook watch-web`, an interactive curses terminal UI via
-`logbook watch --ui curses`, and a stricter quality gate that includes `mypy`
-plus more-than-96% changed-line coverage.
+The current release slice includes the packaged `logbook watch-web` React/Vite
+UI, the interactive curses terminal UI via `logbook watch --ui curses`, a
+server-rendered web fallback for JavaScript-blocked tabs, explicit `[q] quit`
+curses affordance, and a stricter quality gate that includes `mypy` plus
+more-than-96% changed-line coverage.
 
 The May 12 recorder recovery processed the 11 recorder files that were still unknown to the ledger. Jobs 79-89 were copied and transcribed; jobs 87 and 89 were diarized and routed as meetings; jobs 84 and 85 became dead letters; jobs 79-83, 86, and 88 were consolidated into canonical May 10, May 11, and May 12 daily logs. The vault is pushed and clean at commit `2c5027d Remove obsolete Logbook dead letter for job 77`. `ingest-dry-run --env .env` now reports `new_count=0` and `known_count=45`; `mark-vault-synced --env .env` reports `already_synced_count=78` and `blocked_count=0`; Memgraph health is `ok` with 5,251 nodes and 13,804 relationships.
 
@@ -33,7 +34,7 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 - Preserve the one canonical final daily log path invariant, including late arrivals.
 - Keep completed acceptance evidence current for release, vault sync, memory graph, backup, launchd, and retention behavior.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
-- Keep post-`1.0.1` changes tracked under `[Unreleased]`.
+- Keep post-`1.2.0` changes tracked under `[Unreleased]`.
 - Maintain `lessons-learned.md` whenever live operations expose a recoverable failure mode or prevention rule.
 - Continue concluding work summaries with a recommended next step.
 - Track the LGB-039 pipeline observer/watch design as the next operator
@@ -167,6 +168,9 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 - [x] Added the modern observer UI implementation for LGB-041, covering
   packaged shadcn-style web assets, a loopback `watch-web` server, a curses
   terminal dashboard, and quality-gate reinforcement with `mypy`.
+- [x] Prepared the `1.2.0` minor release with project/API/web metadata,
+  release notes, README/status/backlog updates, and the explicit curses
+  `[q] quit` affordance.
 
 ## Notes
 

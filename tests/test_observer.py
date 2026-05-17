@@ -23,7 +23,7 @@ from logbook.observer import (
 )
 from logbook.recorder import discover_recordings
 from logbook.telemetry import SQLitePipelineReporter
-from logbook.watch_curses import render_curses_frame
+from logbook.watch_curses import _is_curses_quit_key, render_curses_frame
 
 
 MB = 1024 * 1024
@@ -296,9 +296,14 @@ class ObserverSnapshotTests(TestCase):
             self.assertIn("40% measured", rendered)
             self.assertIn("Recent finished", rendered)
             self.assertIn("Failures and review", rendered)
-            self.assertIn("q quit", rendered)
+            self.assertIn("[q] quit", rendered)
             self.assertNotIn(str(config.processing_root), rendered)
             self.assertTrue(all(len(line) <= 92 for line in rendered.splitlines()))
+
+    def test_curses_quit_key_is_explicitly_supported(self) -> None:
+        self.assertTrue(_is_curses_quit_key("q"))
+        self.assertTrue(_is_curses_quit_key("\x1b"))
+        self.assertFalse(_is_curses_quit_key("r"))
 
     def test_curses_frame_handles_truncation_idle_stage_and_sparse_eta(self) -> None:
         with TemporaryDirectory() as tmp:

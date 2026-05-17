@@ -24,7 +24,7 @@ from logbook.retention import plan_audio_cleanup
 
 
 API_TITLE = "Logbook API"
-API_VERSION = "1.1.0"
+API_VERSION = "1.2.0"
 
 
 class HealthResponse(BaseModel):

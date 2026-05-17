@@ -1,6 +1,6 @@
 # Backlog
 
-Updated: 2026-05-16
+Updated: 2026-05-17
 
 Project key in memgraph: `logbook`
 
@@ -43,6 +43,7 @@ LGB-037 -> LGB-038 1.0.1 mount ingest hardening patch release
 LGB-003 + LGB-019 + LGB-021 + LGB-031 + LGB-038 -> LGB-039 Pipeline observer and watch program
 LGB-039 -> LGB-040 1.1.0 quality gate release
 LGB-039 + LGB-040 -> LGB-041 Modern observer UI surfaces
+LGB-041 -> LGB-042 1.2.0 modern observer release
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -1103,3 +1104,36 @@ Notes:
   legacy modules are scanned while the new watcher modules are enforced
   strictly; future work can narrow the legacy ignore surface as typing debt is
   paid down.
+
+### LGB-042 - 1.2.0 Modern Observer Release
+
+Status: Done
+
+Priority: P1
+
+Dependencies: LGB-041
+
+Deliverables:
+
+- Promote project package metadata, API metadata, web UI metadata, and release
+  documentation to `1.2.0`.
+- Add release documentation for the modern web and curses watcher surfaces.
+- Keep the curses dashboard quit affordance explicit with `[q] quit` and tested
+  `q`/Escape handling.
+- Keep README, changelog, durable Codex context, and packaged web assets aligned
+  with the released watcher behavior.
+
+Acceptance:
+
+- `scripts/quality-gate` passes with Ruff, mypy, markdownlint, web production
+  build, unittest coverage, and more-than-96% changed-line coverage.
+- `logbook watch --once --ui curses` displays the `[q] quit` footer in the
+  rendered terminal frame.
+- `logbook watch-web` serves packaged assets and a useful server-rendered
+  snapshot fallback before JavaScript starts.
+
+Notes:
+
+- Prepared on 2026-05-17. This is a minor release because it adds new operator
+  UI surfaces while preserving the observer snapshot contract and existing
+  local-first pipeline behavior.

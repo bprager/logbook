@@ -15,6 +15,10 @@ from logbook.observer import (
 
 
 SnapshotProvider = Callable[[], ObserverSnapshot]
+CURSES_QUIT_KEYS = frozenset(("q", "\x1b"))
+CURSES_CONTROL_HINT = (
+    "[q] quit  [r] refresh  [a] all  [f] failures  [s] success  [d] dead letters  [+/-] speed"
+)
 
 
 @dataclass(frozen=True)
@@ -62,7 +66,7 @@ def render_curses_frame(
     lines.append(_rule(width, "sep"))
     lines.extend(_section("Failures and review", _failure_lines(visible.recent_failures), body_width))
     lines.append(_rule(width, "sep"))
-    lines.append(_line("q quit  r refresh  a all  f failures  s success  d dead letters  +/- speed", body_width))
+    lines.append(_line(CURSES_CONTROL_HINT, body_width))
     lines.append(_rule(width, "bottom"))
 
     if len(lines) > height:
@@ -103,7 +107,7 @@ def run_curses_watch(
             )
             _draw_frame(screen, frame)
             key = _read_key(screen, interval)
-            if key in {"q", "\x1b"}:
+            if _is_curses_quit_key(key):
                 return last_code
             if key == "f":
                 active_filter = "failed"
@@ -139,6 +143,10 @@ def _read_key(screen, refresh_interval: float) -> str | None:  # pragma: no cove
             return chr(value).lower()
         time.sleep(0.05)
     return None
+
+
+def _is_curses_quit_key(key: str | None) -> bool:
+    return key in CURSES_QUIT_KEYS
 
 
 def _health_line(snapshot: ObserverSnapshot) -> str:

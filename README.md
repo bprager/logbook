@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: minor release `1.1.0` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, observer/watch UI, meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
+> Status: minor release `1.2.0` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, modern observer/watch UI surfaces, meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
 
 ## What It Does
 
@@ -15,8 +15,8 @@ Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stag
 - Stages log entries before rendering one canonical daily log per date.
 - Updates the GitHub-backed Obsidian vault through the configured Obsidian CLI workflow.
 - Lets OpenClaw observe queue health, dead letters, inbox status, and bounded repair actions.
-- Plans a compact independent observer/watch view for active pipeline progress,
-  recent completions, failures, ETAs, and path-safe statistics.
+- Provides compact independent observer/watch views for active pipeline
+  progress, recent completions, failures, ETAs, and path-safe statistics.
 - Deletes local and recorder-side source audio after the 24-hour retention gate confirms processing and vault sync.
 - Links canonical daily logs to existing Obsidian People, Event, and Object notes.
 - Backs up restorable non-audio operational state to `saga`.
@@ -62,7 +62,8 @@ Host roles:
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
 - [docs/pipeline-observer.md](docs/pipeline-observer.md) - design for the independent watch program and observer telemetry.
-- [docs/releases/1.1.0.md](docs/releases/1.1.0.md) - release notes for the observer/watch UI and quality gate.
+- [docs/releases/1.2.0.md](docs/releases/1.2.0.md) - release notes for the modern observer/watch UI surfaces.
+- [docs/releases/1.1.0.md](docs/releases/1.1.0.md) - release notes for the observer snapshot and quality gate.
 - [docs/backups.md](docs/backups.md) - `saga` backup policy and restore-drill runbook.
 - [docs/releases/1.0.1.md](docs/releases/1.0.1.md) - patch release notes for mount-triggered ingest hardening.
 - [docs/releases/1.0.0.md](docs/releases/1.0.0.md) - stable release notes and verification evidence.
@@ -264,8 +265,9 @@ counts. The live terminal UI supports automatic day/night appearance,
 `--theme day|night|auto`, `--no-color`, status filters, script-friendly
 failure/stale exit policies, and optional full-screen terminal dashboards with
 `--ui full` or `--ui curses`. In a live interactive terminal the dashboards
-support `q`, `r`, `f`, `a`, and `+/-` key controls; the curses version also
-supports `s` for successes and `d` for dead letters.
+support `q`, `r`, `f`, `a`, and `+/-` key controls; the curses version displays
+`[q] quit` explicitly and also supports `s` for successes and `d` for dead
+letters.
 
 Inspect audio retention cleanup eligibility without deleting anything:
 
