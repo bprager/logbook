@@ -30,12 +30,16 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 
 - Keep `.env` local and excluded from the remote repo.
 - Continue source-audio retention cleanup only through audited safety gates.
-- Keep `.codex/status.md`, `.codex/backlog.md`, `Changelog.md`, and `lessons-learned.md` current as implementation advances.
+- Keep `.codex/status.md`, `.codex/backlog.md`, `.codex/lessons-learned.md`,
+  `Changelog.md`, and `lessons-learned.md` current as implementation advances.
 - Preserve the one canonical final daily log path invariant, including late arrivals.
 - Keep completed acceptance evidence current for release, vault sync, memory graph, backup, launchd, and retention behavior.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
 - Keep post-`1.2.0` changes tracked under `[Unreleased]`.
-- Maintain `lessons-learned.md` whenever live operations expose a recoverable failure mode or prevention rule.
+- Maintain `.codex/lessons-learned.md` whenever implementation or collaboration
+  teaches reusable workflow guidance.
+- Maintain `lessons-learned.md` whenever live operations expose a recoverable
+  failure mode or prevention rule.
 - Continue concluding work summaries with a recommended next step.
 - Track the LGB-039 pipeline observer/watch design as the next operator
   visibility slice: current run heartbeat, progress, ETAs, recent outcomes, and
