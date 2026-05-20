@@ -130,7 +130,7 @@ Recommended behavior:
 
 ## Audio Retention
 
-New requirement: source audio should not be linked from Obsidian and should be deleted after 24 hours, including on the Sony recorder.
+New requirement: source audio should not be linked from Obsidian and should be deleted after one week, including on the Sony recorder.
 
 This supersedes the PRD MVP non-goal that avoided automatic deletion from the recorder. Implement it as a delayed, auditable cleanup stage, not as immediate post-copy deletion.
 
@@ -139,7 +139,7 @@ Required safety gates:
 - Copy succeeded and checksum verified.
 - Transcript and derived Markdown write succeeded.
 - Vault sync/commit succeeded.
-- Retention age is greater than 24 hours.
+- Retention age is greater than one week.
 - Cleanup action is recorded in the SQLite ledger.
 - Failed cleanup remains retryable and visible to OpenClaw.
 - Prefer moving local audio to trash/quarantine before hard deletion when practical.
@@ -244,7 +244,7 @@ Operating constraints:
 1. Should `odin` expose the GPU API on an internal port directly, or behind an internal reverse proxy on `odin`?
 2. Which exact Obsidian CLI command should be the supported sync/write path on this host?
 3. What is the mounted volume name/path pattern for the Sony ICD-PX370 on `mimir`?
-4. Should local source audio be moved to trash/quarantine at 24 hours, or hard-deleted after confirmed sync?
+4. Should local source audio be moved to trash/quarantine after one week, or hard-deleted after confirmed sync?
 
 ## Implementation Process
 
@@ -283,7 +283,7 @@ Operating constraints:
 - Add launchd mount trigger.
 - Validate Sony recorder identity.
 - Copy and checksum audio.
-- Queue delayed cleanup for local source audio and recorder files after 24 hours.
+- Queue delayed cleanup for local source audio and recorder files after one week.
 
 ### Phase F: OpenClaw And Observability
 
@@ -318,7 +318,7 @@ Dead-letter management status: LGB-036 adds a dry-run-first operator script for 
 
 Metrics status: LGB-031 adds Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. Scrape targets and alert candidates are documented in `docs/metrics.md`, with the transcription path still kept direct over the trusted LAN rather than through `fenrir`.
 
-Launchd rollout status: LGB-030 installed the Logbook API, recorder mount probe, retention audit, and entity linker as `bernd` user LaunchAgents on `mimir` without starting OpenClaw services as `bernd`. The Logbook API listens on `127.0.0.1:8788`; `127.0.0.1:8787` remains owned by the `clawdbot` CashClaw/OpenClaw adapter.
+Launchd rollout status: LGB-030 installed the Logbook API, recorder mount probe, retention audit, and entity linker as `bernd` user LaunchAgents on `mimir` without starting OpenClaw services as `bernd`. The Logbook API listens on `127.0.0.1:8788`; `127.0.0.1:8787` remains owned by the `clawdbot` CashClaw/OpenClaw adapter. As of `1.2.1`, the retention audit LaunchAgent runs guarded one-week cleanup with `cleanup-audio --execute --include-recorder`.
 
 Backup status: LGB-032 adds dry-run-first backups and a read-only restore drill. The backup set uses SQLite backup semantics, excludes live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio, and writes to `saga` through `192.168.1.3:/mnt/saga/Napoleon/logbook-backups`. First validated backup: `logbook-backup-20260503T155634Z` with 34 ledger jobs and a successful remote restore drill.
 

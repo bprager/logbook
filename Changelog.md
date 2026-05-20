@@ -8,10 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-20
+
 ### Added
 
 - Added `.codex/lessons-learned.md` for durable Codex workflow, debugging, and
   collaboration lessons separate from the production incident log.
+
+### Changed
+
+- Changed source-audio cleanup to the approved one-week retention gate and made
+  the hourly retention LaunchAgent run guarded local and recorder cleanup.
+
+### Fixed
+
+- `logbook watch` now reports recent failed pipeline runs in the failures panel
+  and failed count, even when the affected recording jobs later recover.
 
 ## [1.2.0] - 2026-05-17
 

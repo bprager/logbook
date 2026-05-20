@@ -1,20 +1,19 @@
 # Status
 
-Updated: 2026-05-17
+Updated: 2026-05-20
 
 ## Current Focus
 
-`1.2.0` release preparation promotes the modern observer/watch surfaces on top
-of the stable operational line. The live recorder-to-Obsidian system remains
-operational with meeting diarization, audited retention cleanup, launchd jobs,
-Prometheus metrics, dead-letter management, and `saga` backup/restore evidence
-in place.
+`1.2.1` patch release preparation promotes the watch failure visibility fix and
+the approved one-week guarded source-audio retention policy on top of the stable
+operational line. The live recorder-to-Obsidian system remains operational with
+meeting diarization, audited retention cleanup, launchd jobs, Prometheus
+metrics, dead-letter management, and `saga` backup/restore evidence in place.
 
-The current release slice includes the packaged `logbook watch-web` React/Vite
-UI, the interactive curses terminal UI via `logbook watch --ui curses`, a
-server-rendered web fallback for JavaScript-blocked tabs, explicit `[q] quit`
-curses affordance, and a stricter quality gate that includes `mypy` plus
-more-than-96% changed-line coverage.
+The current release slice includes `logbook watch` reporting failed pipeline
+runs in the failures panel and failed count, `LOGBOOK_AUDIO_RETENTION_HOURS=168`
+as the runtime default, and the hourly `local.logbook.retention-audit`
+LaunchAgent running guarded `cleanup-audio --execute --include-recorder`.
 
 The May 12 recorder recovery processed the 11 recorder files that were still unknown to the ledger. Jobs 79-89 were copied and transcribed; jobs 87 and 89 were diarized and routed as meetings; jobs 84 and 85 became dead letters; jobs 79-83, 86, and 88 were consolidated into canonical May 10, May 11, and May 12 daily logs. The vault is pushed and clean at commit `2c5027d Remove obsolete Logbook dead letter for job 77`. `ingest-dry-run --env .env` now reports `new_count=0` and `known_count=45`; `mark-vault-synced --env .env` reports `already_synced_count=78` and `blocked_count=0`; Memgraph health is `ok` with 5,251 nodes and 13,804 relationships.
 
@@ -35,7 +34,7 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 - Preserve the one canonical final daily log path invariant, including late arrivals.
 - Keep completed acceptance evidence current for release, vault sync, memory graph, backup, launchd, and retention behavior.
 - Recheck recorder-side cleanup when the Sony ICD-PX370 is mounted again.
-- Keep post-`1.2.0` changes tracked under `[Unreleased]`.
+- Keep post-`1.2.1` changes tracked under `[Unreleased]`.
 - Maintain `.codex/lessons-learned.md` whenever implementation or collaboration
   teaches reusable workflow guidance.
 - Maintain `lessons-learned.md` whenever live operations expose a recoverable
@@ -175,6 +174,9 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 - [x] Prepared the `1.2.0` minor release with project/API/web metadata,
   release notes, README/status/backlog updates, and the explicit curses
   `[q] quit` affordance.
+- [x] Prepared the `1.2.1` patch release with watch failure visibility,
+  one-week guarded retention cleanup, release notes, metadata, and operational
+  cleanup evidence.
 
 ## Notes
 
@@ -187,7 +189,7 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 - Recommended communication model: `mimir` keeps local SQLite/processing/vault writes, submits async jobs to `odin` over direct internal HTTP, OpenClaw reads/requests through a loopback status/action API, Prometheus scrapes health/metrics, and `saga` is backup/archive only.
 - MVP auth decision: scoped bearer tokens in `.env`; separate tokens for `odin` jobs, Logbook read access, and Logbook action access.
 - Obsidian vault: `https://github.com/bprager/obs-vault.git`; use Obsidian CLI to access and update it.
-- Audio retention: do not link audio in Obsidian; delete local and Sony-recorder source audio after 24 hours once processing and vault sync are confirmed.
+- Audio retention: do not link audio in Obsidian; delete local and Sony-recorder source audio after one week once processing and vault sync are confirmed.
 - Local `.env` placeholder created and ignored by git for tokens, Obsidian CLI settings, `odin` API config, Sony recorder mount details, and retention settings.
 - Detailed plan captured in `.codex/architecture-plan.md`.
 - `0.1.0` is the first minor planning release and is tagged as `v0.1.0`.
@@ -333,7 +335,7 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 - Verification after classifier aliases and operational cleanup passed: 86 tests OK, `ruff check .` OK, `py_compile` OK, and `git diff --check` OK.
 - LGB-033 implementation completed on 2026-05-03 with `logbook memory-graph-repair`, a dry-run-first command that compares exact Logbook-owned live IDs with the local proof plan, upserts missing planned nodes/relationships, and prunes stale Logbook-owned IDs only with explicit `--prune-stale --execute`.
 - LGB-031 implementation completed on 2026-05-03 with Prometheus text `/metrics` endpoints for the Logbook API and `odin` worker. The metrics expose path-safe status counts, cleanup counters, graph health status, worker readiness, worker job counts, and model metadata. Scrape targets and alert candidates are documented in `docs/metrics.md`.
-- LGB-030 rollout completed on 2026-05-03 with `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` installed as `bernd` user LaunchAgents. The Logbook API now listens on `127.0.0.1:8788` because `127.0.0.1:8787` is reserved for the `clawdbot` CashClaw/OpenClaw adapter. As of `1.0.1`, mount-probe wiring runs bounded `process-mounted-recorder`; retention audit remains read-only, and OpenClaw ownership separation is preserved.
+- LGB-030 rollout completed on 2026-05-03 with `local.logbook.api`, `local.logbook.recorder.mount-probe`, `local.logbook.retention-audit`, and `local.logbook.entity-linker` installed as `bernd` user LaunchAgents. The Logbook API now listens on `127.0.0.1:8788` because `127.0.0.1:8787` is reserved for the `clawdbot` CashClaw/OpenClaw adapter. As of `1.0.1`, mount-probe wiring runs bounded `process-mounted-recorder`; as of `1.2.1`, retention audit runs guarded cleanup, and OpenClaw ownership separation is preserved.
 - LGB-032 implementation completed on 2026-05-03 with dry-run-first `backup-run`, read-only `backup-restore-drill`, and documentation in `docs/backups.md`. The first production backup was written to `192.168.1.3:/mnt/saga/Napoleon/logbook-backups/logbook-backup-20260503T155634Z`; the remote restore drill reported `status=ok`, `integrity_check=ok`, schema version `1`, expected job count `34`, and actual job count `34`. Live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio are excluded.
 - LGB-034 release readiness completed on 2026-05-03, and `v0.2.0` is tagged and pushed after explicit operator approval. README, changelog, `VERSION`, `pyproject.toml`, and `docs/releases/0.2.0.md` describe the operational MVP release. `secrets.yaml` is tracked by explicit operator request and contains SOPS/age encrypted secret values.
 - Post-release status metadata correction was committed and pushed as `4988e1c` on 2026-05-03, and Memgraph LGB-034 now reflects that `v0.2.0` is tagged and pushed. Follow-up operational checks passed: API `/health` reports 34 jobs, `/metrics` reports `logbook_up 1` and graph drift 0, `odin-health` reports model loaded, `memory-graph-health` reports 432 planned/live nodes and 827 planned/live relationships, cleanup has 24 eligible historical jobs with no pending action and 10 newer jobs blocked only by `retention_window_open`, and the `saga` restore drill reports `status=ok`.
@@ -346,3 +348,4 @@ Memgraph proof-graph drift from the recovery is repaired. Full sync plus stale m
 - After account-level `community-1` approval, Odin successfully loaded both `pyannote/speaker-diarization-community-1` and `pyannote/speaker-diarization-3.1`. Job 49 diarization succeeded with four speaker labels and wrote `/Users/bernd/VoiceIngest/diarization/260504_1308.diarization.json`. Routing wrote `30 - Meetings/2026/05-May/2026-05-04T13-08-00-job-000049-meeting.md`, the vault commit `f2a4b31 Add Logbook meeting note for May 4` was pushed, and `mark-vault-synced --execute` marked job 49. The full memory graph execute path hung and was terminated, but it had written the missing relationships; stale Logbook-owned proof nodes were pruned in small chunks and `memory-graph-health --env .env` returned `status=ok` with 805 planned/live nodes and 1631 planned/live relationships.
 - Recorder-side cleanup resumed when the Sony recorder was mounted again on 2026-05-05. Read-only discovery found 15 MP3s and `cleanup-plan --env .env` showed jobs 25-34 eligible with local and recorder cleanup pending, while jobs 45-49 remained blocked by `retention_window_open`. `cleanup-audio --env .env --execute --include-recorder` cleared jobs 25-34 through the audited gates. Post-checks report `local_pending_count=0`, `recorder_pending_count=0`, recorder discovery now shows 5 retained MP3s for jobs 45-49, and `memory-graph-health --env .env` remains `status=ok` with 805 planned/live nodes and 1631 planned/live relationships.
 - Stable release assessment on 2026-05-05 concluded `1.0.0` is warranted: canonical Memgraph backlog items LGB-001 through LGB-036 are complete, live operations are running on `mimir`/`odin`, and the remaining work is operational refinement rather than missing core capability. Fresh release checks before promotion: 98 tests OK, `ruff check .` OK, `odin-health` healthy, `cleanup-plan --env .env` reports 0 local and recorder pending actions for eligible jobs, `memory-graph-health --env .env` reports `status=ok` with 805 planned/live nodes and 1631 planned/live relationships, recorder discovery reports 5 retained MP3s for jobs 45-49, and `backup-restore-drill` against `logbook-backup-20260505T015132Z` reports `status=ok`, schema version 1, and 39 expected/actual jobs. Release docs and metadata were updated for `1.0.0` before tagging.
+- Retention policy was updated on 2026-05-20 after operator approval: source audio now uses a one-week (`168` hour) gate, and `local.logbook.retention-audit` runs guarded `cleanup-audio --execute --include-recorder` hourly. The live recorder cleanup cleared jobs 45-90, leaving 18 known MP3s for jobs 91-108 on the Sony recorder; fresh cleanup dry-run reports `retention_hours=168`, `local_pending_count=0`, and `recorder_pending_count=0` with jobs 91-108 blocked only by `retention_window_open`.

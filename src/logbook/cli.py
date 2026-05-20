@@ -2460,7 +2460,7 @@ def _launchd_render(
     print("start_openclaw=no")
     print("mount_trigger_command=process-mounted-recorder")
     print(f"mount_runner_app={package.mount_runner.bundle_path}")
-    print("retention_delete_audio=no")
+    print("retention_cleanup_command=cleanup-audio --execute --include-recorder")
     print("plists:")
     for path in paths:
         print(f"- {path}")

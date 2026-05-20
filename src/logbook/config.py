@@ -217,7 +217,7 @@ def backup_config_from_values(values: dict[str, str], processing_root: Path) -> 
 
 
 def retention_config_from_values(values: dict[str, str]) -> RetentionConfig:
-    hours = int(values.get("LOGBOOK_AUDIO_RETENTION_HOURS") or "24")
+    hours = int(values.get("LOGBOOK_AUDIO_RETENTION_HOURS") or "168")
     if hours < 1:
         raise ConfigError("LOGBOOK_AUDIO_RETENTION_HOURS must be at least 1")
     return RetentionConfig(

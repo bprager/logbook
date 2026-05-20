@@ -37,7 +37,7 @@ class StatusApiTests(TestCase):
             self.assertEqual(openapi.status_code, 200)
             schema = openapi.json()
             self.assertEqual(schema["info"]["title"], "Logbook API")
-            self.assertEqual(schema["info"]["version"], "1.2.0")
+            self.assertEqual(schema["info"]["version"], "1.2.1")
             self.assertIn("/jobs/{job_id}", schema["paths"])
             self.assertIn("/jobs/{job_id}/reprocess", schema["paths"])
             self.assertIn("/dead-letters/{job_id}/rescue", schema["paths"])

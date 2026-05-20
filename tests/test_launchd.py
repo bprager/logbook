@@ -1,8 +1,11 @@
 import plistlib
+import io
 import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import TestCase
 
+from logbook.cli import main
 from logbook.config import load_app_config
 from logbook.launchd import render_launchd_package, write_launchd_package
 
@@ -56,7 +59,9 @@ class LaunchdPackagingTests(TestCase):
             retention = _loads(package.retention_audit.content)
             self.assertEqual(retention["Label"], "local.logbook.retention-audit")
             self.assertEqual(retention["StartCalendarInterval"], [{"Minute": 17}])
-            self.assertIn("retention-status", retention["ProgramArguments"])
+            self.assertIn("cleanup-audio", retention["ProgramArguments"])
+            self.assertIn("--execute", retention["ProgramArguments"])
+            self.assertIn("--include-recorder", retention["ProgramArguments"])
 
             entity_linker = _loads(package.entity_linker.content)
             self.assertEqual(entity_linker["Label"], "local.logbook.entity-linker")
@@ -108,6 +113,33 @@ class LaunchdPackagingTests(TestCase):
                 b"#!",
             )
 
+    def test_launchd_render_reports_guarded_retention_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env_path = _write_env(root)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "launchd-render",
+                        "--env",
+                        str(env_path),
+                        "--output-dir",
+                        str(root / "launchd"),
+                        "--repo-root",
+                        str(root / "repo"),
+                        "--python-bin",
+                        "/usr/bin/python3",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(
+                "retention_cleanup_command=cleanup-audio --execute --include-recorder",
+                stdout.getvalue(),
+            )
+
 
 def _loads(content: str) -> dict:
     return plistlib.loads(content.encode("utf-8"))
@@ -119,7 +151,7 @@ def _write_env(root: Path) -> Path:
         f"""
 LOGBOOK_PROCESSING_ROOT={root / "VoiceIngest"}
 LOGBOOK_SQLITE_PATH={root / "VoiceIngest" / "voice_ingest.sqlite"}
-LOGBOOK_AUDIO_RETENTION_HOURS=24
+LOGBOOK_AUDIO_RETENTION_HOURS=168
 LOGBOOK_AUDIO_CLEANUP_MODE=trash_then_delete
 SONY_RECORDER_VOLUME_NAME=IC RECORDER
 SONY_RECORDER_MOUNT_PATH=/Volumes/IC RECORDER

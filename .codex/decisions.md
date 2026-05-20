@@ -50,11 +50,11 @@ Use the Obsidian CLI to access and update the vault at `https://github.com/bprag
 
 Reason: The user identified the vault source and requested Obsidian CLI access/update behavior.
 
-### D-009: Delete source audio after 24 hours
+### D-009: Delete source audio after one week
 
-Do not link source audio from Obsidian. Delete local source audio and recorder-side audio after 24 hours, after processing, vault write, and sync are confirmed.
+Do not link source audio from Obsidian. Delete local source audio and recorder-side audio after one week, after processing, vault write, and sync are confirmed.
 
-Reason: The user explicitly requested deletion after 24 hours, including on the Sony voice recorder. This supersedes the PRD MVP non-goal about avoiding automatic recorder deletion.
+Reason: The user explicitly requested automatic deletion, including on the Sony voice recorder, and approved a one-week retention gate on 2026-05-20. This supersedes the PRD MVP non-goal about avoiding automatic recorder deletion.
 
 ### D-010: Audio retention age is based on the ingestion ledger
 
@@ -119,6 +119,6 @@ without pretending historical coverage debt has already been paid down.
 5. Should meeting summaries be generated automatically or only after manual review?
 6. Which exact Obsidian CLI command templates should be filled into `.env` for sync/status/commit/push on this host?
 7. What is the exact Sony ICD-PX370 mounted volume path/name on `mimir`?
-8. Should 24-hour local cleanup move audio to trash/quarantine first, or hard-delete immediately after confirmed sync?
+8. Should one-week local cleanup move audio to trash/quarantine first, or hard-delete immediately after confirmed sync?
 9. Should the one-minute timestamp mismatch on `260427_1351.mp3` be treated as expected recorder behavior or corrected manually?
 10. Should the first watch UI implementation add a small terminal rendering dependency such as Rich, or stay standard-library-only with plainer output?

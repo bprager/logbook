@@ -18,7 +18,7 @@ Generated jobs:
 
 - `local.logbook.api`: runs `logbook serve-api --env .env`, keeps the FastAPI status/action API alive, and lets `launchd` send the normal termination signal on shutdown.
 - `local.logbook.recorder.mount-probe`: uses `StartOnMount` and opens the generated `LogbookMountRunner.app`, which runs `logbook process-mounted-recorder --env .env`. It copies discovered audio into the local inbox, transcribes through `odin`, diarizes meetings, routes generated notes into Obsidian, consolidates routed log entries into canonical daily logs, marks pushed vault artifacts as synced, and never deletes recorder or local audio. Recorder discovery/copy is retried briefly to tolerate removable-volume readiness and permission timing; if recorder access still fails, already-local copied/transcribed/routed work is allowed to finish before the command exits nonzero. Memgraph sync is bounded per job so graph latency does not hold the mount processor open indefinitely.
-- `local.logbook.retention-audit`: runs hourly at minute 17 and calls `logbook retention-status --env .env`. It reports retention configuration but does not delete audio.
+- `local.logbook.retention-audit`: runs hourly at minute 17 and calls `logbook cleanup-audio --env .env --execute --include-recorder`. It deletes only audio that passes the one-week retention gate and the existing processing, checksum, Markdown, and vault-sync guards.
 - `local.logbook.entity-linker`: runs daily at 03:37 and calls `logbook link-daily-log-entities --env .env --months 3 --execute`. It scans canonical daily logs for existing people, event, and object notes, then adds Obsidian links without touching source audio.
 
 Production note for `mimir`: `127.0.0.1:8787` is already used by the
@@ -72,8 +72,9 @@ SQLite ledger, submit work to `odin`, and write generated Obsidian notes. If the
 recorder is not mounted or macOS denies access to the removable volume, it retries
 briefly, finishes any already-local pending processing that can still proceed, then
 reports `operational=no` or `copy_failed_count=1` and exits nonzero without deleting
-anything. The retention audit is read-only and must print
-`delete_audio=no` and `delete_recorder_audio=no`.
+anything. The retention cleanup is guarded but mutating: it may trash eligible
+local copied audio and delete eligible recorder-side audio only after the
+retention and vault-sync gates pass.
 
 Do not manually `kickstart` `local.logbook.entity-linker` during a rollout check
 unless vault mutation is explicitly intended. It is scheduled and runs with

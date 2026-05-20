@@ -62,6 +62,9 @@ class ObserverFailure:
     classification: str | None
     occurred_at: str
     safe_detail: str
+    source: str = "job"
+    run_id: str | None = None
+    command: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -70,6 +73,9 @@ class ObserverFailure:
             "classification": self.classification,
             "occurred_at": self.occurred_at,
             "safe_detail": self.safe_detail,
+            "source": self.source,
+            "run_id": self.run_id,
+            "command": self.command,
         }
 
 
@@ -172,11 +178,16 @@ def build_observer_snapshot(
         key=lambda item: (item.finished_at, item.job_id),
         reverse=True,
     )[:limit]
+    job_failures = (
+        failure
+        for row in rows
+        if (failure := _failure_outcome(row, window_start, config)) is not None
+    )
+    pipeline_failures = _failed_pipeline_runs(config.sqlite_path, window_start, config)
     failures = sorted(
         (
             failure
-            for row in rows
-            if (failure := _failure_outcome(row, window_start, config)) is not None
+            for failure in (*job_failures, *pipeline_failures)
         ),
         key=lambda item: (item.occurred_at, item.job_id),
         reverse=True,
@@ -210,7 +221,8 @@ def build_observer_snapshot(
             window=f"{window_hours}h",
             jobs_seen=len(recent_rows),
             succeeded=sum(1 for row in recent_rows if row.get("status") in FINAL_SUCCESS_STATUSES),
-            failed=sum(1 for row in recent_rows if _is_failure_status(row.get("status"))),
+            failed=sum(1 for row in recent_rows if _is_failure_status(row.get("status")))
+            + len(pipeline_failures),
             dead_letters=sum(1 for row in recent_rows if row.get("status") == "dead_letter_written"),
             p50_duration_seconds=_percentile(durations, 0.50),
             p90_duration_seconds=_percentile(durations, 0.90),
@@ -451,6 +463,9 @@ def observer_snapshot_from_dict(payload: dict[str, object]) -> ObserverSnapshot:
                 classification=_optional_str(item.get("classification")),
                 occurred_at=str(item.get("occurred_at") or ""),
                 safe_detail=str(item.get("safe_detail") or ""),
+                source=str(item.get("source") or "job"),
+                run_id=_optional_str(item.get("run_id")),
+                command=_optional_str(item.get("command")),
             )
             for item in recent_failures
             if isinstance(item, dict)
@@ -600,6 +615,63 @@ def _active_stage(
     }
     _apply_duration_estimate(sqlite_path, stage)
     return stage
+
+
+def _failed_pipeline_runs(
+    sqlite_path: Path,
+    window_start: datetime,
+    config: AppConfig,
+) -> tuple[ObserverFailure, ...]:
+    uri = f"file:{sqlite_path}?mode=ro"
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+        connection.row_factory = sqlite3.Row
+        try:
+            rows = connection.execute(
+                """
+                SELECT runs.id, runs.command, runs.finished_at, runs.exit_code,
+                       failed_stage.stage, failed_stage.safe_detail
+                FROM pipeline_runs AS runs
+                LEFT JOIN pipeline_stage_events AS failed_stage
+                  ON failed_stage.id = (
+                      SELECT candidate.id
+                      FROM pipeline_stage_events AS candidate
+                      WHERE candidate.run_id = runs.id
+                        AND candidate.event = 'failed'
+                      ORDER BY candidate.id DESC
+                      LIMIT 1
+                  )
+                WHERE runs.status = 'failed'
+                ORDER BY runs.finished_at DESC
+                """
+            ).fetchall()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return ()
+
+    failures: list[ObserverFailure] = []
+    for row in rows:
+        occurred_at = _parse_datetime(row["finished_at"])
+        if occurred_at is None or occurred_at < window_start:
+            continue
+        stage = _optional_str(row["stage"])
+        detail = _optional_str(row["safe_detail"])
+        fallback = f"exit_code={row['exit_code']}" if row["exit_code"] is not None else "failed"
+        safe_detail = f"{stage}: {detail or fallback}" if stage else (detail or fallback)
+        failures.append(
+            ObserverFailure(
+                job_id=0,
+                status="failed",
+                classification="pipeline",
+                occurred_at=occurred_at.isoformat(timespec="seconds"),
+                safe_detail=_safe_detail(safe_detail, config),
+                source="pipeline_run",
+                run_id=str(row["id"]),
+                command=str(row["command"] or "pipeline"),
+            )
+        )
+    return tuple(failures)
 
 
 def _apply_duration_estimate(sqlite_path: Path, stage: dict[str, object]) -> None:
@@ -869,6 +941,11 @@ def _render_finished(item: ObserverJobOutcome) -> str:
 
 
 def _render_failure(item: ObserverFailure) -> str:
+    if item.source == "pipeline_run":
+        command = item.command or "pipeline"
+        short_id = item.run_id.removeprefix("run-")[:8] if item.run_id else ""
+        run_id = f" {short_id}" if short_id else ""
+        return f"fail  run{run_id} {command}  {item.safe_detail}  {item.occurred_at}"
     classification = item.classification or "unknown"
     return f"fail  #{item.job_id} {classification}  {item.safe_detail}  {item.occurred_at}"
 

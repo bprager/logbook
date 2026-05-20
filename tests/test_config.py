@@ -56,7 +56,7 @@ OBSIDIAN_STAGE_COMMAND=git -C {vault_path} add 10 - Logs
 LOGBOOK_API_BIND_HOST=127.0.0.1
 LOGBOOK_API_PORT=8787
 LOGBOOK_READ_TOKEN=read-secret
-LOGBOOK_AUDIO_RETENTION_HOURS=24
+LOGBOOK_AUDIO_RETENTION_HOURS=168
 LOGBOOK_AUDIO_CLEANUP_MODE=trash_then_delete
 MEMGRAPH_URI=bolt://odin:7697
 MEMGRAPH_USERNAME=logbook
@@ -82,7 +82,7 @@ LOGBOOK_BACKUP_SSH_IDENTITY_FILE=/Users/bernd/.ssh/id_rsa_odin
         self.assertEqual(config.api.bind_host, "127.0.0.1")
         self.assertEqual(config.api.port, 8787)
         self.assertEqual(config.api.read_token, "read-secret")
-        self.assertEqual(config.retention.hours, 24)
+        self.assertEqual(config.retention.hours, 168)
         self.assertEqual(config.retention.cleanup_mode, "trash_then_delete")
         self.assertEqual(config.odin.huggingface_token, "hf_test_token")
         self.assertIsNotNone(config.memgraph)

@@ -13,7 +13,7 @@ from logbook.config import AppConfig
 from logbook.observer import build_observer_snapshot
 
 
-WEB_UI_VERSION = "1.2.0"
+WEB_UI_VERSION = "1.2.1"
 
 
 def create_watch_web_app(config: AppConfig, *, static_root: Path | None = None) -> FastAPI:

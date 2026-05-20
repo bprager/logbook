@@ -19,7 +19,7 @@ Important project files:
 - OpenClaw runtime owner on this host is `clawdbot`.
 - Do not run OpenClaw gateway or node services under `bernd`.
 - Do not delete recordings from the Sony recorder during initial ingest.
-- Delete local and Sony-recorder source audio only after the 24-hour retention gate confirms processing, Markdown generation, and vault sync completed.
+- Delete local and Sony-recorder source audio only after the one-week retention gate confirms processing, Markdown generation, and vault sync completed.
 - Make every processing and cleanup step recoverable and auditable.
 - Prefer deterministic routing by spoken prefix before any semantic or fuzzy classification.
 - Update `Changelog.md` under `[Unreleased]` for notable repo, behavior, or workflow changes.

@@ -9,7 +9,7 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 ## Primary Requirements
 
 - Automatically detect and copy new recordings from Sony ICD-PX370.
-- Preserve original audio during processing, avoid duplicate processing, and clean up source audio only after the 24-hour retention gate.
+- Preserve original audio during processing, avoid duplicate processing, and clean up source audio only after the one-week retention gate.
 - Transcribe locally through `odin` using faster-whisper.
 - Classify recordings by deterministic spoken prefixes.
 - Stage log entries in `10 - Logs/00 - Inbox` before final consolidation.

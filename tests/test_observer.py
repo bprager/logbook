@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import sqlite3
 from types import SimpleNamespace
 from contextlib import redirect_stdout
 from contextlib import redirect_stderr
@@ -20,6 +21,7 @@ from logbook.observer import (
     render_full_observer_dashboard,
     render_observer_snapshot,
     resolve_watch_theme,
+    _failed_pipeline_runs,
 )
 from logbook.recorder import discover_recordings
 from logbook.telemetry import SQLitePipelineReporter
@@ -578,6 +580,75 @@ class ObserverSnapshotTests(TestCase):
             self.assertIsNotNone(snapshot.active_stage)
             self.assertEqual(snapshot.active_stage["stage"], "transcribe")
             self.assertEqual(snapshot.active_stage["elapsed_seconds"], 420)
+
+    def test_snapshot_reports_recent_pipeline_run_failures(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            old_reporter = SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="old-process-mounted-recorder",
+                host="mimir",
+                pid=124,
+                now=lambda: datetime(2026, 5, 14, 10, 0, tzinfo=timezone.utc),
+            )
+            old_reporter.finish_run(
+                status="failed",
+                exit_code=2,
+                now=lambda: datetime(2026, 5, 14, 10, 1, tzinfo=timezone.utc),
+            )
+            reporter = SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="process-mounted-recorder",
+                host="mimir",
+                pid=123,
+                now=lambda: datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+            reporter.start_stage(
+                "transcribe",
+                safe_detail=str(config.processing_root / "private.mp3"),
+                now=lambda: datetime(2026, 5, 15, 12, 1, tzinfo=timezone.utc),
+            )
+            reporter.finish_stage(
+                "transcribe",
+                event="failed",
+                safe_detail=str(config.processing_root / "private.mp3"),
+                now=lambda: datetime(2026, 5, 15, 12, 2, tzinfo=timezone.utc),
+            )
+            reporter.finish_run(
+                status="failed",
+                exit_code=1,
+                now=lambda: datetime(2026, 5, 15, 12, 2, tzinfo=timezone.utc),
+            )
+
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 3, tzinfo=timezone.utc),
+            )
+            rendered = render_observer_snapshot(snapshot)
+
+            self.assertEqual(snapshot.stats.failed, 1)
+            self.assertEqual(snapshot.recent_failures[0].source, "pipeline_run")
+            self.assertEqual(snapshot.recent_failures[0].command, "process-mounted-recorder")
+            self.assertNotIn("old-process-mounted-recorder", rendered)
+            self.assertIn("transcribe: <processing_root>/private.mp3", rendered)
+            self.assertIn("fail  run", rendered)
+
+    def test_snapshot_ignores_pipeline_failure_query_errors(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+            with patch("logbook.observer.sqlite3.connect", side_effect=sqlite3.Error("locked")):
+                failures = _failed_pipeline_runs(
+                    config.sqlite_path,
+                    datetime(2026, 5, 14, 12, 0, tzinfo=timezone.utc),
+                    config,
+                )
+
+            self.assertEqual(failures, ())
 
     def test_stage_duration_history_is_materialized_when_stage_succeeds(self) -> None:
         with TemporaryDirectory() as tmp:

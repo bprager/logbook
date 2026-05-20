@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: minor release `1.2.0` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, modern observer/watch UI surfaces, meeting diarization, audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
+> Status: patch release `1.2.1` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, modern observer/watch UI surfaces, meeting diarization, one-week audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
 
 ## What It Does
 
@@ -17,7 +17,7 @@ Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stag
 - Lets OpenClaw observe queue health, dead letters, inbox status, and bounded repair actions.
 - Provides compact independent observer/watch views for active pipeline
   progress, recent completions, failures, ETAs, and path-safe statistics.
-- Deletes local and recorder-side source audio after the 24-hour retention gate confirms processing and vault sync.
+- Deletes local and recorder-side source audio after the one-week retention gate confirms processing and vault sync.
 - Links canonical daily logs to existing Obsidian People, Event, and Object notes.
 - Backs up restorable non-audio operational state to `saga`.
 
@@ -62,6 +62,7 @@ Host roles:
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
 - [docs/pipeline-observer.md](docs/pipeline-observer.md) - design for the independent watch program and observer telemetry.
+- [docs/releases/1.2.1.md](docs/releases/1.2.1.md) - patch release notes for watch failure visibility and one-week guarded retention cleanup.
 - [docs/releases/1.2.0.md](docs/releases/1.2.0.md) - release notes for the modern observer/watch UI surfaces.
 - [docs/releases/1.1.0.md](docs/releases/1.1.0.md) - release notes for the observer snapshot and quality gate.
 - [docs/backups.md](docs/backups.md) - `saga` backup policy and restore-drill runbook.
@@ -288,7 +289,7 @@ PYTHONPATH=src python3 -m logbook.cli cleanup-audio --env .env --execute --inclu
 ```
 
 Cleanup requires finalized processing, derived note metadata, a recorded `vault_synced_at`, and the
-24-hour retention window. The API exposes read-only cleanup status at `/cleanup/audio`.
+one-week retention window. The API exposes read-only cleanup status at `/cleanup/audio`.
 
 Render launchd plists for the local API, mount probe, and retention audit:
 

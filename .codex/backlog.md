@@ -44,6 +44,7 @@ LGB-003 + LGB-019 + LGB-021 + LGB-031 + LGB-038 -> LGB-039 Pipeline observer and
 LGB-039 -> LGB-040 1.1.0 quality gate release
 LGB-039 + LGB-040 -> LGB-041 Modern observer UI surfaces
 LGB-041 -> LGB-042 1.2.0 modern observer release
+LGB-042 -> LGB-043 1.2.1 retention and watch patch release
 ```
 
 ## Milestone 0: Repo And Product Foundations
@@ -171,7 +172,7 @@ Deliverables:
 - Copy new recordings to processing inbox.
 - Compute SHA-256.
 - Preserve original files on recorder during initial ingest.
-- Never delete recorder files before the 24-hour retention cleanup gate.
+- Never delete recorder files before the one-week retention cleanup gate.
 - Move jobs through `discovered` and `copied`.
 
 Acceptance:
@@ -526,16 +527,16 @@ Deliverables:
 - `launchd` plist template using `StartOnMount`.
 - Runtime user guidance respecting `clawdbot` OpenClaw ownership.
 - Log paths and graceful shutdown behavior.
-- Cleanup schedule for 24-hour audio retention.
+- Cleanup schedule for one-week audio retention.
 - `logbook launchd-render` command that writes host-local plists under `LOGBOOK_PROCESSING_ROOT/launchd` by default.
-- `logbook retention-status` command for the scheduled no-delete retention audit placeholder.
+- Scheduled guarded cleanup command for eligible local and recorder-side audio.
 
 Acceptance:
 
 - Mount trigger starts only the lightweight probe.
 - OpenClaw services are not started as `bernd`.
 - API service plist uses launchd keepalive and a bounded shutdown timeout.
-- Retention job runs on schedule but does not delete audio before LGB-026.
+- Retention job runs on schedule and does not delete audio before the LGB-026 gates pass.
 
 ### LGB-026 - Audio Retention Cleanup
 
@@ -547,8 +548,8 @@ Deliverables:
 
 - Track local audio and recorder-side audio cleanup eligibility.
 - Compute cleanup eligibility from SQLite ledger timestamps, not recorder mtimes or YYMMDD filenames.
-- Delete or trash local copied audio after 24 hours only after processing, Markdown write, and vault sync are confirmed.
-- Delete Sony-recorder source files after 24 hours only after checksum, transcript, derived note, and vault sync are confirmed.
+- Delete or trash local copied audio after one week only after processing, Markdown write, and vault sync are confirmed.
+- Delete Sony-recorder source files after one week only after checksum, transcript, derived note, and vault sync are confirmed.
 - Record cleanup attempts, successes, failures, and retry eligibility in SQLite.
 - Provide cleanup status data for the status API.
 - `cleanup-plan` command for read-only eligibility inspection.
@@ -559,10 +560,10 @@ Deliverables:
 Acceptance:
 
 - Audio is not linked from Obsidian notes.
-- No audio is deleted before 24 hours.
+- No audio is deleted before one week.
 - Clock-skewed or manually corrected recorder files are not deleted until their ledger `cleanup_eligible_at` is reached.
 - No audio is deleted if processing or vault sync is incomplete.
-- Reconnecting the recorder after 24 hours cleans eligible source files and leaves ineligible files untouched.
+- Reconnecting the recorder after one week cleans eligible source files and leaves ineligible files untouched.
 - Cleanup failures are visible and retryable.
 - Cleanup planning is read-only by default and does not persist eligibility or delete audio.
 - Recorder-side deletion verifies the source path is under the configured recorder folder and checksum matches.
@@ -583,7 +584,7 @@ Deliverables:
 - Dead-letter rescue test.
 - Offline `odin` queue test.
 - Obsidian CLI vault sync test.
-- 24-hour local and recorder-side audio cleanup test.
+- One-week local and recorder-side audio cleanup test.
 - Guarded `mark-vault-synced` dry-run/execute command that proves generated vault paths are in pushed vault `HEAD` before setting `vault_synced_at`.
 
 Acceptance:
@@ -1137,3 +1138,33 @@ Notes:
 - Prepared on 2026-05-17. This is a minor release because it adds new operator
   UI surfaces while preserving the observer snapshot contract and existing
   local-first pipeline behavior.
+
+### LGB-043 - 1.2.1 Retention And Watch Patch Release
+
+Status: Done
+
+Priority: P1
+
+Dependencies: LGB-026, LGB-039, LGB-042
+
+Deliverables:
+
+- Promote project package metadata, API metadata, web UI metadata, and release
+  documentation to `1.2.1`.
+- Fix observer/watch reporting so failed pipeline runs remain visible in the
+  failures panel and failed count even after affected jobs recover.
+- Change source-audio retention defaults and documentation to the approved
+  one-week (`168` hour) cleanup gate.
+- Change the hourly retention LaunchAgent to run guarded local and recorder-side
+  cleanup with `cleanup-audio --execute --include-recorder`.
+- Record live cleanup evidence for jobs 45-90 and the remaining retained Sony
+  recorder files.
+
+Acceptance:
+
+- Full unittest discovery passes in the project virtualenv.
+- Ruff and whitespace checks pass.
+- Fresh cleanup dry-run reports `retention_hours=168`, no local pending cleanup,
+  and no recorder pending cleanup.
+- Launchd reports `local.logbook.retention-audit` running the guarded cleanup
+  command without starting OpenClaw services under `bernd`.
