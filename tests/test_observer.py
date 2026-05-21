@@ -29,7 +29,9 @@ from logbook.recorder import discover_recordings
 from logbook.telemetry import SQLitePipelineReporter
 from logbook.watch_curses import (
     CursesRecorderStatus,
+    _draw_frame,
     _is_curses_quit_key,
+    _read_key,
     _should_eject_recorder,
     render_curses_frame,
 )
@@ -56,6 +58,7 @@ class ObserverSnapshotTests(TestCase):
             self.assertEqual(snapshot.health.memgraph, "not_configured")
             self.assertIsNone(snapshot.current_run)
             self.assertIsNone(snapshot.active_stage)
+            self.assertEqual(snapshot.latest_finished_at, "2026-05-15T11:12:00+00:00")
             self.assertEqual(snapshot.stats.jobs_seen, 3)
             self.assertEqual(snapshot.stats.succeeded, 1)
             self.assertEqual(snapshot.stats.failed, 1)
@@ -90,6 +93,7 @@ class ObserverSnapshotTests(TestCase):
             rendered = render_observer_snapshot(snapshot)
 
             self.assertIn("Logbook 2026-05-15T12:00:00+00:00", rendered)
+            self.assertIn("Latest finished job 2026-05-15T11:12:00+00:00", rendered)
             self.assertIn("Run none", rendered)
             self.assertIn("Recent finished", rendered)
             self.assertIn("Failures and review", rendered)
@@ -219,6 +223,7 @@ class ObserverSnapshotTests(TestCase):
 
             self.assertIn("LOGBOOK WATCH", rendered)
             self.assertIn("view day", rendered)
+            self.assertIn("LATEST FINISHED JOB  2026-05-15T11:12:00+00:00", rendered)
             self.assertIn("CONTROLS", rendered)
             self.assertIn("q quit", rendered)
             self.assertIn("RECENT FINISHED", rendered)
@@ -299,6 +304,7 @@ class ObserverSnapshotTests(TestCase):
 
             self.assertEqual(frame.theme, "day")
             self.assertIn("Logbook Watch", rendered)
+            self.assertIn("Latest finished job  2026-05-15T11:12:00+00:00", rendered)
             self.assertIn("Health  api ok  sqlite ok", rendered)
             self.assertIn("Run  process-mounted-recorder", rendered)
             self.assertIn("Stage  route  elapsed 03:00", rendered)
@@ -306,6 +312,12 @@ class ObserverSnapshotTests(TestCase):
             self.assertIn("Recent finished", rendered)
             self.assertIn("Failures and review", rendered)
             self.assertIn("[q] quit", rendered)
+            self.assertIn("┌", rendered)
+            self.assertIn("├", rendered)
+            self.assertIn("└", rendered)
+            self.assertIn("│ Health", rendered)
+            self.assertNotIn("+---", rendered)
+            self.assertNotIn("|---", rendered)
             self.assertNotIn(str(config.processing_root), rendered)
             self.assertTrue(all(len(line) <= 92 for line in rendered.splitlines()))
 
@@ -567,8 +579,70 @@ class ObserverSnapshotTests(TestCase):
             sparse = render_curses_frame(snapshot_sparse, width=100, height=8)
 
             self.assertIn("collecting baseline", sparse.text())
-            self.assertEqual(len(sparse.lines), 12)
+            self.assertEqual(len(sparse.lines), 8)
             self.assertTrue(all(len(line) <= 100 for line in sparse.lines))
+
+    def test_curses_frame_respects_small_terminal_dimensions_after_resize(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+
+            frame = render_curses_frame(snapshot, width=40, height=8)
+
+            self.assertEqual(len(frame.lines), 8)
+            self.assertTrue(all(len(line) <= 40 for line in frame.lines))
+            self.assertTrue(frame.lines[0].endswith("┐"))
+            self.assertTrue(frame.lines[-1].endswith("┘"))
+
+    def test_curses_frame_handles_tiny_terminal_heights(self) -> None:
+        snapshot = observer_snapshot_from_dict(_empty_snapshot_payload())
+
+        one_line = render_curses_frame(snapshot, width=12, height=1)
+        two_lines = render_curses_frame(snapshot, width=12, height=2)
+
+        self.assertEqual(one_line.lines, ("┌──────────┐",))
+        self.assertEqual(two_lines.lines, ("┌──────────┐", "└──────────┘"))
+
+    def test_curses_draw_frame_uses_full_terminal_width_for_right_border(self) -> None:
+        class FakeScreen:
+            def __init__(self) -> None:
+                self.writes: list[tuple[int, int, str, int]] = []
+
+            def erase(self) -> None:
+                pass
+
+            def getmaxyx(self) -> tuple[int, int]:
+                return (3, 12)
+
+            def addnstr(self, row: int, column: int, line: str, max_chars: int) -> None:
+                self.writes.append((row, column, line[:max_chars], max_chars))
+
+            def refresh(self) -> None:
+                pass
+
+        screen = FakeScreen()
+        frame = render_curses_frame(observer_snapshot_from_dict(_empty_snapshot_payload()), width=12, height=3)
+
+        _draw_frame(screen, frame)
+
+        self.assertTrue(screen.writes)
+        self.assertTrue(all(write[3] == 12 for write in screen.writes))
+        self.assertTrue(all(write[2].endswith(("┐", "│", "┘")) for write in screen.writes))
+
+    def test_curses_read_key_reports_terminal_resize(self) -> None:
+        import curses
+
+        class FakeScreen:
+            def getch(self) -> int:
+                return curses.KEY_RESIZE
+
+        self.assertEqual(_read_key(FakeScreen(), 1.0), "resize")
 
     def test_watch_once_curses_ui_renders_frame(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -1313,6 +1387,27 @@ def _seed_observer_fixture(config) -> dict[str, int]:
         "consolidated_id": consolidated.id,
         "dead_letter_id": dead_letter.id,
         "failed_id": failed_job.id,
+    }
+
+
+def _empty_snapshot_payload() -> dict[str, object]:
+    return {
+        "generated_at": "2026-05-15T12:00:00+00:00",
+        "latest_finished_at": None,
+        "health": {"api": "ok", "sqlite": "ok", "odin": "unknown", "memgraph": "not_configured"},
+        "current_run": None,
+        "active_stage": None,
+        "recent_finished": [],
+        "recent_failures": [],
+        "stats": {
+            "window": "24h",
+            "jobs_seen": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "dead_letters": 0,
+            "p50_duration_seconds": None,
+            "p90_duration_seconds": None,
+        },
     }
 
 

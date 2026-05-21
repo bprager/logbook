@@ -55,8 +55,8 @@ def render_curses_frame(
 ) -> CursesFrame:
     resolved_theme = resolve_watch_theme(theme, now=now)
     visible = filter_observer_snapshot(snapshot, status_filter)
-    width = max(64, width)
-    height = max(12, height)
+    width = max(4, width)
+    height = max(1, height)
 
     body_width = width - 2
     lines = [
@@ -68,6 +68,7 @@ def render_curses_frame(
             ),
             body_width,
         ),
+        _line(f"Latest finished job  {visible.latest_finished_at or 'none'}", body_width),
         _line(_health_line(visible), body_width),
         _line(_recorder_line(recorder_status), body_width),
         _rule(width, "sep"),
@@ -84,11 +85,63 @@ def render_curses_frame(
     lines.append(_rule(width, "bottom"))
 
     if len(lines) > height:
-        footer = lines[-2:]
-        lines = lines[: max(0, height - len(footer))] + footer
+        lines = _compact_frame_lines(
+            visible,
+            width=width,
+            height=height,
+            resolved_theme=resolved_theme,
+            status_filter=status_filter,
+            refresh_interval=refresh_interval,
+            recorder_status=recorder_status,
+        )
     if len(lines) < height:
         lines = lines[:-1] + [_line("", body_width)] * (height - len(lines)) + [lines[-1]]
     return CursesFrame(lines=tuple(_trim(line, width) for line in lines), theme=resolved_theme)
+
+
+def _compact_frame_lines(
+    snapshot: ObserverSnapshot,
+    *,
+    width: int,
+    height: int,
+    resolved_theme: str,
+    status_filter: str,
+    refresh_interval: float,
+    recorder_status: CursesRecorderStatus | None,
+) -> list[str]:
+    body_width = width - 2
+    if height == 1:
+        return [_rule(width, "top")]
+    if height == 2:
+        return [_rule(width, "top"), _rule(width, "bottom")]
+
+    lines = [
+        _rule(width, "top"),
+        _line(
+            (
+                f"Logbook Watch  {snapshot.generated_at}  {resolved_theme}  "
+                f"filter {status_filter}  refresh {refresh_interval:g}s"
+            ),
+            body_width,
+        ),
+        _line(_health_line(snapshot), body_width),
+    ]
+    run_lines = _run_lines(snapshot, body_width)
+    lines.extend(run_lines)
+    lines.extend([_line(_control_hint(recorder_status), body_width), _rule(width, "bottom")])
+
+    optional = [
+        _line(f"Latest finished job  {snapshot.latest_finished_at or 'none'}", body_width),
+        _line(_recorder_line(recorder_status), body_width),
+        _line(_stats_line(snapshot), body_width),
+    ]
+    while optional and len(lines) < height:
+        insert_at = 3 if optional[0].startswith("│ Recorder") else max(3, len(lines) - 2)
+        lines.insert(insert_at, optional.pop(0))
+
+    if len(lines) > height:
+        return lines[: max(1, height - 2)] + lines[-2:]
+    return lines
 
 
 def run_curses_watch(
@@ -105,12 +158,14 @@ def run_curses_watch(
 
     def _main(screen) -> int:
         curses.curs_set(0)
+        screen.keypad(True)
         screen.nodelay(True)
         active_filter = status_filter
         interval = refresh_interval
         last_code = 0
         last_recorder_message: str | None = None
         while True:
+            curses.update_lines_cols()
             snapshot = snapshot_provider()
             last_code = fail_on(filter_observer_snapshot(snapshot, active_filter))
             recorder_status = (
@@ -140,6 +195,9 @@ def run_curses_watch(
             key = _read_key(screen, interval)
             if _is_curses_quit_key(key):
                 return last_code
+            if key == "resize":
+                screen.clear()
+                continue
             if key == "f":
                 active_filter = "failed"
             elif key == "a":
@@ -165,13 +223,25 @@ def run_curses_watch(
 
 
 def _draw_frame(screen, frame: CursesFrame) -> None:  # pragma: no cover
+    import curses
+
     screen.erase()
+    max_rows, max_cols = screen.getmaxyx()
     for row, line in enumerate(frame.lines):
-        screen.addnstr(row, 0, line, max(0, screen.getmaxyx()[1] - 1))
+        if row >= max_rows:
+            break
+        try:
+            screen.addnstr(row, 0, line, max(0, max_cols))
+        except curses.error:
+            # Some curses implementations raise after writing the lower-right
+            # cell. Ignore it so the final border column can still be painted.
+            pass
     screen.refresh()
 
 
 def _read_key(screen, refresh_interval: float) -> str | None:  # pragma: no cover
+    import curses
+
     deadline = time.monotonic() + max(0.0, refresh_interval)
     while time.monotonic() < deadline:
         try:
@@ -179,6 +249,10 @@ def _read_key(screen, refresh_interval: float) -> str | None:  # pragma: no cove
         except KeyboardInterrupt:
             return "q"
         if value != -1:
+            if value == curses.KEY_RESIZE:
+                return "resize"
+            if value > 255:
+                return None
             return chr(value).lower()
         time.sleep(0.05)
     return None
@@ -329,14 +403,14 @@ def _format_duration(value: object) -> str:
 
 def _rule(width: int, kind: str) -> str:
     if kind == "top":
-        return "+" + "-" * (width - 2) + "+"
+        return "┌" + "─" * (width - 2) + "┐"
     if kind == "bottom":
-        return "+" + "-" * (width - 2) + "+"
-    return "+" + "=" * (width - 2) + "+"
+        return "└" + "─" * (width - 2) + "┘"
+    return "├" + "─" * (width - 2) + "┤"
 
 
 def _line(text: str, width: int) -> str:
-    return "| " + _trim(text, max(0, width - 2)).ljust(max(0, width - 2)) + " |"
+    return "│ " + _trim(text, max(0, width - 2)).ljust(max(0, width - 2)) + " │"
 
 
 def _trim(text: str, width: int) -> str:

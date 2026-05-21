@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: patch release `1.2.2` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, modern observer/watch UI surfaces, guarded recorder eject from the terminal watcher, meeting diarization, one-week audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
+> Status: patch release `1.2.3` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, modern observer/watch UI surfaces, guarded recorder eject from the terminal watcher, meeting diarization, one-week audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
 
 ## What It Does
 
@@ -62,6 +62,7 @@ Host roles:
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
 - [docs/pipeline-observer.md](docs/pipeline-observer.md) - design for the independent watch program and observer telemetry.
+- [docs/releases/1.2.3.md](docs/releases/1.2.3.md) - patch release notes for recorder ingest hardening and observer refinements.
 - [docs/releases/1.2.2.md](docs/releases/1.2.2.md) - patch release notes for recorder-aware terminal watch controls and operator scripts.
 - [docs/releases/1.2.1.md](docs/releases/1.2.1.md) - patch release notes for watch failure visibility and one-week guarded retention cleanup.
 - [docs/releases/1.2.0.md](docs/releases/1.2.0.md) - release notes for the modern observer/watch UI surfaces.
@@ -264,7 +265,8 @@ duration statistics, and bounded Odin/Memgraph reachability checks. When
 stale status, current top-level stage, and ETA/progress estimate when enough
 comparable stage-duration history exists. Copy, route, consolidation, and
 vault-sync stages report measured progress when they know their byte or item
-counts. The live terminal UI supports automatic day/night appearance,
+counts. `scripts/watch` opens the full-screen curses terminal dashboard by
+default. The live terminal UI supports automatic day/night appearance,
 `--theme day|night|auto`, `--no-color`, status filters, script-friendly
 failure/stale exit policies, and optional full-screen terminal dashboards with
 `--ui full` or `--ui curses`. In a live interactive terminal the dashboards

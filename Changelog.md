@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-05-21
+
+### Added
+
+- Added the latest finished recording-job timestamp to the observer snapshot,
+  Web watch header, and terminal watch dashboards.
+
+### Changed
+
+- Changed `scripts/watch` to launch the upgraded curses terminal dashboard by
+  default instead of the compact text renderer.
+- Changed terminal watch dashboard frames from primitive ASCII borders to
+  Unicode box-drawing borders for xterm-compatible terminals.
+- Changed the curses watch dashboard to fit the current terminal dimensions,
+  preserve the right border column, and redraw immediately after terminal
+  resize events.
+
+### Fixed
+
+- Added bounded retries around mounted-recorder transcription and diarization
+  so transient odin network failures do not strand copied recordings.
+- Made Obsidian CLI note writes verify the target Markdown file exists and fall
+  back to atomic filesystem writes when the CLI returns before the file is
+  visible to Git.
+- Prevented historical vault-sync blockers from failing a mount ingestion run
+  after the current run's generated jobs were successfully marked synced.
+
 ## [1.2.2] - 2026-05-21
 
 ### Added

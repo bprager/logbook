@@ -54,6 +54,7 @@ type Stats = {
 
 type Snapshot = {
   generated_at: string
+  latest_finished_at: string | null
   health: Health
   current_run: Record<string, unknown> | null
   active_stage: Record<string, unknown> | null
@@ -124,6 +125,9 @@ export default function App() {
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {snapshot?.generated_at ?? "waiting for first snapshot"}
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Latest finished job: {formatTimestamp(snapshot?.latest_finished_at)}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -360,4 +364,15 @@ function duration(seconds: number | null | undefined): string {
     return `${hours}:${restMins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
   return `${restMins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+}
+
+function formatTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return "none"
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString()
 }

@@ -27,6 +27,16 @@ class _FilesystemWriterFactory:
         self._writer.write_note(path, content)
 
 
+class _TransientOdinClient(FakeOdinClient):
+    submit_attempts = 0
+
+    def submit_transcription(self, submit_request):
+        type(self).submit_attempts += 1
+        if type(self).submit_attempts == 1:
+            raise OSError("No route to host")
+        return super().submit_transcription(submit_request)
+
+
 class ProcessMountedRecorderTests(TestCase):
     def test_process_mounted_recorder_consolidates_routed_log_entries(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -153,6 +163,54 @@ class ProcessMountedRecorderTests(TestCase):
                 / "2026-05-05-Tuesday-Log.md"
             )
             self.assertTrue(daily_log.exists())
+
+    def test_process_mounted_recorder_retries_transient_odin_failure(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            recordings_dir = root / "IC RECORDER" / "REC_FILE" / "FOLDER01"
+            recordings_dir.mkdir(parents=True)
+            _write_recording(recordings_dir / "260505_0808.mp3", 8, 8)
+            _TransientOdinClient.submit_attempts = 0
+
+            with (
+                patch("logbook.cli.HttpOdinClient", _TransientOdinClient),
+                patch("logbook.cli.ObsidianCliNoteWriter", _FilesystemWriterFactory),
+                patch("logbook.cli._mark_vault_synced_and_sync_memory", return_value=True),
+                patch("logbook.cli.time.sleep") as sleep,
+            ):
+                exit_code = _process_mounted_recorder(env_path)
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(_TransientOdinClient.submit_attempts, 2)
+            sleep.assert_called()
+
+            ledger = open_ledger(root / "VoiceIngest" / "voice_ingest.sqlite")
+            try:
+                job = ledger.get_by_id(1)
+            finally:
+                ledger.close()
+
+            self.assertIsNotNone(job)
+            self.assertEqual(job.status, "consolidated")
+
+    def test_process_mounted_recorder_skips_vault_sync_when_no_new_work(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            recordings_dir = root / "IC RECORDER" / "REC_FILE" / "FOLDER01"
+            recordings_dir.mkdir(parents=True)
+
+            with (
+                patch("logbook.cli.HttpOdinClient", FakeOdinClient),
+                patch(
+                    "logbook.cli._mark_vault_synced_and_sync_memory",
+                    side_effect=AssertionError("vault sync should be skipped"),
+                ),
+            ):
+                exit_code = _process_mounted_recorder(env_path)
+
+            self.assertEqual(exit_code, 0)
 
 
 def _write_env(root: Path) -> Path:

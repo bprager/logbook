@@ -53,6 +53,8 @@ class ObsidianCliNoteWriter:
             raise NoteWriteError(
                 f"obsidian-cli create failed for {note_name}: {detail or completed.returncode}"
             )
+        if not path.exists():
+            atomic_write_text(path, content)
 
 
 def _note_name(path: Path, vault_root: Path) -> str:

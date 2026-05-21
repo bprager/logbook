@@ -891,8 +891,7 @@ def _process_mounted_recorder(env_path: Path) -> int:
 
         try:
             reporter.start_stage("transcribe")
-            odin_client = HttpOdinClient(config.odin)
-            transcription_result = transcribe_copied(config=config, client=odin_client)
+            transcription_result = _transcribe_copied_with_retries(config)
         except Exception as error:
             reporter.finish_stage("transcribe", event="failed", safe_detail=str(error))
             print(f"odin_error={error}", file=sys.stderr)
@@ -907,7 +906,7 @@ def _process_mounted_recorder(env_path: Path) -> int:
 
         try:
             reporter.start_stage("diarize")
-            diarization_result = diarize_meetings(config=config, client=HttpOdinClient(config.odin))
+            diarization_result = _diarize_meetings_with_retries(config)
         except Exception as error:
             reporter.finish_stage("diarize", event="failed", safe_detail=str(error))
             print(f"diarization_error={error}", file=sys.stderr)
@@ -924,7 +923,9 @@ def _process_mounted_recorder(env_path: Path) -> int:
         routing_job_ids = _routing_job_ids(config)
         print(f"routing_candidate_count={len(routing_job_ids)}")
         if not routing_job_ids:
-            if _vault_has_generated_changes(config):
+            pending_vault_changes = _vault_has_generated_changes(config)
+            pending_consolidation_count = _pending_log_consolidation_count(config)
+            if pending_vault_changes:
                 print("route_transcripts=skipped_pending_vault_changes")
                 if not _commit_pending_vault_changes(config):
                     reporter.finish_stage("route", event="failed")
@@ -933,12 +934,29 @@ def _process_mounted_recorder(env_path: Path) -> int:
                 print("route_transcripts=skipped_no_candidates")
             reporter.finish_stage("route", event="succeeded")
             reporter.start_stage("consolidate")
-            if not _consolidate_pending_logs_with_vault_workflow(config):
+            if not _consolidate_pending_logs_with_vault_workflow(
+                config,
+                pending_count=pending_consolidation_count,
+            ):
                 reporter.finish_stage("consolidate", event="failed")
                 return 1
             reporter.advance_stage("consolidate", progress_current=1, progress_total=1)
             reporter.finish_stage("consolidate", event="succeeded")
             reporter.start_stage("vault_sync")
+            did_local_work = any(
+                (
+                    copy_result.copied_count,
+                    transcription_result.transcribed_count,
+                    diarization_result.diarized_count,
+                    pending_vault_changes,
+                    pending_consolidation_count,
+                )
+            )
+            if not did_local_work:
+                print("vault_sync=skipped_no_new_work")
+                reporter.finish_stage("vault_sync", event="succeeded")
+                exit_code = 0 if copy_stage_ok else 1
+                return exit_code
             sync_ok = _mark_vault_synced_and_sync_memory(config, env_path)
             if sync_ok:
                 reporter.advance_stage("vault_sync", progress_current=1, progress_total=1)
@@ -977,6 +995,54 @@ def _process_mounted_recorder(env_path: Path) -> int:
         )
 
 
+def _transcribe_copied_with_retries(
+    config: AppConfig,
+    *,
+    attempts: int = 3,
+    delay_seconds: float = 30.0,
+    sleep=None,
+):
+    sleep = time.sleep if sleep is None else sleep
+    attempts = max(1, attempts)
+    for attempt in range(1, attempts + 1):
+        try:
+            return transcribe_copied(config=config, client=HttpOdinClient(config.odin))
+        except Exception as error:
+            if attempt >= attempts:
+                raise
+            print(
+                f"transcription_retry={attempt + 1}/{attempts} reason={error}",
+                file=sys.stderr,
+            )
+            if delay_seconds > 0:
+                sleep(delay_seconds)
+    raise RuntimeError("unreachable transcription retry state")
+
+
+def _diarize_meetings_with_retries(
+    config: AppConfig,
+    *,
+    attempts: int = 3,
+    delay_seconds: float = 30.0,
+    sleep=None,
+):
+    sleep = time.sleep if sleep is None else sleep
+    attempts = max(1, attempts)
+    for attempt in range(1, attempts + 1):
+        try:
+            return diarize_meetings(config=config, client=HttpOdinClient(config.odin))
+        except Exception as error:
+            if attempt >= attempts:
+                raise
+            print(
+                f"diarization_retry={attempt + 1}/{attempts} reason={error}",
+                file=sys.stderr,
+            )
+            if delay_seconds > 0:
+                sleep(delay_seconds)
+    raise RuntimeError("unreachable diarization retry state")
+
+
 def _mark_vault_synced_and_sync_memory(config: AppConfig, env_path: Path) -> bool:
     if _vault_has_generated_changes(config):
         print("vault_pending_changes_detected=yes")
@@ -991,7 +1057,7 @@ def _mark_vault_synced_and_sync_memory(config: AppConfig, env_path: Path) -> boo
     print(f"vault_sync_marked_count={vault_sync_result.marked_count}")
     print(f"vault_sync_already_synced_count={vault_sync_result.already_synced_count}")
     print(f"vault_sync_blocked_count={vault_sync_result.blocked_count}")
-    if vault_sync_result.blocked_count:
+    if vault_sync_result.blocked_count and vault_sync_result.marked_count == 0:
         return False
 
     marked_job_ids = tuple(item.job.id for item in vault_sync_result.items if item.status == "marked")
@@ -1033,8 +1099,16 @@ def _route_with_vault_workflow(config: AppConfig) -> bool:
     return True
 
 
-def _consolidate_pending_logs_with_vault_workflow(config: AppConfig) -> bool:
-    pending_count = _pending_log_consolidation_count(config)
+def _consolidate_pending_logs_with_vault_workflow(
+    config: AppConfig,
+    *,
+    pending_count: int | None = None,
+) -> bool:
+    pending_count = (
+        _pending_log_consolidation_count(config)
+        if pending_count is None
+        else pending_count
+    )
     print(f"consolidation_candidate_count={pending_count}")
     if pending_count == 0:
         print("consolidate_logs=skipped_no_candidates")

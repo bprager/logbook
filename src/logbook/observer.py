@@ -104,6 +104,7 @@ class ObserverStats:
 @dataclass(frozen=True)
 class ObserverSnapshot:
     generated_at: str
+    latest_finished_at: str | None
     health: ObserverHealth
     current_run: dict[str, object] | None
     active_stage: dict[str, object] | None
@@ -114,6 +115,7 @@ class ObserverSnapshot:
     def to_dict(self) -> dict[str, object]:
         return {
             "generated_at": self.generated_at,
+            "latest_finished_at": self.latest_finished_at,
             "health": self.health.to_dict(),
             "current_run": self.current_run,
             "active_stage": self.active_stage,
@@ -142,6 +144,7 @@ def build_observer_snapshot(
     except sqlite3.Error:
         return ObserverSnapshot(
             generated_at=generated_iso,
+            latest_finished_at=None,
             health=ObserverHealth(
                 api="ok",
                 sqlite="unavailable",
@@ -207,6 +210,7 @@ def build_observer_snapshot(
 
     return ObserverSnapshot(
         generated_at=generated_iso,
+        latest_finished_at=_latest_finished_at(rows),
         health=ObserverHealth(
             api="ok",
             sqlite="ok",
@@ -252,10 +256,11 @@ def render_observer_snapshot(
         )
     lines = [
         (
-            f"Logbook {snapshot.generated_at}  view {resolved_theme}  api {snapshot.health.api}  "
-            f"db {snapshot.health.sqlite}  odin {snapshot.health.odin}  "
+            f"Logbook {snapshot.generated_at}  view {resolved_theme}  "
+            f"api {snapshot.health.api}  db {snapshot.health.sqlite}  odin {snapshot.health.odin}  "
             f"graph {snapshot.health.memgraph}"
         ),
+        f"Latest finished job {snapshot.latest_finished_at or 'none'}",
         run_line,
     ]
     if snapshot.active_stage is not None:
@@ -312,6 +317,7 @@ def render_full_observer_dashboard(
             f"LOGBOOK WATCH  {snapshot.generated_at}  view {resolved_theme}",
             width,
         ),
+        _box_line(f"LATEST FINISHED JOB  {snapshot.latest_finished_at or 'none'}", width),
         _box_line(
             (
                 f"health api {snapshot.health.api}  db {snapshot.health.sqlite}  "
@@ -431,6 +437,7 @@ def observer_snapshot_from_dict(payload: dict[str, object]) -> ObserverSnapshot:
     recent_failures = payload.get("recent_failures")
     return ObserverSnapshot(
         generated_at=str(payload.get("generated_at") or ""),
+        latest_finished_at=_optional_str(payload.get("latest_finished_at")),
         health=ObserverHealth(
             api=str(health.get("api") or "unknown"),
             sqlite=str(health.get("sqlite") or "unknown"),
@@ -794,6 +801,28 @@ def _failure_outcome(
     )
 
 
+def _latest_finished_at(rows: list[dict[str, object]]) -> str | None:
+    finished = [
+        occurred_at
+        for row in rows
+        if (occurred_at := _job_finished_datetime(row)) is not None
+    ]
+    if not finished:
+        return None
+    return max(finished).isoformat(timespec="seconds")
+
+
+def _job_finished_datetime(row: dict[str, object]) -> datetime | None:
+    status = str(row.get("status") or "")
+    if status in FINAL_STATUSES:
+        return _finish_datetime(row)
+    if _is_failure_status(status) or row.get("cleanup_last_error"):
+        return _parse_datetime(row.get("cleanup_last_attempt_at")) or _parse_datetime(
+            row.get("last_seen_at")
+        )
+    return None
+
+
 def _finish_datetime(row: dict[str, object]) -> datetime | None:
     for key in (
         "vault_synced_at",
@@ -976,19 +1005,19 @@ def _progress_bar(percent: float) -> str:
 
 
 def _box_top(width: int) -> str:
-    return "+" + "-" * (width - 2) + "+"
+    return "┌" + "─" * (width - 2) + "┐"
 
 
 def _box_bottom(width: int) -> str:
-    return _box_top(width)
+    return "└" + "─" * (width - 2) + "┘"
 
 
 def _box_sep(width: int) -> str:
-    return "|" + "-" * (width - 2) + "|"
+    return "├" + "─" * (width - 2) + "┤"
 
 
 def _box_line(text: str, width: int) -> str:
-    return f"| {_truncate(text, width - 4).ljust(width - 4)} |"
+    return f"│ {_truncate(text, width - 4).ljust(width - 4)} │"
 
 
 def _truncate(text: str, width: int) -> str:

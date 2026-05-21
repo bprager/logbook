@@ -19,7 +19,7 @@ class OperatorScriptTests(TestCase):
                     "set -euo pipefail",
                     "",
                     "cd /Users/bernd/Projects/Logbook",
-                    "PYTHONPATH=src .venv/bin/python -m logbook.cli watch --env .env",
+                    "PYTHONPATH=src .venv/bin/python -m logbook.cli watch --env .env --ui curses",
                     "",
                 ]
             ),

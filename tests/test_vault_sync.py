@@ -115,6 +115,30 @@ class VaultSyncMarkTests(TestCase):
             self.assertIsNotNone(updated)
             self.assertIsNotNone(updated.vault_synced_at)
 
+    def test_mount_processing_succeeds_when_current_jobs_sync_despite_historical_blockers(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _app_config(root)
+            _init_pushed_vault(
+                config.obsidian.vault_local_path,
+                [
+                    "20 - Notes/00 - Inbox/task/2026-04-29T08-21-00-job-000001-task.md",
+                ],
+            )
+            current = _category_job(config)
+            _missing_dead_letter_job(config)
+
+            recovered = _mark_vault_synced_and_sync_memory(config, Path(".env"))
+
+            self.assertTrue(recovered)
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                current_updated = ledger.get_by_checksum(current.checksum_sha256)
+            finally:
+                ledger.close()
+            self.assertIsNotNone(current_updated)
+            self.assertIsNotNone(current_updated.vault_synced_at)
+
     def test_blocks_when_vault_head_is_not_pushed_to_origin(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -224,6 +248,24 @@ def _meeting_job(config: AppConfig):
             classification="meeting",
             obsidian_path=Path("30 - Meetings/2026/04-April/2026-04-29T08-21-00-job-000001-meeting.md"),
             status="meeting_written",
+        )
+    finally:
+        ledger.close()
+
+
+def _missing_dead_letter_job(config: AppConfig):
+    ledger = open_ledger(config.sqlite_path, initialize=True)
+    try:
+        job = ledger.record_discovery(
+            _candidate(config.recorder.recordings_dir / "260429_0822.mp3"),
+            checksum_sha256="d" * 64,
+            source_device="IC RECORDER",
+        )
+        return ledger.mark_routed(
+            job.checksum_sha256,
+            classification="unknown",
+            obsidian_path=Path("99 - Dead Letters/missing.md"),
+            status="dead_letter_written",
         )
     finally:
         ledger.close()
