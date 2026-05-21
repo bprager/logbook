@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "logbook"
-version = "1.2.1"
+version = "1.2.2"
 description = "Local-first Sony recorder to Obsidian logbook pipeline."
 readme = "README.md"
 requires-python = ">=3.9"

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-05-21
+
+### Added
+
+- `logbook watch --ui curses` now shows local Sony recorder mount status and
+  exposes a one-key `[e] eject` action only when the recorder is mounted and no
+  pipeline run is active.
+- Added tracked operator scripts for `scripts/eject-voice-recorder` and
+  `scripts/watch`.
+
 ## [1.2.1] - 2026-05-20
 
 ### Added

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /Users/bernd/Projects/Logbook
+PYTHONPATH=src .venv/bin/python -m logbook.cli watch --env .env

@@ -290,7 +290,12 @@ The curses implementation uses the Python standard library, keeps a stable
 layout during terminal resize, and preserves script-friendly `--once` rendering
 for screenshots, tests, and incident notes. Interactive curses frames display
 `[q] quit` in the control footer; pressing `q` or Escape exits the watcher
-cleanly with the current failure-policy exit code.
+cleanly with the current failure-policy exit code. Local curses watches also
+show whether the configured Sony recorder is mounted. When the recorder is
+mounted and no pipeline run is active, the footer exposes `[e] eject`; pressing
+`e` immediately runs the host eject command. If a recorder ingest/read pipeline
+is active, eject is hidden and the recorder line explains that eject is blocked.
+Remote API watches remain read-only and do not expose recorder eject.
 
 ### 7. Web Watch UI
 
@@ -422,6 +427,11 @@ day/night appearance from local time. The curses watcher adds a full
 terminal-only view with compact panels, progress bars, filters, and live key
 controls, including a visible `[q] quit` command. The quality gate now includes
 `mypy`, the web production build, and a 97% changed-line coverage threshold.
+
+Implementation note: The terminal watcher later gained a recorder status line
+and a guarded one-key `[e] eject` command. Eject is offered only for local
+config-backed curses watches, only when the recorder is mounted, and only while
+no pipeline run is active.
 
 ## Acceptance Criteria
 

@@ -2222,6 +2222,11 @@ def _watch(
             )
             return snapshot
 
+        def recorder_status_provider(snapshot):
+            if config is None:
+                return None
+            return _curses_recorder_status(config, snapshot)
+
         if once:
             snapshot = filter_observer_snapshot(snapshot_provider(), status_filter)
             terminal = shutil.get_terminal_size((100, 30))
@@ -2232,6 +2237,7 @@ def _watch(
                 theme=theme,
                 status_filter=status_filter,
                 refresh_interval=refresh_interval,
+                recorder_status=recorder_status_provider(snapshot),
             )
             print(frame.text(), end="")
             return _watch_exit_code(snapshot, fail_on)
@@ -2244,6 +2250,8 @@ def _watch(
             theme=theme,
             status_filter=status_filter,
             fail_on=lambda snapshot: _watch_exit_code(snapshot, fail_on),
+            recorder_status_provider=recorder_status_provider if config is not None else None,
+            eject_recorder=lambda: _eject_recorder(config) if config is not None else (False, "remote watch"),
         )
 
     interactive_full_ui = (
@@ -2343,6 +2351,39 @@ def _fetch_observer_snapshot(api_url: str, read_token_env: str | None):
     with request.urlopen(http_request, timeout=10) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return observer_snapshot_from_dict(payload)
+
+
+def _curses_recorder_status(config: AppConfig, snapshot):
+    from logbook.watch_curses import CursesRecorderStatus
+
+    validation = validate_recorder(config.recorder)
+    mounted = validation.operational
+    blocked_reason = None
+    if mounted and snapshot.current_run is not None:
+        blocked_reason = "pipeline running"
+    return CursesRecorderStatus(
+        mounted=mounted,
+        volume_name=validation.volume_name if mounted else validation.expected_volume_name,
+        writable=validation.writable if mounted else None,
+        eject_available=mounted and blocked_reason is None,
+        blocked_reason=blocked_reason,
+    )
+
+
+def _eject_recorder(config: AppConfig) -> tuple[bool, str]:
+    validation = validate_recorder(config.recorder)
+    if not validation.operational:
+        return False, "recorder not mounted"
+    result = subprocess.run(
+        ["diskutil", "eject", str(validation.resolved_mount_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    detail = (result.stdout or result.stderr or "").strip()
+    if not detail:
+        detail = validation.volume_name
+    return result.returncode == 0, detail
 
 
 def _watch_exit_code(snapshot, fail_on: str) -> int:

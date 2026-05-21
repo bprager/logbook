@@ -4,20 +4,22 @@ import io
 import json
 import os
 import sqlite3
-from types import SimpleNamespace
 from contextlib import redirect_stdout
 from contextlib import redirect_stderr
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
-from logbook.cli import main
+from logbook.cli import _curses_recorder_status, _eject_recorder, main
 from logbook.config import load_app_config
 from logbook.ledger import open_ledger
 from logbook.observer import (
     build_observer_snapshot,
+    observer_snapshot_from_dict,
     render_full_observer_dashboard,
     render_observer_snapshot,
     resolve_watch_theme,
@@ -25,7 +27,12 @@ from logbook.observer import (
 )
 from logbook.recorder import discover_recordings
 from logbook.telemetry import SQLitePipelineReporter
-from logbook.watch_curses import _is_curses_quit_key, render_curses_frame
+from logbook.watch_curses import (
+    CursesRecorderStatus,
+    _is_curses_quit_key,
+    _should_eject_recorder,
+    render_curses_frame,
+)
 
 
 MB = 1024 * 1024
@@ -302,6 +309,226 @@ class ObserverSnapshotTests(TestCase):
             self.assertNotIn(str(config.processing_root), rendered)
             self.assertTrue(all(len(line) <= 92 for line in rendered.splitlines()))
 
+    def test_curses_frame_shows_mounted_recorder_and_eject_menu_when_idle(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+
+            frame = render_curses_frame(
+                snapshot,
+                width=92,
+                height=22,
+                recorder_status=CursesRecorderStatus(
+                    mounted=True,
+                    volume_name="IC RECORDER",
+                    writable=True,
+                    eject_available=True,
+                ),
+            )
+            rendered = frame.text()
+
+            self.assertIn("Recorder  mounted  IC RECORDER  writable yes", rendered)
+            self.assertIn("[e] eject", rendered)
+
+    def test_curses_frame_hides_eject_when_pipeline_is_active(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="process-mounted-recorder",
+                host="mimir",
+                pid=123,
+                now=lambda: datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 1, tzinfo=timezone.utc),
+            )
+
+            frame = render_curses_frame(
+                snapshot,
+                width=92,
+                height=18,
+                recorder_status=CursesRecorderStatus(
+                    mounted=True,
+                    volume_name="IC RECORDER",
+                    writable=True,
+                    eject_available=False,
+                    blocked_reason="pipeline running",
+                ),
+            )
+            rendered = frame.text()
+
+            self.assertIn("Recorder  mounted  IC RECORDER  writable yes  eject blocked: pipeline running", rendered)
+            self.assertNotIn("[e] eject", rendered)
+
+    def test_curses_frame_shows_not_mounted_and_recorder_message(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+
+            frame = render_curses_frame(
+                snapshot,
+                width=92,
+                height=18,
+                recorder_status=CursesRecorderStatus(
+                    mounted=False,
+                    volume_name="IC RECORDER",
+                    message="eject unavailable",
+                ),
+            )
+            rendered = frame.text()
+
+            self.assertIn("Recorder  not mounted  expected IC RECORDER  eject unavailable", rendered)
+            self.assertNotIn("[e] eject", rendered)
+
+    def test_curses_eject_guard_requires_mount_and_idle_pipeline(self) -> None:
+        idle_snapshot = observer_snapshot_from_dict(
+            {
+                "generated_at": "2026-05-15T12:00:00+00:00",
+                "health": {"api": "ok", "sqlite": "ok", "odin": "ok", "memgraph": "ok"},
+                "current_run": None,
+                "active_stage": None,
+                "recent_finished": [],
+                "recent_failures": [],
+                "stats": {
+                    "window": "24h",
+                    "jobs_seen": 0,
+                    "succeeded": 0,
+                    "failed": 0,
+                    "dead_letters": 0,
+                    "p50_duration_seconds": 0,
+                    "p90_duration_seconds": 0,
+                },
+            }
+        )
+        active_snapshot = observer_snapshot_from_dict(
+            {
+                **idle_snapshot.to_dict(),
+                "current_run": {
+                    "run_id": "run-1",
+                    "command": "process-mounted-recorder",
+                    "host": "mimir",
+                    "pid": 123,
+                    "started_at": "2026-05-15T12:00:00+00:00",
+                    "heartbeat_at": "2026-05-15T12:00:00+00:00",
+                    "elapsed_seconds": 0,
+                    "heartbeat_age_seconds": 0,
+                    "stale": False,
+                },
+            }
+        )
+
+        self.assertTrue(
+            _should_eject_recorder(
+                idle_snapshot,
+                CursesRecorderStatus(mounted=True, volume_name="IC RECORDER", eject_available=True),
+            )
+        )
+        self.assertFalse(
+            _should_eject_recorder(
+                active_snapshot,
+                CursesRecorderStatus(mounted=True, volume_name="IC RECORDER", eject_available=True),
+            )
+        )
+        self.assertFalse(
+            _should_eject_recorder(
+                idle_snapshot,
+                CursesRecorderStatus(mounted=False, volume_name="IC RECORDER", eject_available=False),
+            )
+        )
+
+    def test_cli_curses_recorder_status_uses_mount_state_and_blocks_active_pipeline(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            config.recorder.recordings_dir.mkdir(parents=True, exist_ok=True)
+            idle_snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+
+            idle_status = _curses_recorder_status(config, idle_snapshot)
+
+            self.assertIs(idle_status.mounted, True)
+            self.assertEqual(idle_status.volume_name, "IC RECORDER")
+            self.assertIs(idle_status.eject_available, True)
+            self.assertIsNone(idle_status.blocked_reason)
+
+            SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="process-mounted-recorder",
+                host="mimir",
+                pid=123,
+                now=lambda: datetime(2026, 5, 15, 12, 1, tzinfo=timezone.utc),
+            )
+            active_snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 2, tzinfo=timezone.utc),
+            )
+
+            active_status = _curses_recorder_status(config, active_snapshot)
+
+            self.assertIs(active_status.mounted, True)
+            self.assertIs(active_status.eject_available, False)
+            self.assertEqual(active_status.blocked_reason, "pipeline running")
+
+    def test_cli_curses_recorder_status_reports_unmounted_recorder(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            missing_config = replace(
+                config,
+                recorder=replace(config.recorder, mount_path=root / "MISSING"),
+            )
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+
+            status = _curses_recorder_status(missing_config, snapshot)
+
+            self.assertIs(status.mounted, False)
+            self.assertEqual(status.volume_name, "IC RECORDER")
+            self.assertIs(status.eject_available, False)
+            self.assertIsNone(status.writable)
+
+    def test_eject_recorder_reports_unmounted_and_uses_diskutil_output(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            missing_config = replace(
+                config,
+                recorder=replace(config.recorder, mount_path=root / "MISSING"),
+            )
+
+            self.assertEqual(_eject_recorder(missing_config), (False, "recorder not mounted"))
+
+            with patch("logbook.cli.subprocess.run") as run:
+                run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+                ok, detail = _eject_recorder(config)
+
+            self.assertIs(ok, True)
+            self.assertEqual(detail, "IC RECORDER")
+            run.assert_called_once()
+
     def test_curses_quit_key_is_explicitly_supported(self) -> None:
         self.assertTrue(_is_curses_quit_key("q"))
         self.assertTrue(_is_curses_quit_key("\x1b"))
@@ -370,6 +597,57 @@ class ObserverSnapshotTests(TestCase):
             self.assertIn("Logbook Watch", output)
             self.assertIn("night", output)
             self.assertIn("Recent finished", output)
+
+    def test_watch_once_curses_remote_api_stays_read_only_without_recorder_eject(self) -> None:
+        payload = {
+            "generated_at": "2026-05-15T12:00:00+00:00",
+            "health": {"api": "ok", "sqlite": "ok", "odin": "ok", "memgraph": "ok"},
+            "current_run": None,
+            "active_stage": None,
+            "recent_finished": [],
+            "recent_failures": [],
+            "stats": {
+                "window": "24h",
+                "jobs_seen": 0,
+                "succeeded": 0,
+                "failed": 0,
+                "dead_letters": 0,
+                "p50_duration_seconds": 0,
+                "p90_duration_seconds": 0,
+            },
+        }
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self) -> bytes:
+                return json.dumps(payload).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            return FakeResponse()
+
+        plain = io.StringIO()
+        with patch("logbook.cli.request.urlopen", side_effect=fake_urlopen):
+            with redirect_stdout(plain):
+                code = main(
+                    [
+                        "watch",
+                        "--api",
+                        "http://127.0.0.1:8788",
+                        "--once",
+                        "--ui",
+                        "curses",
+                    ]
+                )
+
+        output = plain.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("Recorder  unavailable in remote watch", output)
+        self.assertNotIn("[e] eject", output)
 
     def test_watch_live_curses_requires_tty(self) -> None:
         with TemporaryDirectory() as tmp:

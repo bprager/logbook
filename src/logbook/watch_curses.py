@@ -15,6 +15,8 @@ from logbook.observer import (
 
 
 SnapshotProvider = Callable[[], ObserverSnapshot]
+RecorderStatusProvider = Callable[[ObserverSnapshot], "CursesRecorderStatus | None"]
+RecorderEjector = Callable[[], tuple[bool, str]]
 CURSES_QUIT_KEYS = frozenset(("q", "\x1b"))
 CURSES_CONTROL_HINT = (
     "[q] quit  [r] refresh  [a] all  [f] failures  [s] success  [d] dead letters  [+/-] speed"
@@ -30,6 +32,16 @@ class CursesFrame:
         return "\n".join(self.lines) + "\n"
 
 
+@dataclass(frozen=True)
+class CursesRecorderStatus:
+    mounted: bool
+    volume_name: str
+    writable: bool | None = None
+    eject_available: bool = False
+    blocked_reason: str | None = None
+    message: str | None = None
+
+
 def render_curses_frame(
     snapshot: ObserverSnapshot,
     *,
@@ -39,6 +51,7 @@ def render_curses_frame(
     status_filter: str = "all",
     refresh_interval: float = 2.0,
     now: datetime | None = None,
+    recorder_status: CursesRecorderStatus | None = None,
 ) -> CursesFrame:
     resolved_theme = resolve_watch_theme(theme, now=now)
     visible = filter_observer_snapshot(snapshot, status_filter)
@@ -56,6 +69,7 @@ def render_curses_frame(
             body_width,
         ),
         _line(_health_line(visible), body_width),
+        _line(_recorder_line(recorder_status), body_width),
         _rule(width, "sep"),
     ]
     lines.extend(_run_lines(visible, body_width))
@@ -66,7 +80,7 @@ def render_curses_frame(
     lines.append(_rule(width, "sep"))
     lines.extend(_section("Failures and review", _failure_lines(visible.recent_failures), body_width))
     lines.append(_rule(width, "sep"))
-    lines.append(_line(CURSES_CONTROL_HINT, body_width))
+    lines.append(_line(_control_hint(recorder_status), body_width))
     lines.append(_rule(width, "bottom"))
 
     if len(lines) > height:
@@ -84,6 +98,8 @@ def run_curses_watch(
     theme: str,
     status_filter: str,
     fail_on: Callable[[ObserverSnapshot], int],
+    recorder_status_provider: RecorderStatusProvider | None = None,
+    eject_recorder: RecorderEjector | None = None,
 ) -> int:  # pragma: no cover - exercised through pure renderer and manual terminal use
     import curses
 
@@ -93,9 +109,22 @@ def run_curses_watch(
         active_filter = status_filter
         interval = refresh_interval
         last_code = 0
+        last_recorder_message: str | None = None
         while True:
             snapshot = snapshot_provider()
             last_code = fail_on(filter_observer_snapshot(snapshot, active_filter))
+            recorder_status = (
+                recorder_status_provider(snapshot) if recorder_status_provider is not None else None
+            )
+            if recorder_status is not None and last_recorder_message:
+                recorder_status = CursesRecorderStatus(
+                    mounted=recorder_status.mounted,
+                    volume_name=recorder_status.volume_name,
+                    writable=recorder_status.writable,
+                    eject_available=recorder_status.eject_available,
+                    blocked_reason=recorder_status.blocked_reason,
+                    message=last_recorder_message,
+                )
             height, width = screen.getmaxyx()
             frame = render_curses_frame(
                 snapshot,
@@ -104,8 +133,10 @@ def run_curses_watch(
                 theme=theme,
                 status_filter=active_filter,
                 refresh_interval=interval,
+                recorder_status=recorder_status,
             )
             _draw_frame(screen, frame)
+            last_recorder_message = None
             key = _read_key(screen, interval)
             if _is_curses_quit_key(key):
                 return last_code
@@ -121,6 +152,14 @@ def run_curses_watch(
                 interval = max(0.25, interval / 2)
             elif key == "-":
                 interval = min(60.0, interval * 2)
+            elif key == "e" and recorder_status is not None:
+                if _should_eject_recorder(snapshot, recorder_status) and eject_recorder is not None:
+                    ok, detail = eject_recorder()
+                    last_recorder_message = f"eject {'ok' if ok else 'failed'}: {detail}"
+                elif recorder_status.blocked_reason:
+                    last_recorder_message = f"eject blocked: {recorder_status.blocked_reason}"
+                else:
+                    last_recorder_message = "eject unavailable"
 
     return curses.wrapper(_main)
 
@@ -152,6 +191,41 @@ def _is_curses_quit_key(key: str | None) -> bool:
 def _health_line(snapshot: ObserverSnapshot) -> str:
     health = snapshot.health
     return f"Health  api {health.api}  sqlite {health.sqlite}  odin {health.odin}  graph {health.memgraph}"
+
+
+def _recorder_line(status: CursesRecorderStatus | None) -> str:
+    if status is None:
+        return "Recorder  unavailable in remote watch"
+    if not status.mounted:
+        base = f"Recorder  not mounted  expected {status.volume_name}"
+    else:
+        writable = _yes_no(status.writable) if status.writable is not None else "unknown"
+        base = f"Recorder  mounted  {status.volume_name}  writable {writable}"
+    if status.blocked_reason:
+        base = f"{base}  eject blocked: {status.blocked_reason}"
+    if status.message:
+        base = f"{base}  {status.message}"
+    return base
+
+
+def _control_hint(status: CursesRecorderStatus | None) -> str:
+    if status is not None and status.eject_available:
+        return (
+            "[q] quit  [e] eject  [r] refresh  [a] all  [f] failures  "
+            "[s] success  [d] dead letters  [+/-] speed"
+        )
+    return CURSES_CONTROL_HINT
+
+
+def _should_eject_recorder(
+    snapshot: ObserverSnapshot,
+    recorder_status: CursesRecorderStatus,
+) -> bool:
+    return (
+        recorder_status.mounted
+        and recorder_status.eject_available
+        and snapshot.current_run is None
+    )
 
 
 def _run_lines(snapshot: ObserverSnapshot, width: int) -> list[str]:
@@ -267,3 +341,9 @@ def _line(text: str, width: int) -> str:
 
 def _trim(text: str, width: int) -> str:
     return text if len(text) <= width else text[: max(0, width - 3)] + "..."
+
+
+def _yes_no(value: bool | None) -> str:
+    if value is None:
+        return "unknown"
+    return "yes" if value else "no"

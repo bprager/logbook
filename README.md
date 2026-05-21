@@ -4,7 +4,7 @@ Local-first voice capture for an Obsidian daily log, voice-note archive, and mee
 
 Logbook turns recordings from a Sony ICD-PX370 into structured Markdown. It stages daily log entries safely, transcribes audio on the local GPU host `odin`, writes canonical notes into the live Obsidian vault, and exposes a narrow OpenClaw API for status and approved recovery actions.
 
-> Status: patch release `1.2.1` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, modern observer/watch UI surfaces, meeting diarization, one-week audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
+> Status: patch release `1.2.2` from the stable operational line. The live recorder-to-`odin`-to-Obsidian path is running on `mimir`, with mount-triggered bounded processing, modern observer/watch UI surfaces, guarded recorder eject from the terminal watcher, meeting diarization, one-week audited retention cleanup, Memgraph memory health, launchd jobs, Prometheus metrics, and current `saga` restore-drill evidence in place.
 
 ## What It Does
 
@@ -62,6 +62,7 @@ Host roles:
 - [.codex/status.md](.codex/status.md) - current planning status.
 - [docs/metrics.md](docs/metrics.md) - Prometheus scrape targets, metrics, and alert candidates.
 - [docs/pipeline-observer.md](docs/pipeline-observer.md) - design for the independent watch program and observer telemetry.
+- [docs/releases/1.2.2.md](docs/releases/1.2.2.md) - patch release notes for recorder-aware terminal watch controls and operator scripts.
 - [docs/releases/1.2.1.md](docs/releases/1.2.1.md) - patch release notes for watch failure visibility and one-week guarded retention cleanup.
 - [docs/releases/1.2.0.md](docs/releases/1.2.0.md) - release notes for the modern observer/watch UI surfaces.
 - [docs/releases/1.1.0.md](docs/releases/1.1.0.md) - release notes for the observer snapshot and quality gate.
@@ -234,6 +235,7 @@ Send an `idempotency_key` in the JSON body when OpenClaw may retry an action req
 Print a compact, read-only observer snapshot from the SQLite ledger:
 
 ```bash
+scripts/watch
 PYTHONPATH=src python3 -m logbook.cli watch --env .env --once
 PYTHONPATH=src python3 -m logbook.cli watch --env .env --once --json
 PYTHONPATH=src python3 -m logbook.cli watch --env .env --theme auto
@@ -268,7 +270,15 @@ failure/stale exit policies, and optional full-screen terminal dashboards with
 `--ui full` or `--ui curses`. In a live interactive terminal the dashboards
 support `q`, `r`, `f`, `a`, and `+/-` key controls; the curses version displays
 `[q] quit` explicitly and also supports `s` for successes and `d` for dead
-letters.
+letters. When run locally with `--ui curses`, the terminal watcher also reports
+whether the configured Sony recorder is mounted and exposes `[e] eject` only
+when no pipeline run is active.
+
+Eject the Sony recorder from the configured host helper:
+
+```bash
+scripts/eject-voice-recorder
+```
 
 Inspect audio retention cleanup eligibility without deleting anything:
 
