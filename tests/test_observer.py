@@ -321,6 +321,59 @@ class ObserverSnapshotTests(TestCase):
             self.assertNotIn(str(config.processing_root), rendered)
             self.assertTrue(all(len(line) <= 92 for line in rendered.splitlines()))
 
+    def test_curses_frame_shows_readable_dates_for_finished_jobs_and_failures(self) -> None:
+        snapshot = observer_snapshot_from_dict(
+            {
+                **_empty_snapshot_payload(),
+                "latest_finished_at": "2026-06-05T18:37:42+00:00",
+                "recent_finished": [
+                    {
+                        "job_id": 114,
+                        "status": "vault_synced",
+                        "classification": "log",
+                        "recorded_at": "2026-05-28T15:00:00+00:00",
+                        "finished_at": "2026-06-05T18:37:42+00:00",
+                        "duration_seconds": 704261,
+                        "vault_synced": True,
+                    },
+                    {
+                        "job_id": 116,
+                        "status": "vault_synced",
+                        "classification": "log",
+                        "recorded_at": None,
+                        "finished_at": "",
+                        "duration_seconds": None,
+                        "vault_synced": True,
+                    }
+                ],
+                "recent_failures": [
+                    {
+                        "job_id": 115,
+                        "status": "failed_transcription",
+                        "classification": "meeting",
+                        "occurred_at": "2026-06-05T18:39:10+00:00",
+                        "safe_detail": "failed_transcription",
+                    },
+                    {
+                        "job_id": 117,
+                        "status": "failed_route",
+                        "classification": "log",
+                        "occurred_at": "2026-06-05Tbad-value",
+                        "safe_detail": "failed_route",
+                    }
+                ],
+            }
+        )
+
+        frame = render_curses_frame(snapshot, width=100, height=22)
+        rendered = frame.text()
+
+        self.assertIn("ok   2026-06-05 18:37  #114   vault_synced", rendered)
+        self.assertIn("fail 2026-06-05 18:39  #115   failed_transcription", rendered)
+        self.assertIn("ok   ---- -- -- --:--  #116   vault_synced", rendered)
+        self.assertIn("fail 2026-06-05 bad-v  #117   failed_route", rendered)
+        self.assertNotIn("195:37:41", rendered)
+
     def test_curses_frame_shows_mounted_recorder_and_eject_menu_when_idle(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

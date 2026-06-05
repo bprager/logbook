@@ -362,8 +362,8 @@ def _section(title: str, rows: list[str], width: int) -> list[str]:
 def _finished_lines(items: tuple[ObserverJobOutcome, ...]) -> list[str]:
     return [
         (
-            f"ok   #{item.job_id:<5} {item.status:<18} "
-            f"{item.classification or '-':<12} {_format_duration(item.duration_seconds)}"
+            f"ok   {_format_timestamp(item.finished_at)}  #{item.job_id:<5} "
+            f"{item.status:<18} {item.classification or '-':<12}"
         )
         for item in items
     ]
@@ -372,8 +372,8 @@ def _finished_lines(items: tuple[ObserverJobOutcome, ...]) -> list[str]:
 def _failure_lines(items: tuple[ObserverFailure, ...]) -> list[str]:
     return [
         (
-            f"fail #{item.job_id:<5} {item.status:<18} "
-            f"{item.classification or '-':<12} {item.safe_detail}"
+            f"fail {_format_timestamp(item.occurred_at)}  #{item.job_id:<5} "
+            f"{item.status:<18} {item.classification or '-':<12} {item.safe_detail}"
         )
         for item in items
     ]
@@ -399,6 +399,16 @@ def _format_duration(value: object) -> str:
     if hours:
         return f"{hours:d}:{minutes:02d}:{seconds:02d}"
     return f"{minutes:02d}:{seconds:02d}"
+
+
+def _format_timestamp(value: object) -> str:
+    if not value:
+        return "---- -- -- --:--"
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return str(value)[:16].replace("T", " ")
+    return parsed.strftime("%Y-%m-%d %H:%M")
 
 
 def _rule(width: int, kind: str) -> str:

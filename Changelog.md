@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Changed the terminal watch dashboard's recent finished and failure rows to
+  show readable date/time values instead of long elapsed durations or missing
+  failure timestamps.
+- Excluded the local `.uv-cache` dependency cache from Markdown lint during
+  the quality gate.
+- Updated stale API and web-watch service version metadata to match the current
+  project version.
+
 ## [1.2.3] - 2026-05-21
 
 ### Added
