@@ -1040,6 +1040,218 @@ class ObserverSnapshotTests(TestCase):
             self.assertIn("transcribe: <processing_root>/private.mp3", rendered)
             self.assertIn("fail  run", rendered)
 
+    def test_snapshot_reports_inbox_written_jobs_as_recent_finished(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _write_recording(config.recorder.recordings_dir / "260515_1130.mp3", 11, 30)
+            candidate = next(
+                item
+                for item in discover_recordings(config.recorder.recordings_dir)
+                if item.filename == "260515_1130.mp3"
+            )
+            ledger = open_ledger(config.sqlite_path, initialize=True)
+            try:
+                job = ledger.record_discovery(
+                    candidate,
+                    "checksum-inbox",
+                    "IC RECORDER",
+                    seen_at="2026-05-15T11:30:00+00:00",
+                )
+                inbox_written = ledger.mark_routed(
+                    job.checksum_sha256,
+                    "log",
+                    Path("10 - Logs/00 - Inbox/2026/05-May/2026-05-15/later-log.md"),
+                    "inbox_written",
+                    routed_at="2026-05-15T11:45:00+00:00",
+                )
+            finally:
+                ledger.close()
+
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+
+            self.assertEqual(snapshot.latest_finished_at, "2026-05-15T11:45:00+00:00")
+            self.assertIn(
+                inbox_written.id,
+                [item.job_id for item in snapshot.recent_finished],
+            )
+
+    def test_snapshot_reports_transcribed_and_diarized_jobs_as_recent_finished(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _write_recording(config.recorder.recordings_dir / "260605_0830.mp3", 8, 30)
+            _write_recording(config.recorder.recordings_dir / "260605_0845.mp3", 8, 45)
+            candidates = {
+                item.filename: item for item in discover_recordings(config.recorder.recordings_dir)
+            }
+            ledger = open_ledger(config.sqlite_path, initialize=True)
+            try:
+                transcribed = ledger.record_discovery(
+                    candidates["260605_0830.mp3"],
+                    "checksum-transcribed",
+                    "IC RECORDER",
+                    seen_at="2026-06-05T16:30:00+00:00",
+                )
+                ledger.mark_copied(
+                    transcribed.checksum_sha256,
+                    config.processing_root / "inbox" / transcribed.source_filename,
+                    copied_at="2026-06-05T16:31:00+00:00",
+                )
+                transcribed = ledger.mark_transcribed(
+                    transcribed.checksum_sha256,
+                    "odin-transcribed",
+                    config.processing_root / "transcripts" / "transcribed.json",
+                    "fake-large-v3",
+                    transcribed_at="2026-06-05T16:36:00+00:00",
+                )
+                diarized = ledger.record_discovery(
+                    candidates["260605_0845.mp3"],
+                    "checksum-diarized",
+                    "IC RECORDER",
+                    seen_at="2026-06-05T16:45:00+00:00",
+                )
+                ledger.mark_copied(
+                    diarized.checksum_sha256,
+                    config.processing_root / "inbox" / diarized.source_filename,
+                    copied_at="2026-06-05T16:46:00+00:00",
+                )
+                ledger.mark_transcribed(
+                    diarized.checksum_sha256,
+                    "odin-diarized",
+                    config.processing_root / "transcripts" / "diarized.json",
+                    "fake-large-v3",
+                    transcribed_at="2026-06-05T16:50:00+00:00",
+                )
+                diarized = ledger.mark_diarized(
+                    diarized.checksum_sha256,
+                    "odin-diarized",
+                    config.processing_root / "diarization" / "diarized.json",
+                    "fake-pyannote",
+                    diarized_at="2026-06-05T16:51:00+00:00",
+                )
+            finally:
+                ledger.close()
+
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 6, 5, 19, 0, tzinfo=timezone.utc),
+            )
+
+            self.assertEqual(snapshot.latest_finished_at, "2026-06-05T16:51:00+00:00")
+            self.assertEqual(
+                [item.job_id for item in snapshot.recent_finished],
+                [diarized.id, transcribed.id],
+            )
+
+    def test_pipeline_failure_rows_preserve_failed_stage_job_id(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            reporter = SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="process-mounted-recorder",
+                host="mimir",
+                pid=123,
+                now=lambda: datetime(2026, 6, 5, 18, 0, tzinfo=timezone.utc),
+            )
+            reporter.start_stage(
+                "route",
+                job_id=118,
+                now=lambda: datetime(2026, 6, 5, 18, 1, tzinfo=timezone.utc),
+            )
+            reporter.finish_stage(
+                "route",
+                event="failed",
+                job_id=118,
+                safe_detail="exit_code=1",
+                now=lambda: datetime(2026, 6, 5, 18, 2, tzinfo=timezone.utc),
+            )
+            reporter.finish_run(
+                status="failed",
+                exit_code=1,
+                now=lambda: datetime(2026, 6, 5, 18, 2, tzinfo=timezone.utc),
+            )
+
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 6, 5, 19, 0, tzinfo=timezone.utc),
+            )
+            frame = render_curses_frame(snapshot, width=120, height=24, theme="day")
+            rendered = frame.text()
+
+            self.assertEqual(snapshot.recent_failures[0].job_id, 118)
+            self.assertIn("fail 2026-06-05 18:02  #118", rendered)
+            self.assertNotIn("#0", rendered)
+
+    def test_curses_pipeline_failure_without_job_id_renders_run_id_not_fake_job_zero(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            reporter = SQLitePipelineReporter.start(
+                config.sqlite_path,
+                command="process-mounted-recorder",
+                host="mimir",
+                pid=123,
+                now=lambda: datetime(2026, 6, 5, 18, 0, tzinfo=timezone.utc),
+            )
+            reporter.start_stage(
+                "route",
+                now=lambda: datetime(2026, 6, 5, 18, 1, tzinfo=timezone.utc),
+            )
+            reporter.finish_stage(
+                "route",
+                event="failed",
+                safe_detail="exit_code=1",
+                now=lambda: datetime(2026, 6, 5, 18, 2, tzinfo=timezone.utc),
+            )
+            reporter.finish_run(
+                status="failed",
+                exit_code=1,
+                now=lambda: datetime(2026, 6, 5, 18, 2, tzinfo=timezone.utc),
+            )
+
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 6, 5, 19, 0, tzinfo=timezone.utc),
+            )
+            frame = render_curses_frame(snapshot, width=120, height=24, theme="day")
+            rendered = frame.text()
+
+            self.assertEqual(snapshot.recent_failures[0].job_id, 0)
+            self.assertIn("fail 2026-06-05 18:02  run", rendered)
+            self.assertNotIn("#0", rendered)
+
+    def test_curses_failure_without_job_or_run_id_renders_unknown_subject(self) -> None:
+        snapshot = observer_snapshot_from_dict(
+            {
+                **_empty_snapshot_payload(),
+                "recent_failures": [
+                    {
+                        "job_id": 0,
+                        "status": "failed",
+                        "classification": None,
+                        "occurred_at": "2026-06-05T18:02:00+00:00",
+                        "safe_detail": "unknown failure",
+                        "source": "job",
+                    }
+                ],
+            }
+        )
+
+        frame = render_curses_frame(snapshot, width=100, height=22, theme="day")
+        rendered = frame.text()
+
+        self.assertIn("fail 2026-06-05 18:02  #?", rendered)
+        self.assertNotIn("#0", rendered)
+
     def test_snapshot_ignores_pipeline_failure_query_errors(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

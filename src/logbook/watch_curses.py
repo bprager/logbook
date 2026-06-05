@@ -372,11 +372,19 @@ def _finished_lines(items: tuple[ObserverJobOutcome, ...]) -> list[str]:
 def _failure_lines(items: tuple[ObserverFailure, ...]) -> list[str]:
     return [
         (
-            f"fail {_format_timestamp(item.occurred_at)}  #{item.job_id:<5} "
+            f"fail {_format_timestamp(item.occurred_at)}  {_failure_subject(item):<6} "
             f"{item.status:<18} {item.classification or '-':<12} {item.safe_detail}"
         )
         for item in items
     ]
+
+
+def _failure_subject(item: ObserverFailure) -> str:
+    if item.job_id:
+        return f"#{item.job_id}"
+    if item.source == "pipeline_run" and item.run_id:
+        return f"run {item.run_id.removeprefix('run-')[:8]}"
+    return "#?"
 
 
 def _progress_bar(percent: float, width: int) -> str:

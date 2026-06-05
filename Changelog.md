@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed the terminal watch dashboard so recently copied, transcribed, diarized,
+  and inbox-written jobs appear in the recent finished section, and jobless
+  pipeline failures show a run id instead of fake job `#0`.
 - Changed the terminal watch dashboard's recent finished and failure rows to
   show readable date/time values instead of long elapsed durations or missing
   failure timestamps.

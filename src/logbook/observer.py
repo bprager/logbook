@@ -11,7 +11,15 @@ from logbook.memory_graph import Neo4jMemgraphClient
 from logbook.odin import HttpOdinClient
 
 
-FINAL_SUCCESS_STATUSES = {"consolidated", "category_written", "meeting_written"}
+FINAL_SUCCESS_STATUSES = {
+    "copied",
+    "transcribed",
+    "diarized",
+    "inbox_written",
+    "consolidated",
+    "category_written",
+    "meeting_written",
+}
 FINAL_REVIEW_STATUSES = {"dead_letter_written", "dead_letter_discarded"}
 FINAL_STATUSES = FINAL_SUCCESS_STATUSES | FINAL_REVIEW_STATUSES
 MIN_ETA_SAMPLES = 3
@@ -637,7 +645,7 @@ def _failed_pipeline_runs(
             rows = connection.execute(
                 """
                 SELECT runs.id, runs.command, runs.finished_at, runs.exit_code,
-                       failed_stage.stage, failed_stage.safe_detail
+                       failed_stage.job_id, failed_stage.stage, failed_stage.safe_detail
                 FROM pipeline_runs AS runs
                 LEFT JOIN pipeline_stage_events AS failed_stage
                   ON failed_stage.id = (
@@ -668,7 +676,7 @@ def _failed_pipeline_runs(
         safe_detail = f"{stage}: {detail or fallback}" if stage else (detail or fallback)
         failures.append(
             ObserverFailure(
-                job_id=0,
+                job_id=int(row["job_id"]) if row["job_id"] is not None else 0,
                 status="failed",
                 classification="pipeline",
                 occurred_at=occurred_at.isoformat(timespec="seconds"),
