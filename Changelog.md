@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure timestamps.
 - Changed watch dashboard timestamps to render in the operator's local
   timezone instead of showing raw UTC snapshot values.
+- Changed watch JSON/API snapshot timestamps to use the operator's local
+  timezone while preserving Sony recorder timestamps as recorded local times.
 - Made the Obsidian vault workflow recover clean fast-forward-only sync
   failures by merging `origin/main` before continuing generated-note writes.
 - Excluded the local `.uv-cache` dependency cache from Markdown lint during

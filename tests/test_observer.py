@@ -82,6 +82,35 @@ class ObserverSnapshotTests(TestCase):
             self.assertNotIn(str(config.processing_root), payload)
             self.assertNotIn(str(config.recorder.mount_path), payload)
 
+    def test_snapshot_payload_exports_watch_timestamps_in_local_time(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            _seed_observer_fixture(config)
+            snapshot = build_observer_snapshot(
+                config,
+                generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+
+            with _local_timezone("America/Los_Angeles"):
+                payload = snapshot.to_dict()
+
+            self.assertEqual(payload["generated_at"], "2026-05-15T05:00:00-07:00")
+            self.assertEqual(payload["latest_finished_at"], "2026-05-15T04:12:00-07:00")
+            self.assertEqual(
+                payload["recent_finished"][0]["finished_at"],
+                "2026-05-15T03:45:00-07:00",
+            )
+            self.assertEqual(
+                payload["recent_finished"][0]["recorded_at"],
+                "2026-05-15T10:00:00",
+            )
+            self.assertEqual(
+                payload["recent_failures"][0]["occurred_at"],
+                "2026-05-15T04:12:00-07:00",
+            )
+
     def test_plain_render_is_compact_and_path_safe(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -389,6 +418,28 @@ class ObserverSnapshotTests(TestCase):
         self.assertEqual(
             format_observer_timestamp("2026-06-05Tbad-value", style="short"),
             "2026-06-05 bad-v",
+        )
+
+    def test_snapshot_payload_preserves_empty_and_invalid_timestamp_fallbacks(self) -> None:
+        snapshot = observer_snapshot_from_dict(
+            {
+                **_empty_snapshot_payload(),
+                "current_run": {
+                    "started_at": "",
+                    "heartbeat_at": "2026-06-05Tbad-value",
+                    "history": [{"ended_at": "2026-06-05T18:00:00+00:00"}],
+                },
+            }
+        )
+
+        with _local_timezone("America/Los_Angeles"):
+            payload = snapshot.to_dict()
+
+        self.assertEqual(payload["current_run"]["started_at"], "")
+        self.assertEqual(payload["current_run"]["heartbeat_at"], "2026-06-05Tbad-value")
+        self.assertEqual(
+            payload["current_run"]["history"][0]["ended_at"],
+            "2026-06-05T11:00:00-07:00",
         )
 
     def test_curses_frame_shows_mounted_recorder_and_eject_menu_when_idle(self) -> None:

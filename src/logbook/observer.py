@@ -56,8 +56,8 @@ class ObserverJobOutcome:
             "job_id": self.job_id,
             "status": self.status,
             "classification": self.classification,
-            "recorded_at": self.recorded_at,
-            "finished_at": self.finished_at,
+            "recorded_at": _local_observer_timestamp(self.recorded_at),
+            "finished_at": _local_observer_timestamp(self.finished_at),
             "duration_seconds": self.duration_seconds,
             "vault_synced": self.vault_synced,
         }
@@ -79,7 +79,7 @@ class ObserverFailure:
             "job_id": self.job_id,
             "status": self.status,
             "classification": self.classification,
-            "occurred_at": self.occurred_at,
+            "occurred_at": _local_observer_timestamp(self.occurred_at),
             "safe_detail": self.safe_detail,
             "source": self.source,
             "run_id": self.run_id,
@@ -122,11 +122,11 @@ class ObserverSnapshot:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "generated_at": self.generated_at,
-            "latest_finished_at": self.latest_finished_at,
+            "generated_at": _local_observer_timestamp(self.generated_at),
+            "latest_finished_at": _local_observer_timestamp(self.latest_finished_at),
             "health": self.health.to_dict(),
-            "current_run": self.current_run,
-            "active_stage": self.active_stage,
+            "current_run": _localize_observer_payload(self.current_run),
+            "active_stage": _localize_observer_payload(self.active_stage),
             "recent_finished": [item.to_dict() for item in self.recent_finished],
             "recent_failures": [item.to_dict() for item in self.recent_failures],
             "stats": self.stats.to_dict(),
@@ -921,6 +921,34 @@ def format_observer_timestamp(
     if style == "short":
         return local.strftime("%Y-%m-%d %H:%M")
     return local.isoformat(timespec="seconds")
+
+
+def _local_observer_timestamp(value: object) -> str | None:
+    if value is None:
+        return None
+    rendered = str(value)
+    if not rendered:
+        return rendered
+    try:
+        parsed = datetime.fromisoformat(rendered)
+    except ValueError:
+        return rendered
+    if parsed.tzinfo is None:
+        return rendered
+    return parsed.astimezone().isoformat(timespec="seconds")
+
+
+def _localize_observer_payload(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _local_observer_timestamp(item)
+            if key.endswith("_at")
+            else _localize_observer_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_localize_observer_payload(item) for item in value]
+    return value
 
 
 def _safe_detail(value: str, config: AppConfig) -> str:
