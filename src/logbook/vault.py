@@ -131,8 +131,34 @@ class ObsidianVaultWorkflow:
         )
         self._commands.append(run)
         if not run.ok:
+            if name == "sync" and _is_fast_forward_sync_failure(run):
+                recovery = self._recover_fast_forward_sync_failure()
+                if recovery.ok:
+                    return recovery
             raise VaultWorkflowError(
                 f"vault workflow step failed: {name} exited {completed.returncode}"
+            )
+        return run
+
+    def _recover_fast_forward_sync_failure(self) -> VaultCommandRun:
+        completed = subprocess.run(
+            ["git", "-C", str(self.vault_root), "merge", "origin/main"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        run = VaultCommandRun(
+            name="sync_ff_only_merge_recovery",
+            skipped=False,
+            returncode=completed.returncode,
+            stdout=completed.stdout.strip(),
+            stderr=completed.stderr.strip(),
+        )
+        self._commands.append(run)
+        if not run.ok:
+            raise VaultWorkflowError(
+                "vault workflow step failed: "
+                f"sync fast-forward recovery exited {completed.returncode}"
             )
         return run
 
@@ -306,6 +332,14 @@ def _redact_repo_url(repo_url: str) -> str:
     scheme, rest = repo_url.split("://", 1) if "://" in repo_url else ("", repo_url)
     host_and_path = rest.split("@", 1)[1]
     return f"{scheme}://<redacted>@{host_and_path}" if scheme else f"<redacted>@{host_and_path}"
+
+
+def _is_fast_forward_sync_failure(run: VaultCommandRun) -> bool:
+    detail = f"{run.stdout}\n{run.stderr}"
+    return (
+        run.returncode == 128
+        and "Not possible to fast-forward" in detail
+    )
 
 
 def _registered_vault_check(cli_bin: str, vault_name: str) -> VaultCheck:

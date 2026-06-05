@@ -88,6 +88,94 @@ class VaultWorkflowTests(TestCase):
                     pass
             self.assertFalse((root / "vault-workflow.lock").exists())
 
+    def test_session_recovers_clean_diverged_vault_with_merge_after_ff_only_sync_failure(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault_root = root / "vault"
+            vault_root.mkdir()
+            _init_git_repo(vault_root)
+            (vault_root / "base.md").write_text("base\n", encoding="utf-8")
+            _git(vault_root, "add", "--", "base.md")
+            _git(vault_root, "commit", "-m", "base")
+            _git(vault_root, "checkout", "-b", "remote-main")
+            (vault_root / "remote.md").write_text("remote\n", encoding="utf-8")
+            _git(vault_root, "add", "--", "remote.md")
+            _git(vault_root, "commit", "-m", "remote")
+            _git(vault_root, "update-ref", "refs/remotes/origin/main", "HEAD")
+            _git(vault_root, "checkout", "main")
+            (vault_root / "local.md").write_text("local\n", encoding="utf-8")
+            _git(vault_root, "add", "--", "local.md")
+            _git(vault_root, "commit", "-m", "local")
+            log_path = root / "calls.log"
+            cli_path = _fake_cli(root, log_path)
+            workflow = ObsidianVaultWorkflow(
+                config=ObsidianConfig(
+                    cli_bin=str(cli_path),
+                    vault_repo_url="https://github.com/bprager/obs-vault.git",
+                    vault_local_path=vault_root,
+                    sync_command="{cli_bin} ff-fail {vault_path}",
+                    stage_command="{cli_bin} stage {vault_path}",
+                    status_command="{cli_bin} status {vault_path}",
+                    commit_command="{cli_bin} commit {vault_path} {message}",
+                    push_command="{cli_bin} push {vault_path}",
+                ),
+                vault_root=vault_root,
+                lock_root=root,
+            )
+
+            with workflow.session("route-notes"):
+                (vault_root / "note.md").write_text("hello\n", encoding="utf-8")
+
+            commands = workflow.report().commands
+            self.assertEqual(commands[0].name, "sync")
+            self.assertEqual(commands[0].returncode, 128)
+            self.assertEqual(commands[1].name, "sync_ff_only_merge_recovery")
+            self.assertEqual(commands[1].returncode, 0)
+            self.assertTrue((vault_root / "remote.md").exists())
+            self.assertFalse((root / "vault-workflow.lock").exists())
+
+    def test_session_reports_failed_merge_recovery_after_ff_only_sync_failure(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault_root = root / "vault"
+            vault_root.mkdir()
+            _init_git_repo(vault_root)
+            conflict = vault_root / "conflict.md"
+            conflict.write_text("base\n", encoding="utf-8")
+            _git(vault_root, "add", "--", "conflict.md")
+            _git(vault_root, "commit", "-m", "base")
+            _git(vault_root, "checkout", "-b", "remote-main")
+            conflict.write_text("remote\n", encoding="utf-8")
+            _git(vault_root, "add", "--", "conflict.md")
+            _git(vault_root, "commit", "-m", "remote")
+            _git(vault_root, "update-ref", "refs/remotes/origin/main", "HEAD")
+            _git(vault_root, "checkout", "main")
+            conflict.write_text("local\n", encoding="utf-8")
+            _git(vault_root, "add", "--", "conflict.md")
+            _git(vault_root, "commit", "-m", "local")
+            cli_path = _fake_cli(root, root / "calls.log")
+            workflow = ObsidianVaultWorkflow(
+                config=ObsidianConfig(
+                    cli_bin=str(cli_path),
+                    vault_repo_url="https://github.com/bprager/obs-vault.git",
+                    vault_local_path=vault_root,
+                    sync_command="{cli_bin} ff-fail {vault_path}",
+                ),
+                vault_root=vault_root,
+                lock_root=root,
+            )
+
+            with self.assertRaisesRegex(
+                VaultWorkflowError,
+                "sync fast-forward recovery exited",
+            ):
+                with workflow.session("route-notes"):
+                    pass
+
+            self.assertEqual(workflow.report().commands[1].name, "sync_ff_only_merge_recovery")
+            self.assertNotEqual(workflow.report().commands[1].returncode, 0)
+            self.assertFalse((root / "vault-workflow.lock").exists())
+
     def test_session_stashes_and_ignores_obsidian_workspace_before_sync(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -237,8 +325,22 @@ def _fake_cli(root: Path, log_path: Path) -> Path:
     cli_path.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = \"fail\" ]; then exit 42; fi\n"
+        "if [ \"$1\" = \"ff-fail\" ]; then\n"
+        "  printf '%s\\n' \"fatal: Not possible to fast-forward, aborting.\" >&2\n"
+        "  exit 128\n"
+        "fi\n"
         f"printf '%s\\n' \"$*\" >> {log_path}\n",
         encoding="utf-8",
     )
     os.chmod(cli_path, 0o755)
     return cli_path
+
+
+def _init_git_repo(path: Path) -> None:
+    subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True)
+    _git(path, "config", "user.name", "Logbook Test")
+    _git(path, "config", "user.email", "logbook@example.invalid")
+
+
+def _git(path: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
