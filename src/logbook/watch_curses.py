@@ -10,6 +10,7 @@ from logbook.observer import (
     ObserverJobOutcome,
     ObserverSnapshot,
     filter_observer_snapshot,
+    format_observer_timestamp,
     resolve_watch_theme,
 )
 
@@ -63,12 +64,12 @@ def render_curses_frame(
         _rule(width, "top"),
         _line(
             (
-                f"Logbook Watch  {visible.generated_at}  {resolved_theme}  "
+                f"Logbook Watch  {format_observer_timestamp(visible.generated_at)}  {resolved_theme}  "
                 f"filter {status_filter}  refresh {refresh_interval:g}s"
             ),
             body_width,
         ),
-        _line(f"Latest finished job  {visible.latest_finished_at or 'none'}", body_width),
+        _line(f"Latest finished job  {format_observer_timestamp(visible.latest_finished_at)}", body_width),
         _line(_health_line(visible), body_width),
         _line(_recorder_line(recorder_status), body_width),
         _rule(width, "sep"),
@@ -119,7 +120,7 @@ def _compact_frame_lines(
         _rule(width, "top"),
         _line(
             (
-                f"Logbook Watch  {snapshot.generated_at}  {resolved_theme}  "
+                f"Logbook Watch  {format_observer_timestamp(snapshot.generated_at)}  {resolved_theme}  "
                 f"filter {status_filter}  refresh {refresh_interval:g}s"
             ),
             body_width,
@@ -131,7 +132,7 @@ def _compact_frame_lines(
     lines.extend([_line(_control_hint(recorder_status), body_width), _rule(width, "bottom")])
 
     optional = [
-        _line(f"Latest finished job  {snapshot.latest_finished_at or 'none'}", body_width),
+        _line(f"Latest finished job  {format_observer_timestamp(snapshot.latest_finished_at)}", body_width),
         _line(_recorder_line(recorder_status), body_width),
         _line(_stats_line(snapshot), body_width),
     ]
@@ -410,13 +411,7 @@ def _format_duration(value: object) -> str:
 
 
 def _format_timestamp(value: object) -> str:
-    if not value:
-        return "---- -- -- --:--"
-    try:
-        parsed = datetime.fromisoformat(str(value))
-    except ValueError:
-        return str(value)[:16].replace("T", " ")
-    return parsed.strftime("%Y-%m-%d %H:%M")
+    return format_observer_timestamp(value, style="short", empty="---- -- -- --:--")
 
 
 def _rule(width: int, kind: str) -> str:

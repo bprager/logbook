@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the terminal watch dashboard's recent finished and failure rows to
   show readable date/time values instead of long elapsed durations or missing
   failure timestamps.
+- Changed watch dashboard timestamps to render in the operator's local
+  timezone instead of showing raw UTC snapshot values.
 - Excluded the local `.uv-cache` dependency cache from Markdown lint during
   the quality gate.
 - Updated stale API and web-watch service version metadata to match the current

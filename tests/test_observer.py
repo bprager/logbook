@@ -4,6 +4,8 @@ import io
 import json
 import os
 import sqlite3
+import time
+from contextlib import contextmanager
 from contextlib import redirect_stdout
 from contextlib import redirect_stderr
 from dataclasses import replace
@@ -20,6 +22,7 @@ from logbook.ledger import open_ledger
 from logbook.observer import (
     build_observer_snapshot,
     observer_snapshot_from_dict,
+    format_observer_timestamp,
     render_full_observer_dashboard,
     render_observer_snapshot,
     resolve_watch_theme,
@@ -90,10 +93,11 @@ class ObserverSnapshotTests(TestCase):
                 generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
             )
 
-            rendered = render_observer_snapshot(snapshot)
+            with _local_timezone("America/Los_Angeles"):
+                rendered = render_observer_snapshot(snapshot)
 
-            self.assertIn("Logbook 2026-05-15T12:00:00+00:00", rendered)
-            self.assertIn("Latest finished job 2026-05-15T11:12:00+00:00", rendered)
+            self.assertIn("Logbook 2026-05-15T05:00:00-07:00", rendered)
+            self.assertIn("Latest finished job 2026-05-15T04:12:00-07:00", rendered)
             self.assertIn("Run none", rendered)
             self.assertIn("Recent finished", rendered)
             self.assertIn("Failures and review", rendered)
@@ -213,17 +217,18 @@ class ObserverSnapshotTests(TestCase):
                 generated_at=datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
             )
 
-            rendered = render_full_observer_dashboard(
-                snapshot,
-                theme="day",
-                color=False,
-                width=88,
-                height=24,
-            )
+            with _local_timezone("America/Los_Angeles"):
+                rendered = render_full_observer_dashboard(
+                    snapshot,
+                    theme="day",
+                    color=False,
+                    width=88,
+                    height=24,
+                )
 
             self.assertIn("LOGBOOK WATCH", rendered)
             self.assertIn("view day", rendered)
-            self.assertIn("LATEST FINISHED JOB  2026-05-15T11:12:00+00:00", rendered)
+            self.assertIn("LATEST FINISHED JOB  2026-05-15T04:12:00-07:00", rendered)
             self.assertIn("CONTROLS", rendered)
             self.assertIn("q quit", rendered)
             self.assertIn("RECENT FINISHED", rendered)
@@ -292,19 +297,20 @@ class ObserverSnapshotTests(TestCase):
                 generated_at=datetime(2026, 5, 15, 12, 3, tzinfo=timezone.utc),
             )
 
-            frame = render_curses_frame(
-                snapshot,
-                width=92,
-                height=22,
-                theme="day",
-                status_filter="all",
-                refresh_interval=1.5,
-            )
+            with _local_timezone("America/Los_Angeles"):
+                frame = render_curses_frame(
+                    snapshot,
+                    width=92,
+                    height=22,
+                    theme="day",
+                    status_filter="all",
+                    refresh_interval=1.5,
+                )
             rendered = frame.text()
 
             self.assertEqual(frame.theme, "day")
             self.assertIn("Logbook Watch", rendered)
-            self.assertIn("Latest finished job  2026-05-15T11:12:00+00:00", rendered)
+            self.assertIn("Latest finished job  2026-05-15T04:12:00-07:00", rendered)
             self.assertIn("Health  api ok  sqlite ok", rendered)
             self.assertIn("Run  process-mounted-recorder", rendered)
             self.assertIn("Stage  route  elapsed 03:00", rendered)
@@ -365,14 +371,25 @@ class ObserverSnapshotTests(TestCase):
             }
         )
 
-        frame = render_curses_frame(snapshot, width=100, height=22)
+        with _local_timezone("America/Los_Angeles"):
+            frame = render_curses_frame(snapshot, width=100, height=22)
         rendered = frame.text()
 
-        self.assertIn("ok   2026-06-05 18:37  #114   vault_synced", rendered)
-        self.assertIn("fail 2026-06-05 18:39  #115   failed_transcription", rendered)
+        self.assertIn("ok   2026-06-05 11:37  #114   vault_synced", rendered)
+        self.assertIn("fail 2026-06-05 11:39  #115   failed_transcription", rendered)
         self.assertIn("ok   ---- -- -- --:--  #116   vault_synced", rendered)
         self.assertIn("fail 2026-06-05 bad-v  #117   failed_route", rendered)
         self.assertNotIn("195:37:41", rendered)
+
+    def test_timestamp_formatter_preserves_invalid_iso_fallbacks(self) -> None:
+        self.assertEqual(
+            format_observer_timestamp("2026-06-05Tbad-value"),
+            "2026-06-05Tbad-value",
+        )
+        self.assertEqual(
+            format_observer_timestamp("2026-06-05Tbad-value", style="short"),
+            "2026-06-05 bad-v",
+        )
 
     def test_curses_frame_shows_mounted_recorder_and_eject_menu_when_idle(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -1183,11 +1200,12 @@ class ObserverSnapshotTests(TestCase):
                 config,
                 generated_at=datetime(2026, 6, 5, 19, 0, tzinfo=timezone.utc),
             )
-            frame = render_curses_frame(snapshot, width=120, height=24, theme="day")
+            with _local_timezone("America/Los_Angeles"):
+                frame = render_curses_frame(snapshot, width=120, height=24, theme="day")
             rendered = frame.text()
 
             self.assertEqual(snapshot.recent_failures[0].job_id, 118)
-            self.assertIn("fail 2026-06-05 18:02  #118", rendered)
+            self.assertIn("fail 2026-06-05 11:02  #118", rendered)
             self.assertNotIn("#0", rendered)
 
     def test_curses_pipeline_failure_without_job_id_renders_run_id_not_fake_job_zero(self) -> None:
@@ -1222,11 +1240,12 @@ class ObserverSnapshotTests(TestCase):
                 config,
                 generated_at=datetime(2026, 6, 5, 19, 0, tzinfo=timezone.utc),
             )
-            frame = render_curses_frame(snapshot, width=120, height=24, theme="day")
+            with _local_timezone("America/Los_Angeles"):
+                frame = render_curses_frame(snapshot, width=120, height=24, theme="day")
             rendered = frame.text()
 
             self.assertEqual(snapshot.recent_failures[0].job_id, 0)
-            self.assertIn("fail 2026-06-05 18:02  run", rendered)
+            self.assertIn("fail 2026-06-05 11:02  run", rendered)
             self.assertNotIn("#0", rendered)
 
     def test_curses_failure_without_job_or_run_id_renders_unknown_subject(self) -> None:
@@ -1246,10 +1265,11 @@ class ObserverSnapshotTests(TestCase):
             }
         )
 
-        frame = render_curses_frame(snapshot, width=100, height=22, theme="day")
+        with _local_timezone("America/Los_Angeles"):
+            frame = render_curses_frame(snapshot, width=100, height=22, theme="day")
         rendered = frame.text()
 
-        self.assertIn("fail 2026-06-05 18:02  #?", rendered)
+        self.assertIn("fail 2026-06-05 11:02  #?", rendered)
         self.assertNotIn("#0", rendered)
 
     def test_snapshot_ignores_pipeline_failure_query_errors(self) -> None:
@@ -1568,6 +1588,21 @@ def _write_env(root: Path) -> Path:
     )
     (root / "IC RECORDER" / "REC_FILE" / "FOLDER01").mkdir(parents=True)
     return env_path
+
+
+@contextmanager
+def _local_timezone(name: str):
+    original = os.environ.get("TZ")
+    os.environ["TZ"] = name
+    time.tzset()
+    try:
+        yield
+    finally:
+        if original is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original
+        time.tzset()
 
 
 def _seed_observer_fixture(config) -> dict[str, int]:

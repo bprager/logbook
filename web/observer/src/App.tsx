@@ -124,7 +124,7 @@ export default function App() {
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {snapshot?.generated_at ?? "waiting for first snapshot"}
+              {formatTimestamp(snapshot?.generated_at, "waiting for first snapshot")}
             </p>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Latest finished job: {formatTimestamp(snapshot?.latest_finished_at)}
@@ -366,9 +366,9 @@ function duration(seconds: number | null | undefined): string {
   return `${restMins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
 }
 
-function formatTimestamp(value: string | null | undefined): string {
+function formatTimestamp(value: string | null | undefined, fallback = "none"): string {
   if (!value) {
-    return "none"
+    return fallback
   }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {

@@ -264,11 +264,11 @@ def render_observer_snapshot(
         )
     lines = [
         (
-            f"Logbook {snapshot.generated_at}  view {resolved_theme}  "
+            f"Logbook {format_observer_timestamp(snapshot.generated_at)}  view {resolved_theme}  "
             f"api {snapshot.health.api}  db {snapshot.health.sqlite}  odin {snapshot.health.odin}  "
             f"graph {snapshot.health.memgraph}"
         ),
-        f"Latest finished job {snapshot.latest_finished_at or 'none'}",
+        f"Latest finished job {format_observer_timestamp(snapshot.latest_finished_at)}",
         run_line,
     ]
     if snapshot.active_stage is not None:
@@ -322,10 +322,13 @@ def render_full_observer_dashboard(
     lines = [
         _box_top(width),
         _box_line(
-            f"LOGBOOK WATCH  {snapshot.generated_at}  view {resolved_theme}",
+            f"LOGBOOK WATCH  {format_observer_timestamp(snapshot.generated_at)}  view {resolved_theme}",
             width,
         ),
-        _box_line(f"LATEST FINISHED JOB  {snapshot.latest_finished_at or 'none'}", width),
+        _box_line(
+            f"LATEST FINISHED JOB  {format_observer_timestamp(snapshot.latest_finished_at)}",
+            width,
+        ),
         _box_line(
             (
                 f"health api {snapshot.health.api}  db {snapshot.health.sqlite}  "
@@ -901,6 +904,25 @@ def _optional_str(value: object) -> str | None:
     return rendered or None
 
 
+def format_observer_timestamp(
+    value: object,
+    *,
+    style: str = "iso",
+    empty: str = "none",
+) -> str:
+    if not value:
+        return empty
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        if style == "short":
+            return str(value)[:16].replace("T", " ")
+        return str(value)
+    local = parsed.astimezone()
+    if style == "short":
+        return local.strftime("%Y-%m-%d %H:%M")
+    return local.isoformat(timespec="seconds")
+
+
 def _safe_detail(value: str, config: AppConfig) -> str:
     safe = value.replace(str(config.processing_root), "<processing_root>")
     safe = safe.replace(str(config.recorder.mount_path), "<recorder_mount>")
@@ -974,7 +996,8 @@ def _render_finished(item: ObserverJobOutcome) -> str:
     label = "dl" if item.classification == "dead_letter" else "ok"
     duration = _format_duration(item.duration_seconds)
     classification = item.classification or "unknown"
-    return f"{label}  #{item.job_id} {classification}  {item.status}  {duration}  {item.finished_at}"
+    finished_at = format_observer_timestamp(item.finished_at)
+    return f"{label}  #{item.job_id} {classification}  {item.status}  {duration}  {finished_at}"
 
 
 def _render_failure(item: ObserverFailure) -> str:
@@ -982,9 +1005,11 @@ def _render_failure(item: ObserverFailure) -> str:
         command = item.command or "pipeline"
         short_id = item.run_id.removeprefix("run-")[:8] if item.run_id else ""
         run_id = f" {short_id}" if short_id else ""
-        return f"fail  run{run_id} {command}  {item.safe_detail}  {item.occurred_at}"
+        occurred_at = format_observer_timestamp(item.occurred_at)
+        return f"fail  run{run_id} {command}  {item.safe_detail}  {occurred_at}"
     classification = item.classification or "unknown"
-    return f"fail  #{item.job_id} {classification}  {item.safe_detail}  {item.occurred_at}"
+    occurred_at = format_observer_timestamp(item.occurred_at)
+    return f"fail  #{item.job_id} {classification}  {item.safe_detail}  {occurred_at}"
 
 
 def _render_progress(stage: dict[str, object]) -> str:
