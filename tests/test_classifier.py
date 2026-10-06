@@ -47,3 +47,14 @@ class ClassifierTests(TestCase):
 
         self.assertEqual(result.route_kind, "dead_letter")
         self.assertEqual(result.content, "A wandering note with no command prefix.")
+
+    def test_observed_diary_marker_variants(self) -> None:
+        for prefix in ("a lock entry,", "locked entry"):
+            with self.subTest(prefix=prefix):
+                result = classify_transcript(prefix + " Today I took a walk.")
+                self.assertEqual(result.route_kind, "log")
+                self.assertEqual(result.content, "Today I took a walk.")
+
+    def test_marker_words_in_body_do_not_route_as_diary(self) -> None:
+        for text in ("I locked entry to the building.", "A lock needs repair.", "Meeting locked entry discussion."):
+            self.assertNotEqual(classify_transcript(text).route_kind, "log")

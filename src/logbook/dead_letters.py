@@ -75,6 +75,7 @@ def assign_dead_letter_to_log(
     requested_by: str = "operator",
     reason: str | None = None,
     linker_months: int = 3,
+    link_entities: bool = True,
     note_writer: NoteWriter | None = None,
     today: date | None = None,
 ) -> DeadLetterManageResult:
@@ -155,6 +156,7 @@ def assign_dead_letter_to_log(
             request_payload={
                 "reason": reason,
                 "target_route_kind": "log",
+                "link_entities": link_entities,
                 "previous_status": job.status,
                 "previous_obsidian_path": job.obsidian_path,
                 "new_obsidian_path": inbox_path.relative_to(vault_root).as_posix(),
@@ -174,11 +176,15 @@ def assign_dead_letter_to_log(
         note_writer=note_writer,
         entry_date=recorded_at.strftime("%Y-%m-%d"),
     )
-    entity_links = link_daily_log_entities(
-        vault_root=vault_root,
-        months=linker_months,
-        execute=True,
-        today=today,
+    entity_links = (
+        link_daily_log_entities(
+            vault_root=vault_root,
+            months=linker_months,
+            execute=True,
+            today=today,
+        )
+        if link_entities
+        else None
     )
     final_job = _load_job(config, job_id) or rescued
     final_daily_path = None

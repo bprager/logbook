@@ -8,6 +8,8 @@ FILLER_WORDS = frozenset({"um", "uh", "okay", "ok", "so", "well", "please"})
 
 LOG_ALIASES = (
     ("a", "log", "entry"),
+    ("a", "lock", "entry"),
+    ("locked", "entry"),
     ("log", "entry"),
     ("log", "entries"),
     ("log", "record"),

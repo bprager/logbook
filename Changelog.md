@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recognize the observed spoken-prefix transcription variants "a lock entry" and
+  "locked entry" as diary entries, without broad fuzzy matching.
+- Add `manage-dead-letters --skip-entity-linking` for a selected-date repair that
+  does not rewrite unrelated daily notes; record that choice in the audit trail.
+
 - Fixed the terminal watch dashboard so recently copied, transcribed, diarized,
   and inbox-written jobs appear in the recent finished section, and jobless
   pipeline failures show a run id instead of fake job `#0`.

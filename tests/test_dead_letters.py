@@ -6,6 +6,9 @@ from datetime import date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
+from contextlib import redirect_stdout
+from io import StringIO
 
 from logbook.config import AppConfig, OdinConfig, RecorderConfig
 from logbook.consolidation import consolidate_daily_logs
@@ -83,6 +86,45 @@ class DeadLetterManagementTests(TestCase):
             self.assertEqual(audit_rows[0]["action_type"], "dead_letter.assign")
             self.assertIn("spoken log prefix", audit_rows[0]["request_payload"])
             self.assertIn("removed_dead_letter_path", audit_rows[0]["request_payload"])
+
+    def test_cli_skip_linking_restores_only_selected_job(self) -> None:
+        from logbook.cli import main
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _app_config(root)
+            vault = root / "test-vault"
+            job = _seed_dead_letter(config, vault)
+            output = StringIO()
+            with patch("logbook.cli.load_app_config", return_value=config), redirect_stdout(output):
+                code = main(["manage-dead-letters", "--action", "assign", "--job-id", str(job.id), "--vault", str(vault), "--skip-entity-linking", "--execute"])
+            self.assertEqual(code, 0)
+            self.assertIn("status=assigned", output.getvalue())
+            self.assertNotIn("entity_link_files_changed=", output.getvalue())
+
+    def test_assign_can_skip_entity_linking_without_changing_other_notes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _app_config(root)
+            vault = root / "test-vault"
+            job = _seed_dead_letter(config, vault)
+            other = vault / "06 - Timestamps/2026/04-April/2026-04-29-Wednesday-Log.md"
+            _write(other, "# Other day\nQuinn needs a book.\n")
+            _write(vault / "04 - People/Quinn Wolf Prager.md", "# Quinn\n")
+            before = other.read_bytes()
+            result = assign_dead_letter_to_log(
+                config=config, vault_root=vault, job_id=job.id,
+                execute=True, link_entities=False, today=date(2026, 5, 1),
+            )
+            self.assertEqual(result.status, "assigned")
+            self.assertTrue(result.daily_log_path.exists())
+            self.assertIsNone(result.entity_links)
+            self.assertEqual(other.read_bytes(), before)
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                audit = ledger.connection.execute("SELECT request_payload FROM action_audit WHERE action_type='dead_letter.assign'").fetchone()
+                self.assertFalse(json.loads(audit["request_payload"])["link_entities"])
+            finally:
+                ledger.close()
 
     def test_assign_dead_letter_dry_run_does_not_mutate_ledger_or_vault(self) -> None:
         with TemporaryDirectory() as tmp:

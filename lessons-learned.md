@@ -238,3 +238,21 @@ RETURN j.id, j.status, j.recorded_at, n.note_path;
 ```
 
 returned the expected `meeting_written` job and meeting note path.
+
+## 2026-10-05: Constrained ASR Prefix Variants And Bounded Diary Repair
+
+Jobs 213 and 214 were daily logs dated September 30 and October 2, but their
+opening markers were transcribed as "a lock entry" and "locked entry". Exact
+prefix matching missed these variants and sent both to the review queue.
+Add only the observed variants; ordinary body text and meetings remain distinct.
+
+Both jobs were restored through audited assignment with entity linking skipped.
+Ledger and affected review notes were backed up privately. Full transcript content
+was verified in one canonical note per date, both local audio files were unchanged,
+and 840 unrelated Markdown notes were unchanged. Fjölsviðr's daily-sync reader
+confirmed both restored dates and latest coverage October 2. A coverage gap is
+not evidence that the owner stopped recording.
+
+The default repair previously also ran entity linking across several months.
+Use `--skip-entity-linking` when only one recording date is intended to change.
+The scheduled entity linker remains separate and unchanged.

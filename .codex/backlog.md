@@ -1,5 +1,12 @@
 # Backlog
 
+## October 5 diary-routing repair
+
+Restored jobs 213/214 (September 30 and October 2), verified canonical content and
+daily-sync visibility, preserved audio and unrelated notes. Added deterministic
+ASR marker aliases and audited `--skip-entity-linking` support. See
+`lessons-learned.md` and `docs/dead-letters.md`.
+
 Updated: 2026-05-17
 
 Project key in memgraph: `logbook`

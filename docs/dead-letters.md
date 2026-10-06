@@ -28,6 +28,12 @@ When executed, Logbook:
 - removes the obsolete generated dead-letter Markdown only after the log inbox
   note is written.
 
+For a narrowly scoped log repair, add `--skip-entity-linking` to assignment.
+This still rebuilds the selected recording date and records the repair, but does
+not run the entity linker across other daily notes. The default remains unchanged.
+Back up the ledger and affected generated review notes before live repair; preserve
+audio and confirm the canonical note contains the recovered transcript afterward.
+
 Rescue a pending dead letter as a meeting:
 
 ```bash

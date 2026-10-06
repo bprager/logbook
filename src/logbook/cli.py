@@ -274,6 +274,10 @@ def main(argv: list[str] | None = None) -> int:
         help="vault root to update; defaults to OBSIDIAN_VAULT_LOCAL_PATH",
     )
     dead_letter_parser.add_argument(
+        "--skip-entity-linking", action="store_true",
+        help="assign only the selected recording date; leave other notes unchanged",
+    )
+    dead_letter_parser.add_argument(
         "--linker-months",
         type=int,
         default=3,
@@ -643,6 +647,7 @@ def main(argv: list[str] | None = None) -> int:
             target=args.target,
             vault_root=args.vault,
             linker_months=args.linker_months,
+            link_entities=not args.skip_entity_linking,
             requested_by=args.requested_by,
             reason=args.reason,
             execute=args.execute,
@@ -1703,6 +1708,7 @@ def _manage_dead_letters(
     target: str,
     vault_root: Path | None,
     linker_months: int,
+    link_entities: bool,
     requested_by: str,
     reason: str | None,
     execute: bool,
@@ -1753,6 +1759,7 @@ def _manage_dead_letters(
             requested_by=requested_by,
             reason=reason,
             linker_months=linker_months,
+            link_entities=link_entities,
         )
     elif action == "rescue":
         if target != "meeting":
