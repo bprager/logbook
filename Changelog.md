@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Planned (2026-10-09)
+
+### Proposed
+
+- Design automatic remote Sony ICD-PX370 ingestion through either MacBook Air with a persistent offline outbox and authenticated transfer to mimir.
+- Extend the existing SHA-256 SQLite ledger to provide server-authoritative deduplication, atomic durable upload receipts and resumable recovery across machines.
+- Preserve the existing mimir/Odin/Obsidian processing path and direct-mimir one-week guarded recorder pruning; remote MacBooks never delete Sony recordings.
+- Add backlog LGB-044 through LGB-047 and `docs/remote-ingestion.md` for design, security, acceptance and rollout.
+
+**Planning entry only:** No remote agent or server endpoint is implemented, no release is tagged, and current production version remains 1.2.3.
+
 ## [Unreleased]
 
 ### Fixed
