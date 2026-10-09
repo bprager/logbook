@@ -1175,3 +1175,39 @@ Acceptance:
   and no recorder pending cleanup.
 - Launchd reports `local.logbook.retention-audit` running the guarded cleanup
   command without starting OpenClaw services under `bernd`.
+
+## Milestone 11: Remote Sony USB Ingestion (v1.3.0 planned)
+
+Design: [docs/remote-ingestion.md](../docs/remote-ingestion.md). These items are planned, not delivered.
+
+### LGB-044 - Remote ingestion contract and ledger migration
+
+Status: Planned. Priority: P0. Dependencies: LGB-003, LGB-006, LGB-019.
+
+- Design authenticated private ingest API, atomic upload sessions, durable receipts, checksum-based server deduplication and migration of the existing SQLite ledger.
+- Keep server uniqueness authoritative across two Macs and direct mimir ingest, including already-pruned source audio.
+- Acceptance: concurrent and repeated uploads produce one canonical job; crash/retry and lost acknowledgment recover safely.
+
+### LGB-045 - Portable macOS Sony ingestion agent
+
+Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-005, LGB-021.
+
+- Package a stable macOS app identity with launchd mount detection, Sony validation, local SQLite outbox, atomic spool, resumable transfer and offline retry.
+- Support both MacBook Air machines with separate revocable credentials and no manual steps after installation.
+- Acceptance: Sony plug-in works on either Mac; offline and reboot recovery succeed; remote agent never writes to or deletes Sony audio.
+
+### LGB-046 - Unified processing and source-specific retention
+
+Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-045, LGB-026.
+
+- Feed remotely committed audio into existing mimir/Odin/Obsidian pipeline, preserving recorder timestamps and late-arrival rebuild.
+- Preserve existing guarded one-week cleanup on direct mimir recorder attachment only; validate checksum, finalized state and vault sync before pruning.
+- Acceptance: remote delivery does not prune Sony; reconnecting Sony to mimir prunes only eligible originals and leaves unfinished jobs untouched.
+
+### LGB-047 - Remote observability, security and release acceptance
+
+Status: Planned. Priority: P1. Dependencies: LGB-044, LGB-045, LGB-046, LGB-039.
+
+- Add redacted device/upload status, retries, storage pressure and authentication audit; document network/TCC setup and audio durability/backup decision.
+- Test concurrent Macs, lost receipts, corrupted chunks, restart, no network, disk full, credential revocation and existing cleanup regression.
+- Acceptance: full quality gate and end-to-end field test pass before version metadata promotion and v1.3.0 release/tag.
