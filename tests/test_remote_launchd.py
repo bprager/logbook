@@ -38,3 +38,18 @@ class RemoteLaunchdTests(TestCase):
             self.assertIn('codesign', str(run.call_args_list))
             with self.assertRaises(ValueError):
                 write_agent_package(config, root / 'config.json', root / 'package', Path.cwd(), '-')
+
+    def test_server_package_uses_existing_ledger_pipeline_without_cleanup(self):
+        from logbook.remote_launchd import write_server_package
+        from logbook.remote_config import ServerConfig
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = ServerConfig(root / 'voice.sqlite', root / 'remote', root / 'devices')
+            paths = write_server_package(config, root / 'remote.json', root / '.env',
+                                         root / 'output', Path.cwd())
+            api, worker = (plistlib.loads(path.read_bytes()) for path in paths)
+            self.assertTrue(api['KeepAlive'])
+            self.assertIn('serve', api['ProgramArguments'])
+            self.assertIn('process-queued', worker['ProgramArguments'])
+            self.assertEqual(worker['StartInterval'], 60)
+            self.assertNotIn('cleanup', str(worker))

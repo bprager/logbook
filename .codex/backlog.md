@@ -1202,7 +1202,9 @@ Status: Implemented on feature branch; physical Mac/TCC acceptance pending. Prio
 
 ### LGB-046 - Unified processing and source-specific retention
 
-Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-045, LGB-026.
+Status: Implemented on feature branch; production field acceptance pending. Priority: P0. Dependencies: LGB-044, LGB-045, LGB-026.
+
+- Mount-independent processing and shared pipeline lock added. Synthetic late-arrival, pruned-hash and UUID-bound remote source cleanup tests pass.
 
 - Feed remotely committed audio into existing mimir/Odin/Obsidian pipeline, preserving recorder timestamps and late-arrival rebuild.
 - Preserve existing guarded one-week cleanup on direct mimir recorder attachment only; validate checksum, finalized state and vault sync before pruning.

@@ -38,3 +38,29 @@ def write_agent_package(config: AgentConfig, config_path: Path, output: Path,
         'StandardErrorPath': str(logs / 'agent.err.log'),
     }))
     return (path, app.bundle_path)
+
+
+def write_server_package(config, config_path: Path, env_path: Path, output: Path, repo_root: Path):
+    output.mkdir(parents=True, exist_ok=True)
+    logs = config.root / 'logs'
+    logs.mkdir(parents=True, exist_ok=True, mode=0o700)
+    common = {'RunAtLoad': True, 'WorkingDirectory': str(repo_root.resolve()),
+              'EnvironmentVariables': {'PYTHONPATH': str(repo_root.resolve() / 'src')},
+              'ProcessType': 'Background'}
+    paths = []
+    for name, args, schedule in (
+        ('remote-ingest', ['logbook.remote_cli', 'serve', '--config', str(config_path.resolve())],
+         {'KeepAlive': True, 'ThrottleInterval': 10}),
+        ('queued-worker', ['logbook.cli', 'process-queued', '--env', str(env_path.resolve())],
+         {'StartInterval': 60}),
+    ):
+        label = 'local.logbook.' + name
+        path = output / (label + '.plist')
+        path.write_bytes(plistlib.dumps({
+            **common, **schedule, 'Label': label,
+            'ProgramArguments': [sys.executable, '-m', *args],
+            'StandardOutPath': str(logs / (name + '.out.log')),
+            'StandardErrorPath': str(logs / (name + '.err.log')),
+        }))
+        paths.append(path)
+    return tuple(paths)

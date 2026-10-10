@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 from logbook.checksum import sha256_file
 from logbook.config import AppConfig
 from logbook.ledger import RecordingJob, open_ledger
+from logbook.recorder import validate_remote_recorder
 
 
 FINAL_NOTE_STATUSES = {
@@ -114,12 +116,22 @@ def execute_audio_cleanup(
             if include_recorder and item.recorder_action == "delete":
                 try:
                     source_path = Path(item.job.source_path)
+                    if item.job.source_device.startswith("remote:"):
+                        folder = validate_remote_recorder(config.recorder)
+                        association = ledger.connection.execute(
+                            "SELECT source_path,volume_uuid FROM recorder_associations WHERE checksum=?",
+                            (item.job.checksum_sha256,),
+                        ).fetchone()
+                        if (association is None or association["source_path"] != str(source_path) or
+                                association["volume_uuid"] != config.recorder.volume_uuid or
+                                source_path.parent != folder or source_path.is_symlink()):
+                            raise ValueError("remote recorder association mismatch")
                     _assert_recorder_child(config.recorder.recordings_dir, source_path)
                     _verify_checksum(source_path, item.job.checksum_sha256)
                     source_path.unlink()
                     recorder_status = "deleted"
                     recorder_cleaned_at = now.isoformat(timespec="seconds")
-                except OSError as error:
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
                     recorder_status = "failed"
                     errors.append(f"recorder audio cleanup failed: {error}")
 

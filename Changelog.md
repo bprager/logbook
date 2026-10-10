@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mount-independent queued processing through the existing pipeline, with a shared
+  worker lock and UUID-verified recorder association for remote-origin retention.
 - Portable Mac agent with persistent offline buffering, read-only Sony access,
   resumable retries and a separately signed mount/login/interval launch package.
 - Separate private remote ingestion API with device credential revocation, bounded
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve finalized job state when previously pruned audio is rediscovered on Sony.
 - Recognize the observed spoken-prefix transcription variants "a lock entry" and
   "locked entry" as diary entries, without broad fuzzy matching.
 - Add `manage-dead-letters --skip-entity-linking` for a selected-date repair that

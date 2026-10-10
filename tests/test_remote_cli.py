@@ -18,6 +18,9 @@ class RemoteCliTests(TestCase):
                 self.assertEqual(main(['serve', '--config', 'sample.json']), 0)
                 self.assertEqual(run.call_args.args, (app.return_value,))
                 self.assertFalse(run.call_args.kwargs['proxy_headers'])
+            with patch('logbook.remote_launchd.write_server_package', return_value=['server']):
+                self.assertEqual(main(['package-server', '--config', 'sample.json', '--env', '.env',
+                                       '--output', 'out', '--repo', '.']), 0)
             with patch('logbook.remote_launchd.write_agent_package', return_value=['package']) as package:
                 self.assertEqual(main(['package-agent', '--config', 'sample.json', '--output', 'out',
                                        '--repo', '.', '--signing-identity', 'Local']), 0)

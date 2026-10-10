@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import select
@@ -90,6 +91,11 @@ def main(argv: list[str] | None = None) -> int:
         help="copy, transcribe, diarize, route, and sync mounted recorder files",
     )
     process_mount_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    queued_parser = subparsers.add_parser(
+        "process-queued", help="process durable ledger audio without accessing the recorder",
+    )
+    queued_parser.add_argument("--env", type=Path, default=Path(".env"))
 
     fake_transcribe_parser = subparsers.add_parser(
         "fake-transcribe-copied",
@@ -611,6 +617,8 @@ def main(argv: list[str] | None = None) -> int:
         return _copy_discovered(args.env)
     if args.command == "process-mounted-recorder":
         return _process_mounted_recorder(args.env)
+    if args.command == "process-queued":
+        return _process_mounted_recorder(args.env, copy_recorder=False)
     if args.command == "fake-transcribe-copied":
         return _fake_transcribe_copied(args.env)
     if args.command == "transcribe-copied":
@@ -847,7 +855,7 @@ def _copy_discovered(env_path: Path) -> int:
     return 1 if result.failed_count else 0
 
 
-def _process_mounted_recorder(env_path: Path) -> int:
+def _process_mounted_recorder(env_path: Path, *, copy_recorder: bool = True) -> int:
     try:
         config = load_app_config(env_path)
     except ConfigError as error:
@@ -858,41 +866,31 @@ def _process_mounted_recorder(env_path: Path) -> int:
         print("config_error: missing Obsidian configuration", file=sys.stderr)
         return 2
 
-    print("Process mounted recorder")
+    config.processing_root.mkdir(parents=True, exist_ok=True)
+    with (config.processing_root / "pipeline.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | (0 if copy_recorder else fcntl.LOCK_NB))
+        except BlockingIOError:
+            print("pipeline_busy=yes")
+            return 0
+        return _process_ingestion_pipeline(config, env_path, copy_recorder=copy_recorder)
+
+
+def _process_ingestion_pipeline(config, env_path, *, copy_recorder):
+    command = "process-mounted-recorder" if copy_recorder else "process-queued"
+    print(command)
     print(f"env_path={env_path}")
     print("delete_audio=no")
     print("delete_recorder_audio=no")
     reporter = SQLitePipelineReporter.start(
         config.sqlite_path,
-        command="process-mounted-recorder",
+        command=command,
         heartbeat_interval_seconds=15.0,
     )
     exit_code = 1
 
     try:
-        reporter.start_stage("copy")
-        copy_result = copy_discovered_recordings_with_retries(
-            config,
-            progress_callback=lambda current, total: (
-                reporter.advance_stage("copy", progress_current=current, progress_total=total)
-                if total
-                else None
-            ),
-        )
-        print(f"copy_attempt_count={copy_result.attempt_count}")
-        print(f"copy_copied_count={copy_result.copied_count}")
-        print(f"copy_skipped_count={copy_result.skipped_count}")
-        print(f"copy_failed_count={copy_result.failed_count}")
-        if copy_result.discovery_error:
-            print(f"warning={copy_result.discovery_error}")
-        for warning in copy_result.validation.warnings:
-            print(f"warning={warning}")
-        copy_stage_ok = copy_result.validation.operational and copy_result.failed_count == 0
-        reporter.finish_stage(
-            "copy",
-            event="succeeded" if copy_stage_ok else "failed",
-            safe_detail=copy_result.discovery_error,
-        )
+        copy_stage_ok, copied_count = _pipeline_copy(config, reporter, copy_recorder)
 
         try:
             reporter.start_stage("transcribe")
@@ -950,7 +948,7 @@ def _process_mounted_recorder(env_path: Path) -> int:
             reporter.start_stage("vault_sync")
             did_local_work = any(
                 (
-                    copy_result.copied_count,
+                    copied_count,
                     transcription_result.transcribed_count,
                     diarization_result.diarized_count,
                     pending_vault_changes,
@@ -998,6 +996,35 @@ def _process_mounted_recorder(env_path: Path) -> int:
             status="succeeded" if exit_code == 0 else "failed",
             exit_code=exit_code,
         )
+
+
+def _pipeline_copy(config, reporter, copy_recorder):
+    if not copy_recorder:
+        return True, 0
+    reporter.start_stage("copy")
+    copy_result = copy_discovered_recordings_with_retries(
+        config,
+        progress_callback=lambda current, total: (
+            reporter.advance_stage("copy", progress_current=current, progress_total=total)
+            if total
+            else None
+        ),
+    )
+    print(f"copy_attempt_count={copy_result.attempt_count}")
+    print(f"copy_copied_count={copy_result.copied_count}")
+    print(f"copy_skipped_count={copy_result.skipped_count}")
+    print(f"copy_failed_count={copy_result.failed_count}")
+    if copy_result.discovery_error:
+        print(f"warning={copy_result.discovery_error}")
+    for warning in copy_result.validation.warnings:
+        print(f"warning={warning}")
+    copy_stage_ok = copy_result.validation.operational and copy_result.failed_count == 0
+    reporter.finish_stage(
+        "copy",
+        event="succeeded" if copy_stage_ok else "failed",
+        safe_detail=copy_result.discovery_error,
+    )
+    return copy_stage_ok, copy_result.copied_count
 
 
 def _transcribe_copied_with_retries(

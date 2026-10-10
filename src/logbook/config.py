@@ -14,6 +14,7 @@ class RecorderConfig:
     mount_path: Path
     recordings_path: str
     device_path: str | None = None
+    volume_uuid: str | None = None
 
     @property
     def recordings_dir(self) -> Path:
@@ -147,6 +148,7 @@ def recorder_config_from_values(values: dict[str, str]) -> RecorderConfig:
         mount_path=Path(mount_path),
         recordings_path=recordings_path,
         device_path=device_path,
+        volume_uuid=values.get("SONY_RECORDER_VOLUME_UUID") or None,
     )
 
 

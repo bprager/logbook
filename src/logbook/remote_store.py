@@ -58,6 +58,9 @@ def migrate_remote(connection):
         window INTEGER NOT NULL DEFAULT 0, window_requests INTEGER NOT NULL DEFAULT 0,
         pending_bytes INTEGER NOT NULL DEFAULT 0, retries INTEGER NOT NULL DEFAULT 0,
         failure TEXT, storage_pressure INTEGER NOT NULL DEFAULT 0)''')
+    connection.execute('''CREATE TABLE IF NOT EXISTS recorder_associations (
+        checksum TEXT PRIMARY KEY, source_path TEXT NOT NULL, volume_uuid TEXT NOT NULL,
+        observed_at TEXT NOT NULL)''')
     connection.execute('''CREATE TABLE IF NOT EXISTS remote_audit (
         code TEXT PRIMARY KEY, count INTEGER NOT NULL, last_seen TEXT NOT NULL)''')
 

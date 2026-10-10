@@ -323,3 +323,22 @@ Launchd rollout status: LGB-030 installed the Logbook API, recorder mount probe,
 Backup status: LGB-032 adds dry-run-first backups and a read-only restore drill. The backup set uses SQLite backup semantics, excludes live `.env`, secrets, source audio, inbox audio, and quarantined/trash audio, and writes to `saga` through `192.168.1.3:/mnt/saga/Napoleon/logbook-backups`. First validated backup: `logbook-backup-20260503T155634Z` with 34 ledger jobs and a successful remote restore drill.
 
 Release status: LGB-034 prepares `0.2.0` as an operational MVP release candidate with live `odin` transcription, real Obsidian vault operation, retention cleanup, Memgraph memory health, launchd rollout, metrics, `saga` backup evidence, and tracked SOPS/age encrypted `secrets.yaml`. The `v0.2.0` tag must not be created or pushed without explicit operator approval.
+
+## Remote ingestion implementation (v1.3.0 feature branch)
+
+- MacBooks run only `logbook.remote_cli`: validated USB snapshots, persistent
+  SQLite outbox, resumable private upload and redacted status. The signed parent
+  app retains a stable identity for macOS removable-volume permission onboarding.
+- The dedicated private intake service shares the existing mimir ledger. Schema
+  version 2 adds upload sessions, device/audit state and verified recorder-source
+  associations; it preserves all historical job hashes and processing states.
+- Bytes are flushed, atomically published and then registered in the ledger.
+  Receipts are canonical job IDs. Retried commits recover the rename/DB boundary.
+- The periodic `process-queued` worker shares the existing mounted processing
+  stages and a single local process lock. No Sony mount is needed for remote work.
+- Remote receipt does not grant deletion. A later mimir attachment must validate
+  the enrolled Sony UUID and actual file hash before source association. Cleanup
+  independently rechecks identity, exact path, checksum and existing retention
+  gates. Existing production mount and retention packages remain in place.
+- Rollout, credentials, physical two-Mac/TCC tests and audio-backup policy remain
+  operator approval gates. See `docs/remote-installation.md`.

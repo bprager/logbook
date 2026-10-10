@@ -109,3 +109,33 @@ has finished. Completed job hashes remain authoritative after audio retention.
   backup. Keep both Sony originals and Mac snapshots until the operator chooses
   an explicit audio backup/retention policy before production. Losing mimir and
   all remaining source copies during this window can still lose audio.
+
+## Automatic central processing and retention
+
+Generate additional central plists without changing the existing production ones:
+
+```sh
+.venv/bin/python -m logbook.remote_cli package-server \
+  --config /absolute/settings/remote-server.json \
+  --env /absolute/Logbook/.env --repo /absolute/Logbook \
+  --output /absolute/LogbookRemoteServerPackage
+```
+
+After deployment approval, install the two generated plists as LaunchAgents on
+mimir: `local.logbook.remote-ingest` and `local.logbook.queued-worker`. The upload
+service stays running. Every minute the worker calls `logbook process-queued`,
+using the existing production environment and ledger. It transcribes, diarizes,
+routes, consolidates, syncs the vault and updates Memgraph using the existing
+pipeline. A failed downstream step retries independently of the Mac's upload.
+A shared lock prevents the queued worker and mount runner processing concurrently;
+the mount runner waits for an active worker, and another worker run skips.
+
+Keep existing production mount and retention plists intact. For remote-origin
+recorder cleanup, explicitly configure `SONY_RECORDER_VOLUME_UUID` on mimir with
+the enrolled Sony volume UUID. On a later local attachment, Logbook hashes the
+actual Sony file and records its path and identity against the canonical job.
+Without that enrollment the remote recording remains recognized but is not
+associated for recorder cleanup. Even with enrollment, only the existing cleanup
+command on mimir may prune it, after the usual finalized-output, vault-sync and
+one-week gates, and a fresh volume/path/checksum validation. A remote receipt
+never enables pruning. Keep `LOGBOOK_AUDIO_RETENTION_HOURS=168` in production.
