@@ -39,6 +39,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Fix clean installation failing because the observer files were included twice
+  in the Python package. Add a package-build regression check to the quality gate.
 - Preserve finalized job state when previously pruned audio is rediscovered on Sony.
 - Recognize the observed spoken-prefix transcription variants "a lock entry" and
   "locked entry" as diary entries, without broad fuzzy matching.

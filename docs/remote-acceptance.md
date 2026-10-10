@@ -32,6 +32,17 @@ All recordings, credentials and ledgers used by these tests are temporary,
 synthetic fixtures. Odin behavior is simulated at the existing client boundary;
 no production vault or Memgraph content pipeline was exercised.
 
+## Installation follow-up — 2026-10-10
+
+The first MacBook installation exposed duplicate observer assets in the wheel
+definition. Reproduced with Python 3.11 and fixed by removing redundant forced
+inclusion. A regression test builds the actual wheel and checks every observer
+asset, the remote CLI module and its entry point. The full quality gate now
+passes 234 tests. A clean temporary Python 3.14 environment on mimir successfully
+installed the package, ran both CLI help commands, imported the agent/API and
+found the installed observer page. This is installation evidence, not a full
+Python 3.14 test-suite or Intel MacBook runtime qualification.
+
 ## Independent review
 
 A read-only review found and reproduced duplicate-session capacity leakage and

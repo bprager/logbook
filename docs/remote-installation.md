@@ -8,6 +8,12 @@ on either Mac. These are Logbook services, not OpenClaw services.
 
 ## Prepare each Mac
 
+If an earlier checkout fails installation with “A second file is being added to
+the wheel archive”, update the feature branch with `git pull --ff-only` and retry
+`.venv/bin/python -m pip install .`. The duplicate observer-asset packaging rule
+has been removed. There is no need to recreate the virtual environment or the
+signing certificate for this failure.
+
 1. Install this checkout and Python environment (`uv sync --extra dev` or the
    existing repository setup). Keep the checkout and environment at stable paths.
 2. Copy `docs/examples/remote-agent.json` to a private settings directory. Replace
