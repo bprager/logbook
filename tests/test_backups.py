@@ -133,7 +133,7 @@ class BackupTests(TestCase):
             self.assertEqual(drill.integrity_check, "ok")
             self.assertEqual(drill.job_count, 1)
             self.assertEqual(drill.expected_job_count, 1)
-            self.assertEqual(drill.schema_version, 1)
+            self.assertEqual(drill.schema_version, 2)
 
 
 def _seed_state(config: AppConfig, root: Path) -> None:

@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Separate private remote ingestion API with device credential revocation, bounded
+  resumable uploads, durable receipts, and central SHA-256 job deduplication.
+  No production deployment or version promotion.
+
 ### Fixed
 
 - Recognize the observed spoken-prefix transcription variants "a lock entry" and

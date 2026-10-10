@@ -1182,7 +1182,9 @@ Design: [docs/remote-ingestion.md](../docs/remote-ingestion.md). These items are
 
 ### LGB-044 - Remote ingestion contract and ledger migration
 
-Status: Planned. Priority: P0. Dependencies: LGB-003, LGB-006, LGB-019.
+Status: Implemented on feature branch; release acceptance pending. Priority: P0. Dependencies: LGB-003, LGB-006, LGB-019.
+
+- Additive schema and authenticated resumable intake implemented; focused concurrent, crash/receipt, corruption and revocation tests pass.
 
 - Design authenticated private ingest API, atomic upload sessions, durable receipts, checksum-based server deduplication and migration of the existing SQLite ledger.
 - Keep server uniqueness authoritative across two Macs and direct mimir ingest, including already-pruned source audio.

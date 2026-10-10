@@ -9,7 +9,7 @@ from pathlib import Path
 from logbook.recorder import RecordingCandidate
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -286,6 +286,8 @@ class Ledger:
             )
             self._ensure_column("recording_jobs", "cleanup_last_attempt_at", "TEXT")
             self._ensure_column("recording_jobs", "cleanup_last_error", "TEXT")
+            from logbook.remote_store import migrate_remote
+            migrate_remote(self.connection)
             self.connection.execute(
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)

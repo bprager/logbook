@@ -3,12 +3,15 @@
 Status: Proposed, not implemented. Date: 2026-10-09.
 
 ## Goal
+
 Preserve zero-action Sony ICD-PX370 USB ingestion on mimir and enable the same plug-in workflow on either MacBook Air while traveling. All transcription, diarization, routing, canonical Obsidian publication and Memgraph processing remain on mimir/odin.
 
 ## Current baseline
+
 Existing `StartOnMount` runner, SQLite checksum job ledger, `process-mounted-recorder`, one-week guarded cleanup, Odin worker and Obsidian vault sync are retained. Existing launchd recorder access uses a stable `LogbookMountRunner.app` identity to handle macOS removable-volume TCC permissions. The new Mac agent must use an equivalent stable signed/packaged identity with documented permission onboarding.
 
 ## Design
+
 1. Mac agent discovers a validated Sony volume, enumerates eligible audio files, ignores AppleDouble/sidecars, and snapshots only stable files.
 2. Compute SHA-256 over complete bytes, plus size. Use a local SQLite outbox keyed by hash, with atomic spool writes, fsync and crash recovery. Cache path/size/mtime/hash as an optimization only, never as authority.
 3. Authenticate over private VPN (prefer existing VPN initially) to a dedicated mimir ingest interface. Never expose the existing loopback OpenClaw action API or reuse its action token. Bind ingest listener to a private interface, require device-specific scoped credentials, TLS or VPN transport, payload limits, rate limits, and auditable device IDs.
@@ -21,6 +24,7 @@ Existing `StartOnMount` runner, SQLite checksum job ledger, `process-mounted-rec
 10. Expose redacted ingest status, device last-seen, pending bytes, failures and retry counts through existing observer interfaces; no raw audio paths, transcripts or credentials.
 
 ## Acceptance
+
 - Connecting Sony to either MacBook launches ingestion without manual application steps after one-time setup and permissions.
 - Previously ingested recordings are skipped across both MacBooks and mimir, even after recorder or local copied audio was pruned.
 - Offline disconnect, interrupted upload, simultaneous upload, reboot, and lost completion response do not lose files or produce duplicate ledger jobs or notes.

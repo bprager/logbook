@@ -67,3 +67,9 @@ source = ["src/logbook"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+
+# HTTPX's optional CLI imports the locally installed Click, which may target a
+# newer Python than our source compatibility floor. Type-check our code, not CLI internals.
+[[tool.mypy.overrides]]
+module = ["click", "click.*"]
+follow_imports = "skip"
