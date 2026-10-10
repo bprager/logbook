@@ -14,6 +14,12 @@ the wheel archive”, update the feature branch with `git pull --ff-only` and re
 has been removed. There is no need to recreate the virtual environment or the
 signing certificate for this failure.
 
+If signing reports `code object is not signed at all` for `LogbookMountRunner.c`,
+update and reinstall the checkout, then repeat only `package-agent` with the
+existing configuration, output path and signing identity. The builder moves
+generated source into Resources and removes the obsolete source copy from the
+executable directory. Keep the existing device token and certificate.
+
 1. Install this checkout and Python environment (`uv sync --extra dev` or the
    existing repository setup). Keep the checkout and environment at stable paths.
 2. Copy `docs/examples/remote-agent.json` to a private settings directory. Replace

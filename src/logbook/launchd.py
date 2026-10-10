@@ -35,7 +35,7 @@ class LaunchdAppBundle:
 
     @property
     def source_path(self) -> Path:
-        return self.bundle_path / "Contents" / "MacOS" / "LogbookMountRunner.c"
+        return self.bundle_path / "Contents" / "Resources" / "LogbookMountRunner.c"
 
     @property
     def executable_path(self) -> Path:
@@ -289,6 +289,7 @@ def _render_mount_runner_app(
 
 def _write_app_bundle(app: LaunchdAppBundle) -> None:
     app.executable_path.parent.mkdir(parents=True, exist_ok=True)
+    app.source_path.parent.mkdir(parents=True, exist_ok=True)
     app.info_plist_path.write_text(app.info_plist_content, encoding="utf-8")
     app.source_path.write_text(app.source_content, encoding="utf-8")
     completed = subprocess.run(
@@ -301,6 +302,9 @@ def _write_app_bundle(app: LaunchdAppBundle) -> None:
         detail = (completed.stderr or completed.stdout).strip()
         raise RuntimeError(f"failed to compile mount runner app: {detail}")
     app.executable_path.chmod(0o755)
+    # Repair packages generated before source files were moved out of MacOS.
+    # codesign treats files there as nested executables, not data resources.
+    (app.executable_path.parent / "LogbookMountRunner.c").unlink(missing_ok=True)
 
 
 def _c_string(value: str) -> str:

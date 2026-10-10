@@ -1,15 +1,44 @@
 import plistlib
 import subprocess
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import TestCase
+from unittest import TestCase, skipUnless
 from unittest.mock import patch
 
 from logbook.remote_launchd import write_agent_package
 from logbook.remote_config import AgentConfig
+from logbook.launchd import _render_mount_runner_app, _write_app_bundle
 
 
 class RemoteLaunchdTests(TestCase):
+    @skipUnless(sys.platform == 'darwin', 'requires macOS codesign')
+    def test_generated_bundle_can_be_signed_and_repaired_in_place(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = _render_mount_runner_app(
+                bundle_path=root / 'LogbookRemoteAgent.app',
+                python_executable=sys.executable, repo_root=root, src_path=root,
+                env_path=root / 'config.json', recorder_dir=root / 'SONY',
+                module='logbook.remote_cli', command='agent-run', config_arg='--config',
+                bundle_identifier='ws.prager.logbook.remote-agent')
+            for repair in (False, True):
+                if repair:
+                    # Reproduce an old package left by the failed MacBook installation.
+                    (app.executable_path.parent / 'LogbookMountRunner.c').write_text(app.source_content)
+                _write_app_bundle(app)
+                # Ad-hoc signing tests bundle structure only, without a keychain identity.
+                # The installation API still requires a persistent signing certificate.
+                for command in (
+                    ['/usr/bin/codesign', '--force', '--sign', '-', str(app.bundle_path)],
+                    ['/usr/bin/codesign', '--verify', '--strict', str(app.bundle_path)],
+                ):
+                    result = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0,
+                                     f'{command!r}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}')
+                self.assertEqual([p.name for p in app.executable_path.parent.iterdir()],
+                                 ['LogbookMountRunner'])
+
     def test_package_is_mount_login_and_retry_driven_with_no_cleanup(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -31,7 +60,7 @@ class RemoteLaunchdTests(TestCase):
             app = root / 'package' / 'LogbookRemoteAgent.app'
             info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
             self.assertEqual(info['CFBundleIdentifier'], 'ws.prager.logbook.remote-agent')
-            source = (app / 'Contents/MacOS/LogbookMountRunner.c').read_text()
+            source = (app / 'Contents/Resources/LogbookMountRunner.c').read_text()
             self.assertIn('logbook.remote_cli', source)
             self.assertIn('agent-run', source)
             self.assertNotIn('process-mounted-recorder', source)

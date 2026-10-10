@@ -43,6 +43,17 @@ installed the package, ran both CLI help commands, imported the agent/API and
 found the installed observer page. This is installation evidence, not a full
 Python 3.14 test-suite or Intel MacBook runtime qualification.
 
+## Signing follow-up — 2026-10-10
+
+The MacBook's persistent certificate was valid, but app signing failed because
+the generated C source was stored in `Contents/MacOS`. Reproduced the exact
+failure with real macOS `codesign`. The builder now stores source in Resources
+and removes its obsolete generated source from MacOS when rebuilding an old
+package. Real ad-hoc signing and strict verification pass for fresh and repaired
+temporary apps. This test needs no keychain changes; production package creation
+still requires a persistent certificate. MacBook certificate signing and TCC
+acceptance must still be verified on the physical machine.
+
 ## Independent review
 
 A read-only review found and reproduced duplicate-session capacity leakage and

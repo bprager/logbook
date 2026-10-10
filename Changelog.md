@@ -39,6 +39,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Fix macOS app signing by keeping generated C source in Resources instead of
+  the executable directory. Rebuilding repairs previously generated packages;
+  a real macOS signing regression check covers fresh and repeated builds.
 - Fix clean installation failing because the observer files were included twice
   in the Python package. Add a package-build regression check to the quality gate.
 - Preserve finalized job state when previously pruned audio is rediscovered on Sony.
