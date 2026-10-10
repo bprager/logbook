@@ -9,20 +9,20 @@ periodic central worker uses the existing processing stages independently of USB
 
 ## Completion checklist
 
-- [ ] LGB-044: Add additive upload/device schema, bounded resumable protocol,
+- [x] LGB-044: Add additive upload/device schema, bounded resumable protocol,
   transactional central registration and durable idempotent receipts. Test old
   ledgers, competing clients, wrong offsets/digests and crash/ack recovery.
   Files: `remote_store.py`, `remote_api.py`, `remote_config.py`, `ledger.py`, tests.
-- [ ] LGB-045: Add strict Sony validation, stable atomic snapshots, SQLite outbox,
+- [x] LGB-045: Add strict Sony validation, stable atomic snapshots, SQLite outbox,
   per-file persistent retries and resumable HTTP client. Render a stable signed
   app and mount/reboot/interval LaunchAgent without installing it. Test offline,
   changed files, wrong volumes, symlinks, permissions and disk exhaustion.
   Files: `remote_agent.py`, `remote_launchd.py`, `remote_cli.py`, tests.
-- [ ] LGB-046: Add mount-independent processing with a shared process lock,
+- [x] LGB-046: Add mount-independent processing with a shared process lock,
   preserve known/pruned jobs, and safely associate remote jobs with later local
   recorder discovery. Test processing, late arrivals and retention gates.
   Files: `cli.py`, `copying.py`, `retention.py`, tests.
-- [ ] LGB-047: Add redacted observer status, device authentication/rate audit,
+- [x] LGB-047: Add redacted observer status, device authentication/rate audit,
   storage pressure and client retry reports. Complete templates, installation,
   recovery and physical acceptance checklist. Run the full quality gate against
   the feature branch base, not merely the latest incremental commit.
@@ -48,3 +48,12 @@ field acceptance pending approval; tests use temporary synthetic recordings.
   approval must choose spool retention and independent audio-backup policy.
 - Direct copying currently can regress known/pruned jobs to copied; cover and fix.
 - Existing runner can be reused as a stable parent process for macOS TCC attribution.
+
+## Acceptance boundary
+
+Automated feature work is implemented. Test evidence covers synthetic two-device
+receipt loss/restart, concurrency, legacy ledger migration, offline buffering,
+chunk/whole-file corruption, disk pressure, revocation, timeout/rate limits,
+late-arrival publication, independent downstream retries and guarded cleanup.
+Physical recorder/TCC/VPN testing remains pending operator approval. Neither
+production services nor credentials nor version metadata were changed.

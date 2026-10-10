@@ -334,6 +334,8 @@ Release status: LGB-034 prepares `0.2.0` as an operational MVP release candidate
   associations; it preserves all historical job hashes and processing states.
 - Bytes are flushed, atomically published and then registered in the ledger.
   Receipts are canonical job IDs. Retried commits recover the rename/DB boundary.
+- Remote delivery rows persist graph outcomes/retry deadlines. Idle workers still
+  retry pending vault synchronization; graph retry does not require new audio.
 - The periodic `process-queued` worker shares the existing mounted processing
   stages and a single local process lock. No Sony mount is needed for remote work.
 - Remote receipt does not grant deletion. A later mimir attachment must validate

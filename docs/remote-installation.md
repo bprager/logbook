@@ -139,3 +139,66 @@ associated for recorder cleanup. Even with enrollment, only the existing cleanup
 command on mimir may prune it, after the usual finalized-output, vault-sync and
 one-week gates, and a fresh volume/path/checksum validation. A remote receipt
 never enables pruning. Keep `LOGBOOK_AUDIO_RETENTION_HOURS=168` in production.
+
+## Status, protocol and rollout checks
+
+`logbook watch --env .env --json` and the existing authenticated
+`GET /observer/snapshot` include `remote_ingest`: device last-seen, last-reported
+pending bytes, retries, storage pressure, active uploads, downstream graph queue
+and aggregate authentication/error counters. Plain `watch` includes a remote
+summary. These fields never include token values, audio paths or transcript text.
+An offline device's report can be stale; always inspect last-seen. Mac launch logs
+also contain the persisted local pending counts and safe error codes.
+
+| Operation | Contract |
+| --- | --- |
+| `POST /ingest/recordings/check` | Metadata JSON → missing, uploading with offset, or present with receipt |
+| `POST /ingest/uploads` | Same JSON → idempotent session or existing durable receipt |
+| `PUT /ingest/uploads/{id}` | Binary body, `X-Offset`, SHA-256 `X-Chunk-SHA256` → next durable offset |
+| `POST /ingest/uploads/{id}/complete` | Empty body → receipt after full size/hash verification |
+| `POST /ingest/status` | Only pending bytes, retries, allowlisted failure code and storage-pressure boolean |
+
+Recording JSON fields are `sha256` (64 lowercase hex characters), `size` (bytes),
+`filename` (MP3 basename only), `recorded_at` (naive ISO recorder wall clock), and
+`timezone` (IANA zone). A competing device's successful commit settles duplicate
+sessions and releases their reservations; only redundant transfer parts are
+reclaimed. A full-file checksum rejection resets the session offset to zero.
+The agent keeps its snapshot and retries allocation after any lost response.
+The server limits each device to 128 active uploads and 600 requests/minute;
+request bodies have a 30-second deadline. Limits are configurable.
+
+Graph delivery failures retain an independent persistent retry record, including
+a capped delay and a safe failure code. A scheduled worker checks that queue even
+when no audio needs processing. Pending vault synchronization also counts as work
+on otherwise idle runs. Upload acknowledgment is independent of either service.
+
+Before approving activation on mimir and both MacBooks:
+
+- [ ] Run `LOGBOOK_COVERAGE_COMPARE_REF=origin/main scripts/quality-gate` and review
+  the feature branch. Back up the production SQLite ledger with the existing
+  non-audio backup workflow before applying the additive migration.
+- [ ] Confirm the private VPN addresses, firewall ACLs, separate device tokens,
+  registry permissions and immediate revocation. Confirm the existing action API
+  remains loopback-only and its token cannot authenticate to ingest.
+- [ ] Confirm Xcode command-line tools (`cc`) and the persistent signing certificate
+  are available on each Mac. Inspect the generated app with `codesign --verify
+  --strict`, grant TCC once, and test a real plug-in event on each machine.
+- [ ] Unplug the recorder while offline after snapshotting, reboot/login, restore
+  VPN connectivity, and confirm the buffered recordings complete automatically.
+- [ ] Attach the same test recordings to both Macs and then mimir. Confirm one job
+  per hash and one final daily log per date, including a deliberately late entry.
+- [ ] Interrupt an upload and lose a completion response; confirm restart resumes
+  safely. Make Odin unavailable and then restore it; repeat with vault/graph sync.
+- [ ] Verify recorder cleanup in dry-run mode first: no remote receipt bypasses
+  finalized-output, vault-sync, one-week age, path, UUID or checksum checks.
+- [ ] Choose and record the Mac spool retention and independent audio-backup policy.
+  Existing saga backups remain non-audio; acknowledged spools are retained until
+  a separately approved policy implements their cleanup.
+- [ ] Obtain explicit approval for production deployment. Version promotion and
+  the v1.3.0 tag are separate actions and have not been performed.
+
+To disable remote ingestion, unload only the three new remote/worker LaunchAgents.
+Do not unload the existing mimir mount runner or retention job. Keep outboxes,
+upload metadata and the ledger for recovery. Schema migration is additive; older
+code ignores the extra tables. Do not restore an old ledger over newly received
+recordings without reconciling durable receipts first.

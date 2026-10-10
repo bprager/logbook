@@ -149,3 +149,58 @@ class RemotePipelineTests(TestCase):
         with patch('logbook.retention.validate_remote_recorder', return_value=folder):
             execute_audio_cleanup(self.config, include_recorder=True, now=now + timedelta(days=8))
         self.assertTrue(source.exists())
+
+    def test_downstream_outage_retries_without_reupload(self):
+        meta = self.deliver()
+        with patch('logbook.cli.HttpOdinClient', side_effect=OSError('offline')), \
+                patch('logbook.cli.time.sleep'):
+            self.assertEqual(main(['process-queued', '--env', str(self.env)]), 1)
+        self.assertEqual(self.store.check('air-one', meta)['state'], 'present')
+        ledger = open_ledger(self.config.sqlite_path)
+        self.assertEqual(ledger.get_by_id(1).status, 'copied')
+        ledger.close()
+        self.assertEqual(self.process(), 0)
+
+    def test_failed_vault_sync_is_retried_without_new_recordings(self):
+        self.deliver()
+        with patch('logbook.cli.HttpOdinClient', FakeOdinClient), \
+                patch('logbook.cli.ObsidianCliNoteWriter', _FilesystemWriterFactory), \
+                patch('logbook.cli._mark_vault_synced_and_sync_memory', return_value=False):
+            self.assertEqual(main(['process-queued', '--env', str(self.env)]), 1)
+        with patch('logbook.cli.HttpOdinClient', FakeOdinClient), \
+                patch('logbook.cli._mark_vault_synced_and_sync_memory', return_value=True) as sync:
+            self.assertEqual(main(['process-queued', '--env', str(self.env)]), 0)
+            sync.assert_called_once()
+
+    def test_graph_failure_survives_worker_restart_and_retries_independently(self):
+        import subprocess
+        from logbook.cli import _sync_memory_graph_for_jobs
+        from logbook.config import MemgraphConfig
+        from logbook.remote_delivery import pending_remote_graph_jobs
+        meta = self.deliver()
+        self.assertEqual(self.process(), 0)
+        ledger = open_ledger(self.config.sqlite_path)
+        ledger.mark_vault_synced(meta.sha256)
+        ledger.close()
+        config = replace(self.config, memgraph=MemgraphConfig(uri='bolt://synthetic.test:7687'))
+        with patch('logbook.cli.subprocess.run', return_value=subprocess.CompletedProcess([], 1, '', 'offline')):
+            _sync_memory_graph_for_jobs(config, (1,), env_path=self.env)
+        self.assertEqual(pending_remote_graph_jobs(config), ())  # bounded backoff
+        with patch('logbook.remote_delivery.time.time', return_value=10**12):
+            self.assertEqual(pending_remote_graph_jobs(config), (1,))
+            original_run = subprocess.run
+            def run(command, **kwargs):
+                if 'memory-graph-sync' in command:
+                    return subprocess.CompletedProcess(command, 0, 'nodes_written=2\nrelationships_written=1\n', '')
+                return original_run(command, **kwargs)
+            with patch('logbook.cli.load_app_config', return_value=config), \
+                    patch('logbook.cli.HttpOdinClient', FakeOdinClient), \
+                    patch('logbook.cli.subprocess.run', side_effect=run):
+                self.assertEqual(main(['process-queued', '--env', str(self.env)]), 0)
+        self.assertEqual(pending_remote_graph_jobs(config), ())
+        ledger = open_ledger(self.config.sqlite_path)
+        row = ledger.connection.execute('SELECT * FROM remote_delivery').fetchone()
+        self.assertEqual(row['attempts'], 2)
+        self.assertIsNotNone(row['graph_synced_at'])
+        self.assertIsNone(row['failure'])
+        ledger.close()

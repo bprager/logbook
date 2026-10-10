@@ -188,3 +188,16 @@ class RemoteAgentTests(TestCase):
         next(box.spool.glob('*/audio.mp3')).write_bytes(b'corrupt')
         with self.assertRaises(ValueError):
             transfer(box, row, client)
+
+    def test_fallback_file_timestamp_uses_recorder_zone_not_mac_zone(self):
+        import os
+        from datetime import datetime, timezone
+        source = self.audio.with_name('custom.mp3')
+        self.audio.rename(source)
+        timestamp = datetime(2026, 10, 9, 12, 0, tzinfo=timezone.utc).timestamp()
+        os.utime(source, (timestamp, timestamp))
+        box = Outbox(replace(self.config, timezone='America/New_York'))
+        self.addCleanup(box.close)
+        box.snapshot(self.folder)
+        meta = json.loads(box.pending(10**12)[0]['metadata'])
+        self.assertEqual(meta['recorded_at'], '2026-10-09T08:00:00')

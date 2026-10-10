@@ -58,6 +58,9 @@ def migrate_remote(connection):
         window INTEGER NOT NULL DEFAULT 0, window_requests INTEGER NOT NULL DEFAULT 0,
         pending_bytes INTEGER NOT NULL DEFAULT 0, retries INTEGER NOT NULL DEFAULT 0,
         failure TEXT, storage_pressure INTEGER NOT NULL DEFAULT 0)''')
+    connection.execute('''CREATE TABLE IF NOT EXISTS remote_delivery (
+        job_id INTEGER PRIMARY KEY, graph_synced_at TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt REAL NOT NULL DEFAULT 0, failure TEXT)''')
     connection.execute('''CREATE TABLE IF NOT EXISTS recorder_associations (
         checksum TEXT PRIMARY KEY, source_path TEXT NOT NULL, volume_uuid TEXT NOT NULL,
         observed_at TEXT NOT NULL)''')
@@ -75,13 +78,16 @@ def fsync_directory(path: Path):
 
 class RemoteStore:
     def __init__(self, ledger_path: Path, root: Path, *, max_bytes=2 * 1024**3,
-                 quota_bytes=20 * 1024**3, reserve_bytes=1024**3, chunk_bytes=1024**2):
+                 quota_bytes=20 * 1024**3, reserve_bytes=1024**3, chunk_bytes=1024**2, max_active_uploads=128):
         self.ledger_path, self.root = ledger_path, root
         self.max_bytes, self.quota_bytes = max_bytes, quota_bytes
         self.reserve_bytes, self.chunk_bytes = reserve_bytes, chunk_bytes
+        self.max_active_uploads = max_active_uploads
         self.parts, self.inbox = root / 'partial', root / 'inbox'
         for directory in (root, self.parts, self.inbox):
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            directory.chmod(0o700)
+            fsync_directory(directory.parent)
         fsync_directory(root)
 
     @contextmanager
@@ -113,6 +119,7 @@ class RemoteStore:
         with self.transaction() as db:
             present = self._present(db, meta)
             if present:
+                self._settle(db, meta.sha256, present)
                 return present
             row = db.execute('SELECT * FROM remote_uploads WHERE device=? AND checksum=?',
                              (device, meta.sha256)).fetchone()
@@ -123,6 +130,7 @@ class RemoteStore:
         with self.transaction() as db:
             present = self._present(db, meta)
             if present:
+                self._settle(db, meta.sha256, present)
                 return present
             row = db.execute('SELECT * FROM remote_uploads WHERE device=? AND checksum=?',
                              (device, meta.sha256)).fetchone()
@@ -130,6 +138,10 @@ class RemoteStore:
                 if row['size'] != meta.size:
                     raise IngestError('size_conflict', 409)
                 return self._session(row)
+            active = db.execute('SELECT count(*) FROM remote_uploads WHERE device=? '
+                                'AND receipt IS NULL', (device,)).fetchone()[0]
+            if active >= self.max_active_uploads:
+                raise IngestError('too_many_uploads', 429)
             reserved = db.execute('SELECT coalesce(sum(size-offset),0) FROM remote_uploads '
                                   'WHERE receipt IS NULL').fetchone()[0]
             used = sum(p.stat().st_size for folder in (self.parts, self.inbox)
@@ -187,24 +199,28 @@ class RemoteStore:
             meta = RecordingMetadata(**json.loads(row['metadata']))
             present = self._present(db, meta)
             if present:
+                self._settle(db, meta.sha256, present)
                 return present
             if row['offset'] != row['size']:
                 raise IngestError('incomplete_upload', 409)
             target = self.inbox / f'{meta.sha256}.mp3'
             part = self.parts / row['id']
-            source = target if target.exists() else part
+            source = part if part.exists() else target
             if not source.exists() or source.stat().st_size != meta.size:
                 raise IngestError('incomplete_storage', 409)
             if sha256_file(source) != meta.sha256:
+                # Persist a restartable offset even though this completion is rejected.
+                # No job was registered and no canonical recording was acknowledged.
+                db.execute('UPDATE remote_uploads SET offset=0 WHERE id=?', (upload_id,))
+                db.commit()
                 raise IngestError('recording_hash_mismatch', 422)
             # Repeating after a rename-before-commit crash uses the verified target.
             if source == part:
                 os.replace(part, target)
-                fsync_directory(self.inbox)
-                fsync_directory(self.parts)
+            fsync_directory(self.inbox)
+            fsync_directory(self.parts)
             receipt = self._register(db, meta, target, device)
-            db.execute('UPDATE remote_uploads SET receipt=?, updated_at=? WHERE id=?',
-                       (receipt['receipt_id'], utc_now_iso(), upload_id))
+            self._settle(db, meta.sha256, receipt)
             return receipt
 
     def _register(self, db, meta, target, device):
@@ -221,4 +237,21 @@ class RemoteStore:
         db.execute("UPDATE recording_jobs SET status='copied', copied_path=?, copied_at=? "
                    "WHERE checksum_sha256=? AND status='discovered'",
                    (str(target), now, meta.sha256))
+        job_id = db.execute('SELECT id FROM recording_jobs WHERE checksum_sha256=?',
+                            (meta.sha256,)).fetchone()[0]
+        db.execute('INSERT OR IGNORE INTO remote_delivery(job_id) VALUES (?)', (job_id,))
         return self._present(db, meta)
+
+    def _settle(self, db, checksum, receipt):
+        # This is the durability boundary: commit the canonical job and all
+        # receipts BEFORE reclaiming redundant transfer parts. A crash while
+        # reclaiming can waste space but cannot strand a competing device at an
+        # acknowledged offset whose bytes no longer exist.
+        db.execute('UPDATE remote_uploads SET receipt=?, updated_at=? WHERE checksum=?',
+                   (receipt['receipt_id'], utc_now_iso(), checksum))
+        db.commit()
+        for row in db.execute('SELECT id FROM remote_uploads WHERE checksum=?', (checksum,)):
+            part = self.parts / row['id']
+            if part.exists():
+                part.unlink()
+        fsync_directory(self.parts)

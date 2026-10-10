@@ -23,7 +23,7 @@ def write_agent_package(config: AgentConfig, config_path: Path, output: Path,
         repo_root=repo_root, src_path=repo_root / 'src', env_path=config_path.resolve(),
         recorder_dir=config.mount_path / config.recordings_path,
         module='logbook.remote_cli', command='agent-run', config_arg='--config',
-        bundle_identifier='ws.prager.logbook.remote-agent')
+        bundle_identifier='ws.prager.logbook.remote-agent', display_name='Logbook Remote Agent')
     _write_app_bundle(app)
     subprocess.run(['/usr/bin/codesign', '--force', '--sign', signing_identity,
                     '--identifier', 'ws.prager.logbook.remote-agent', str(app.bundle_path)], check=True)

@@ -1,5 +1,17 @@
 # Status
 
+## Remote ingestion implementation — 2026-10-09
+
+Feature branch `feature/remote-sony-ingestion` implements LGB-044 through LGB-047.
+Durable central receipts, two-Mac offline buffering, mount-independent processing,
+guarded source association and redacted status are covered by automated tests.
+The full quality gate and independent recovery review are part of acceptance.
+No deployment, live credential changes, recording deletion or v1.3.0 tag.
+Next: approve physical two-Mac/VPN/TCC field testing and decide audio-backup/spool
+retention policy before production activation. See `docs/remote-installation.md`.
+
+Earlier operational evidence follows; it is historical context.
+
 ## October 5 diary-routing repair
 
 Restored jobs 213/214 (September 30 and October 2), verified canonical content and

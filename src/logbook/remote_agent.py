@@ -14,6 +14,7 @@ from dataclasses import asdict
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -45,8 +46,12 @@ def _signature(stat):
 class Outbox:
     def __init__(self, config: AgentConfig):
         self.config = config
+        config.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        config.root.chmod(0o700)
+        fsync_directory(config.root.parent)
         self.spool = config.root / 'spool'
         self.spool.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fsync_directory(config.root)
         self.db = sqlite3.connect(config.root / 'outbox.sqlite')
         self.db.row_factory = sqlite3.Row
         self.db.execute('PRAGMA synchronous=FULL')
@@ -115,7 +120,8 @@ class Outbox:
                 if count != before.st_size or _signature(source.stat()) != _signature(before):
                     raise OSError('source_changed')
                 recorded_at, _ = parse_sony_recording_name(source.name)
-                recorded_at = recorded_at or datetime.fromtimestamp(before.st_mtime)
+                recorded_at = recorded_at or datetime.fromtimestamp(
+                    before.st_mtime, ZoneInfo(self.config.timezone)).replace(tzinfo=None)
                 meta = RecordingMetadata(digest.hexdigest(), count, source.name,
                                          recorded_at.isoformat(timespec='seconds'),
                                          self.config.timezone)

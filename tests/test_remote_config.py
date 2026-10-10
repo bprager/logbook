@@ -42,7 +42,7 @@ class RemoteConfigTests(TestCase):
         self.assertFalse(private_address('8.8.8.8'))
 
     def test_server_rejects_unsafe_settings(self):
-        for changes in ({'bind_host': '0.0.0.0'}, {'bind_host': '192.168.1.2'},
+        for changes in ({'vpn_transport': 'false'}, {'bind_host': '0.0.0.0'}, {'bind_host': '192.168.1.2'},
                         {'max_bytes': 0}, {'reserve_bytes': -1}, {'port': 0}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 replace(self.server, **changes).validate()
@@ -53,7 +53,7 @@ class RemoteConfigTests(TestCase):
                 self.server.credentials()
 
     def test_agent_rejects_unsafe_settings_and_secret_permissions(self):
-        for changes in ({'server_url': 'ftp://host'}, {'server_url': 'https://a:b@host'},
+        for changes in ({'vpn_transport': 'false'}, {'server_url': 'ftp://host'}, {'server_url': 'https://a:b@host'},
                         {'server_url': 'https://host/path'}, {'server_url': 'http://8.8.8.8'},
                         {'volume_uuid': ''}, {'recordings_path': '../escape'},
                         {'recordings_path': '/absolute'}, {'stable_seconds': -1}):

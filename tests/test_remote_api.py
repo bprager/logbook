@@ -1,16 +1,17 @@
 import json
 from dataclasses import asdict
 from hashlib import sha256
+from unittest import TestCase
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from test_remote_store import RemoteStoreTests
+from test_remote_store import RemoteStoreFixture
 from logbook.remote_api import create_ingest_app
 from logbook.remote_config import ServerConfig
 
 
-class RemoteApiTests(RemoteStoreTests):
+class RemoteApiTests(RemoteStoreFixture, TestCase):
     def setUp(self):
         super().setUp()
         self.credentials = self.root / 'devices.json'
@@ -67,3 +68,21 @@ class RemoteApiTests(RemoteStoreTests):
         self.assertNotIn('secret', response.text)
         self.credentials.unlink()
         self.assertEqual(self.client.post('/ingest/uploads', headers=self.headers).status_code, 503)
+
+    def test_stream_deadline(self):
+        import asyncio
+        import httpx
+        async def slow_body():
+            await asyncio.sleep(0.03)
+            yield b'{}'
+        async def exercise():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_ingest_app(self.config)),
+                                         base_url='http://test') as client:
+                # Keep validation's integer timeout but scale only the awaited deadline.
+                original_wait = asyncio.wait_for
+                async def fast_wait(awaitable, timeout):
+                    return await original_wait(awaitable, .001)
+                with patch('logbook.remote_api.asyncio.wait_for', side_effect=fast_wait):
+                    response = await client.post('/ingest/uploads', content=slow_body(), headers=self.headers)
+                self.assertEqual(response.status_code, 408)
+        asyncio.run(exercise())

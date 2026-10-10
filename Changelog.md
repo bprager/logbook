@@ -15,12 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve the existing mimir/Odin/Obsidian processing path and direct-mimir one-week guarded recorder pruning; remote MacBooks never delete Sony recordings.
 - Add backlog LGB-044 through LGB-047 and `docs/remote-ingestion.md` for design, security, acceptance and rollout.
 
-**Planning entry only:** No remote agent or server endpoint is implemented, no release is tagged, and current production version remains 1.2.3.
+**Release not promoted:** Remote ingestion is implemented on the feature branch
+and described under Unreleased. No production deployment or tag; current
+production version remains 1.2.3.
 
 ## [Unreleased]
 
 ### Added
 
+- Redacted remote-device, upload and retry status through the existing observer,
+  bounded upload sessions/request deadlines, credential revocation and audit counters.
+- Persistent downstream retry state for remote vault and Memgraph synchronization.
+- Installation templates, recovery guidance and a physical acceptance checklist.
 - Mount-independent queued processing through the existing pipeline, with a shared
   worker lock and UUID-verified recorder association for remote-origin retention.
 - Portable Mac agent with persistent offline buffering, read-only Sony access,

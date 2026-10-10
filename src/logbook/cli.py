@@ -51,6 +51,9 @@ from logbook.observer import (
 from logbook.preview import write_open_log_preview
 from logbook.recorder import RecorderAccessError, discover_recordings, validate_recorder
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
+from logbook.remote_delivery import (
+    pending_remote_vault_sync, pending_remote_graph_jobs, record_graph_attempt,
+)
 from logbook.routing import route_transcripts
 from logbook.telemetry import SQLitePipelineReporter
 from logbook.transcription import transcribe_copied, transcribe_copied_with_fake_odin
@@ -873,7 +876,11 @@ def _process_mounted_recorder(env_path: Path, *, copy_recorder: bool = True) -> 
         except BlockingIOError:
             print("pipeline_busy=yes")
             return 0
-        return _process_ingestion_pipeline(config, env_path, copy_recorder=copy_recorder)
+        result = _process_ingestion_pipeline(config, env_path, copy_recorder=copy_recorder)
+        pending_graph = pending_remote_graph_jobs(config)
+        if pending_graph:
+            _sync_memory_graph_for_jobs(config, pending_graph, env_path=env_path)
+        return result
 
 
 def _process_ingestion_pipeline(config, env_path, *, copy_recorder):
@@ -953,6 +960,7 @@ def _process_ingestion_pipeline(config, env_path, *, copy_recorder):
                     diarization_result.diarized_count,
                     pending_vault_changes,
                     pending_consolidation_count,
+                    pending_remote_vault_sync(config),
                 )
             )
             if not did_local_work:
@@ -1280,16 +1288,19 @@ def _sync_memory_graph_for_jobs(
         except subprocess.TimeoutExpired:
             timed_out += 1
             print(f"memory_graph_sync=timed_out job_id={job_id}")
+            record_graph_attempt(config, job_id, False)
             continue
         if completed.returncode != 0:
             failed += 1
             warning = (completed.stderr or completed.stdout).strip().splitlines()
             detail = warning[-1] if warning else f"exit_code={completed.returncode}"
             print(f"memory_graph_sync=failed job_id={job_id} warning={detail}")
+            record_graph_attempt(config, job_id, False)
             continue
         nodes, relationships = _parse_memory_graph_sync_output(completed.stdout)
         written_nodes += nodes
         written_relationships += relationships
+        record_graph_attempt(config, job_id, True)
 
     status = "ok" if timed_out == 0 and failed == 0 else "partial"
     print(f"memory_graph_sync={status}")

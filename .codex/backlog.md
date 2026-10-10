@@ -1212,7 +1212,11 @@ Status: Implemented on feature branch; production field acceptance pending. Prio
 
 ### LGB-047 - Remote observability, security and release acceptance
 
-Status: Planned. Priority: P1. Dependencies: LGB-044, LGB-045, LGB-046, LGB-039.
+Status: Implementation and automated acceptance complete on feature branch; physical field/release acceptance pending approval. Priority: P1. Dependencies: LGB-044, LGB-045, LGB-046, LGB-039.
+
+- Added redacted observer/device/upload/downstream status, bounded request/session limits and authentication audit. Synthetic two-Mac lost-receipt/restart, credential revocation, disk pressure, corruption, downstream outage and guarded retention checks pass.
+- Independent review identified duplicate-session quota and idle downstream retry gaps; regression tests and durable recovery fixes are included.
+- No production deployment, credential edits, recorder deletion or version/tag promotion.
 
 - Add redacted device/upload status, retries, storage pressure and authentication audit; document network/TCC setup and audio durability/backup decision.
 - Test concurrent Macs, lost receipts, corrupted chunks, restart, no network, disk full, credential revocation and existing cleanup regression.

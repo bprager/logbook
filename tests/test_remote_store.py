@@ -10,7 +10,7 @@ from logbook.ledger import open_ledger
 from logbook.remote_store import RemoteStore, RecordingMetadata, IngestError
 
 
-class RemoteStoreTests(TestCase):
+class RemoteStoreFixture:
     def setUp(self):
         self.tmp = TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -28,9 +28,17 @@ class RemoteStoreTests(TestCase):
         result = self.store.allocate(device, self.meta)
         if result['state'] == 'present':
             return result
-        self.store.append(device, result['upload_id'], 0, self.data, self.meta.sha256)
+        try:
+            self.store.append(device, result['upload_id'], 0, self.data, self.meta.sha256)
+        except IngestError:
+            receipt = self.store.check(device, self.meta)
+            if receipt['state'] == 'present':
+                return receipt
+            raise
         return self.store.complete(device, result['upload_id'])
 
+
+class RemoteStoreTests(RemoteStoreFixture, TestCase):
     def test_durable_receipt_and_repeat_after_audio_pruned(self):
         receipt = self.upload()
         ledger = open_ledger(self.db)
@@ -133,3 +141,67 @@ class RemoteStoreTests(TestCase):
         for timestamp in ('2026-10-09T08:30:00+00:00', '1900-01-01T00:00:00'):
             with self.assertRaises(IngestError):
                 self.store.allocate('air-one', replace(self.meta, recorded_at=timestamp))
+
+    def test_final_hash_mismatch_can_retry_from_zero(self):
+        session = self.store.allocate('air-one', self.meta)['upload_id']
+        bad = b'x' * self.meta.size
+        self.store.append('air-one', session, 0, bad, sha256(bad).hexdigest())
+        with self.assertRaises(IngestError):
+            self.store.complete('air-one', session)
+        self.assertEqual(self.store.allocate('air-one', self.meta)['offset'], 0)
+        self.store.append('air-one', session, 0, self.data, self.meta.sha256)
+        self.assertEqual(self.store.complete('air-one', session)['state'], 'present')
+
+    def test_active_session_count_is_bounded_per_device(self):
+        store = RemoteStore(self.db, self.root / 'remote', reserve_bytes=0, max_active_uploads=1)
+        store.allocate('air-one', self.meta)
+        with self.assertRaises(IngestError) as error:
+            store.allocate('air-one', replace(self.meta, sha256='a'*64))
+        self.assertEqual(error.exception.code, 'too_many_uploads')
+
+    def test_existing_v1_ledger_migrates_without_reviving_pruned_jobs(self):
+        receipt = self.upload()
+        ledger = open_ledger(self.db)
+        job = ledger.get_by_id(1)
+        Path(job.copied_path).unlink()
+        ledger.connection.execute("UPDATE recording_jobs SET status='consolidated', "
+                                  "local_audio_cleanup_status='deleted'")
+        ledger.connection.execute('DROP TABLE remote_uploads')
+        ledger.connection.execute('DROP TABLE remote_devices')
+        ledger.connection.execute('DROP TABLE remote_audit')
+        ledger.connection.execute('DROP TABLE recorder_associations')
+        ledger.connection.execute('DELETE FROM schema_migrations')
+        ledger.connection.execute("INSERT INTO schema_migrations VALUES (1,'2026-01-01')")
+        ledger.connection.commit()
+        ledger.close()
+        migrated = open_ledger(self.db, initialize=True)
+        self.assertEqual(migrated.get_by_id(1).status, 'consolidated')
+        self.assertEqual(migrated.get_by_id(1).local_audio_cleanup_status, 'deleted')
+        self.assertEqual(migrated.connection.execute('SELECT max(version) FROM schema_migrations').fetchone()[0], 2)
+        migrated.close()
+        self.assertEqual(self.store.check('air-two', self.meta), receipt)
+
+    def test_losing_concurrent_session_releases_capacity_on_receipt(self):
+        store = RemoteStore(self.db, self.root / 'remote', reserve_bytes=0, max_active_uploads=1)
+        loser = store.allocate('air-two', self.meta)['upload_id']
+        store.append('air-two', loser, 0, self.data[:2], sha256(self.data[:2]).hexdigest())
+        self.upload('air-one')
+        self.assertEqual(store.allocate('air-two', self.meta)['state'], 'present')
+        self.assertFalse((store.parts / loser).exists())
+        self.assertEqual(store.allocate('air-two', replace(self.meta, sha256='a'*64))['state'], 'uploading')
+
+    def test_competing_device_recovers_crash_after_settlement_without_original_uploader(self):
+        loser = self.store.allocate('air-two', self.meta)['upload_id']
+        self.store.append('air-two', loser, 0, self.data[:2], sha256(self.data[:2]).hexdigest())
+        first = self.store.allocate('air-one', self.meta)['upload_id']
+        self.store.append('air-one', first, 0, self.data, self.meta.sha256)
+        settle = self.store._settle
+        def crash_after_settlement(*args):
+            settle(*args)
+            raise OSError('crash after settlement')
+        with patch.object(self.store, '_settle', side_effect=crash_after_settlement):
+            with self.assertRaises(OSError):
+                self.store.complete('air-one', first)
+        restarted = RemoteStore(self.db, self.root / 'remote', reserve_bytes=0)
+        self.assertEqual(restarted.allocate('air-two', self.meta)['state'], 'present')
+        self.assertEqual(restarted.complete('air-two', loser)['state'], 'present')

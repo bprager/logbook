@@ -110,6 +110,22 @@ global gate would block useful work unless large legacy areas were excluded.
 A changed-line ratchet keeps the requirement enforceable for new Python changes
 without pretending historical coverage debt has already been paid down.
 
+### D-017: Remote intake is separate from OpenClaw actions
+
+Use a dedicated private upload service with per-device credentials, bounded
+resumable transfers and the existing canonical checksum ledger. An acknowledgment
+means durable central receipt, not completed transcription or a second backup.
+Commit receipt state before reclaiming duplicate transfer parts. Persist downstream
+vault and graph retry work independently of uploads.
+
+### D-018: Remote agents retain snapshots and never prune Sony
+
+Both MacBooks retain acknowledged snapshots until a separately approved retention
+policy is implemented. Existing saga backups remain non-audio. Production approval
+must choose an independent audio-backup policy and accept or eliminate the current
+risk window. Remote-origin Sony pruning requires later UUID-verified attachment
+to mimir plus all existing finalization, vault-sync, age, path and checksum gates.
+
 ## Open Questions
 
 1. Should the current open day have an Obsidian preview note?

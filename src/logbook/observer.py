@@ -9,6 +9,7 @@ from pathlib import Path
 from logbook.config import AppConfig
 from logbook.memory_graph import Neo4jMemgraphClient
 from logbook.odin import HttpOdinClient
+from logbook.remote_status import read_remote_status
 
 
 FINAL_SUCCESS_STATUSES = {
@@ -119,6 +120,7 @@ class ObserverSnapshot:
     recent_finished: tuple[ObserverJobOutcome, ...]
     recent_failures: tuple[ObserverFailure, ...]
     stats: ObserverStats
+    remote_ingest: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -130,6 +132,7 @@ class ObserverSnapshot:
             "recent_finished": [item.to_dict() for item in self.recent_finished],
             "recent_failures": [item.to_dict() for item in self.recent_failures],
             "stats": self.stats.to_dict(),
+            "remote_ingest": self.remote_ingest,
         }
 
 
@@ -225,6 +228,7 @@ def build_observer_snapshot(
             odin=_odin_status(config, probe_services, service_timeout_seconds),
             memgraph=_memgraph_status(config, probe_services, service_timeout_seconds),
         ),
+        remote_ingest=read_remote_status(config.sqlite_path),
         current_run=current_run,
         active_stage=active_stage,
         recent_finished=tuple(finished),
@@ -297,6 +301,10 @@ def render_observer_snapshot(
             ),
         ]
     )
+    if snapshot.remote_ingest and snapshot.remote_ingest.get("state") == "available":
+        devices = snapshot.remote_ingest.get("devices", [])
+        lines.append("Remote ingest  " + str(len(devices)) + " devices  " +
+                     str(sum(device["pending_bytes"] for device in devices)) + " bytes pending")
     rendered = "\n".join(lines) + "\n"
     return _colorize(rendered, resolved_theme) if color else rendered
 
@@ -449,6 +457,7 @@ def observer_snapshot_from_dict(payload: dict[str, object]) -> ObserverSnapshot:
     return ObserverSnapshot(
         generated_at=str(payload.get("generated_at") or ""),
         latest_finished_at=_optional_str(payload.get("latest_finished_at")),
+        remote_ingest=payload.get("remote_ingest") if isinstance(payload.get("remote_ingest"), dict) else None,
         health=ObserverHealth(
             api=str(health.get("api") or "unknown"),
             sqlite=str(health.get("sqlite") or "unknown"),

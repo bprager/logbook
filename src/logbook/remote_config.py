@@ -39,13 +39,18 @@ class ServerConfig:
     reserve_bytes: int = 1024**3
     chunk_bytes: int = 1024**2
     requests_per_minute: int = 600
+    max_active_uploads: int = 128
+    body_timeout_seconds: int = 30
 
     def validate(self):
+        if type(self.vpn_transport) is not bool:
+            raise ValueError('vpn_transport must be a JSON boolean')
         if not private_address(self.bind_host):
             raise ValueError('ingest must bind to an explicit private IP address')
         if not ipaddress.ip_address(self.bind_host).is_loopback and not self.vpn_transport:
             raise ValueError('non-loopback ingestion requires explicitly configured VPN transport')
-        for value in (self.max_bytes, self.quota_bytes, self.chunk_bytes, self.requests_per_minute):
+        for value in (self.max_bytes, self.quota_bytes, self.chunk_bytes, self.requests_per_minute,
+                      self.max_active_uploads, self.body_timeout_seconds):
             if type(value) is not int or value <= 0:
                 raise ValueError('ingest limits must be positive integers')
         if self.reserve_bytes < 0 or not 1 <= self.port <= 65535:
@@ -80,6 +85,8 @@ class AgentConfig:
     chunk_bytes: int = 1024**2
 
     def validate(self):
+        if type(self.vpn_transport) is not bool:
+            raise ValueError('vpn_transport must be a JSON boolean')
         url = urlsplit(self.server_url)
         if (url.scheme not in ('http', 'https') or not url.hostname or url.username
                 or url.password or url.query or url.fragment or url.path not in ('', '/')):

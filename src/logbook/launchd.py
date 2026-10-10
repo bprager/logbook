@@ -204,11 +204,12 @@ def _render_mount_runner_app(
     command: str = "process-mounted-recorder",
     config_arg: str = "--env",
     bundle_identifier: str = "ws.prager.logbook.mount-runner",
+    display_name: str = "Logbook Mount Runner",
 ) -> LaunchdAppBundle:
     info = {
         "CFBundleIdentifier": bundle_identifier,
-        "CFBundleName": "Logbook Mount Runner",
-        "CFBundleDisplayName": "Logbook Mount Runner",
+        "CFBundleName": display_name,
+        "CFBundleDisplayName": display_name,
         "CFBundleExecutable": "LogbookMountRunner",
         "CFBundlePackageType": "APPL",
         "CFBundleVersion": "1.0",
