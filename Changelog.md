@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Added
 
+- Recorded an isolated real-HTTP remote ingestion pilot: two offline agent
+  processes recovered into one verified central job, with both buffers retained.
 - Redacted remote-device, upload and retry status through the existing observer,
   bounded upload sessions/request deadlines, credential revocation and audit counters.
 - Persistent downstream retry state for remote vault and Memgraph synchronization.

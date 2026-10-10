@@ -42,6 +42,24 @@ reviewer reran focused recovery tests and confirmed that fix.
 
 ## Pending physical acceptance
 
+### Isolated network pilot — 2026-10-10
+
+A follow-up pilot on mimir used two separate agent processes, separate temporary
+credentials and buffers, and a temporary receiver bound only to loopback.
+Both agents buffered the same synthetic recording while the receiver was offline.
+After starting the receiver, fresh agent processes delivered both buffers over
+real HTTP. Checks confirmed one central job, identical source/destination SHA-256,
+SQLite integrity, an unchanged synthetic source, and both acknowledged buffers
+retained. The receiver was stopped afterward. All data was in a temporary
+directory; no production services, credentials or data were changed.
+
+Only recorder-volume validation was simulated. This pilot does not establish
+physical USB, VPN, signing, TCC, login or reboot acceptance. At preflight, this
+session was on mimir and `/Volumes` contained only Macintosh HD and Recovery.
+The two MacBook hostnames and physical recorder access are still needed.
+
+### Remaining operator checks
+
 Actual certificate signing, macOS TCC grants, USB mount events, VPN behavior,
 and reboot/login recovery must be checked on **both physical MacBook Airs**.
 Actual mimir/Odin/vault/graph processing and guarded pruning must be approved and

@@ -7,8 +7,12 @@ Durable central receipts, two-Mac offline buffering, mount-independent processin
 guarded source association and redacted status are covered by automated tests.
 The full quality gate and independent recovery review are part of acceptance.
 No deployment, live credential changes, recording deletion or v1.3.0 tag.
-Next: approve physical two-Mac/VPN/TCC field testing and decide audio-backup/spool
-retention policy before production activation. See `docs/remote-installation.md`.
+Follow-up authorized: proceed with field-testing preparation and the retention
+decision. An isolated real-HTTP pilot passed with two restarted agent processes,
+offline buffers and one central job; production was untouched. Physical tests
+still need both MacBook hostnames and recorder access. The conservative pilot
+retention proposal is awaiting a response. See `docs/remote-acceptance.md` and
+`docs/remote-installation.md`.
 
 Earlier operational evidence follows; it is historical context.
 

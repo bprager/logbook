@@ -1212,7 +1212,7 @@ Status: Implemented on feature branch; production field acceptance pending. Prio
 
 ### LGB-047 - Remote observability, security and release acceptance
 
-Status: Implementation and automated acceptance complete on feature branch; physical field/release acceptance pending approval. Priority: P1. Dependencies: LGB-044, LGB-045, LGB-046, LGB-039.
+Status: Implementation and automated acceptance complete on feature branch; isolated real-HTTP pilot passed. Physical field testing authorized, awaiting MacBook addresses and recorder access; production release remains unapproved. Priority: P1. Dependencies: LGB-044, LGB-045, LGB-046, LGB-039.
 
 - Added redacted observer/device/upload/downstream status, bounded request/session limits and authentication audit. Synthetic two-Mac lost-receipt/restart, credential revocation, disk pressure, corruption, downstream outage and guarded retention checks pass.
 - Independent review identified duplicate-session quota and idle downstream retry gaps; regression tests and durable recovery fixes are included.
