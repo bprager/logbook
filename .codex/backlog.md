@@ -1192,7 +1192,9 @@ Status: Implemented on feature branch; release acceptance pending. Priority: P0.
 
 ### LGB-045 - Portable macOS Sony ingestion agent
 
-Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-005, LGB-021.
+Status: Implemented on feature branch; physical Mac/TCC acceptance pending. Priority: P0. Dependencies: LGB-044, LGB-005, LGB-021.
+
+- Persistent snapshots, resumable transfers, bounded retries and signed mount/login/interval app packaging tested with synthetic recordings.
 
 - Package a stable macOS app identity with launchd mount detection, Sony validation, local SQLite outbox, atomic spool, resumable transfer and offline retry.
 - Support both MacBook Air machines with separate revocable credentials and no manual steps after installation.

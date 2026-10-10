@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Portable Mac agent with persistent offline buffering, read-only Sony access,
+  resumable retries and a separately signed mount/login/interval launch package.
 - Separate private remote ingestion API with device credential revocation, bounded
   resumable uploads, durable receipts, and central SHA-256 job deduplication.
   No production deployment or version promotion.

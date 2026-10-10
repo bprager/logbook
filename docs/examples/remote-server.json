@@ -1,0 +1,13 @@
+{
+  "ledger_path": "~/VoiceIngest/voice_ingest.sqlite",
+  "root": "~/VoiceIngest/remote",
+  "credentials_file": "./devices.json",
+  "bind_host": "100.64.0.10",
+  "port": 8790,
+  "vpn_transport": true,
+  "max_bytes": 2147483648,
+  "quota_bytes": 21474836480,
+  "reserve_bytes": 1073741824,
+  "chunk_bytes": 1048576,
+  "requests_per_minute": 600
+}

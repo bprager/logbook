@@ -33,6 +33,7 @@ odin = [
 
 [project.scripts]
 logbook = "logbook.cli:main"
+logbook-remote = "logbook.remote_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/logbook"]
