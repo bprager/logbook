@@ -62,7 +62,34 @@ Follow-up review caught a crash window while reclaiming competing upload parts;
 registration and all receipts now commit before those parts are reclaimed. The
 reviewer reran focused recovery tests and confirmed that fix.
 
-## Pending physical acceptance
+## Physical acceptance progress
+
+### First traveling MacBook pilot — 2026-10-10 (Pacific)
+
+Tene-MacBook-Air installed the agent, created a persistent local signing identity,
+and successfully generated the signed app after the packaging fixes above. The
+operator opened that app with the Sony connected and reported 25 buffered MP3s.
+The verified external USB volume UUID is
+`9A37DA05-166E-3EAE-898C-C9D1CE0EBBD3`, recording folder is
+`REC_FILE/FOLDER01`, and recorder timezone is `America/Los_Angeles`.
+
+Using the existing key-authenticated `jump-mimir` SSH route through fenrir, the
+operator then ran a separate pilot agent buffer through a manually opened SSH
+tunnel to an isolated loopback receiver on mimir. The receiver used a separate
+ledger and intake directory, not production. The agent reported zero pending
+bytes, zero retries, no failure and no storage pressure.
+
+Read-only server verification confirmed 25 unique recording hashes, 25 completed
+upload receipts, zero unfinished uploads, and 121,418,203 received bytes. Every
+stored file's size and SHA-256 matched the ledger; SQLite integrity was `ok`.
+All jobs remained `copied`: no transcription or vault publication was run.
+The temporary receiver was stopped after verification. Pilot files and ledgers
+were retained; neither Sony recordings nor the original Mac buffer were removed.
+
+The test used separate buffers and port 18791 so pilot receipts cannot mark the
+original Mac buffer delivered to production. Repeated live upload, automatic SSH
+startup/reconnection, signed-app transfer, login/reboot recovery and second-Mac
+acceptance remain unverified. No VPN was used or installed.
 
 ### Isolated network pilot — 2026-10-10
 
@@ -82,8 +109,9 @@ The two MacBook hostnames and physical recorder access are still needed.
 
 ### Remaining operator checks
 
-Actual certificate signing, macOS TCC grants, USB mount events, VPN behavior,
-and reboot/login recovery must be checked on **both physical MacBook Airs**.
+The first Mac's signed-app recorder read and manual SSH transfer are evidenced
+above. Automatic mount events, tunnel lifecycle and reboot/login recovery still
+need verification, along with the complete setup on the second MacBook Air.
 Actual mimir/Odin/vault/graph processing and guarded pruning must be approved and
 field-tested with operator-chosen recordings. No such deployment or destructive
 field test was performed during implementation.

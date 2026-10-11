@@ -1,5 +1,15 @@
 # Status
 
+## First physical remote pilot — 2026-10-10
+
+Tene-MacBook-Air successfully built the signed app and buffered 25 Sony files.
+An isolated manual SSH pilot through `jump-mimir`/fenrir delivered 25 unique
+recordings (121,418,203 bytes). Server-side sizes, SHA-256 and SQLite integrity
+passed; all 25 receipts completed. Pilot receiver stopped; audio retained.
+Production was unchanged. Automatic SSH lifecycle, signed-app transfer,
+reboot/login recovery, second-Mac acceptance and retention decisions remain.
+See `docs/remote-acceptance.md`; earlier pending-host statements are historical.
+
 ## Remote ingestion implementation — 2026-10-09
 
 Feature branch `feature/remote-sony-ingestion` implements LGB-044 through LGB-047.

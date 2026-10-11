@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Added
 
+- Verified the first traveling MacBook's signed recorder read and isolated SSH
+  upload pilot: 25 recordings, matching server checksums, no incomplete uploads.
 - Recorded an isolated real-HTTP remote ingestion pilot: two offline agent
   processes recovered into one verified central job, with both buffers retained.
 - Redacted remote-device, upload and retry status through the existing observer,
