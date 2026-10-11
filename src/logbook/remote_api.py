@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import sqlite3
+from contextlib import closing
 import time
 from hashlib import sha256
 
@@ -60,6 +62,8 @@ def create_ingest_app(config: ServerConfig) -> FastAPI:
 
     @app.middleware('http')
     async def protect(request: Request, call_next):
+        if request.url.path == '/health' and request.method == 'GET':
+            return await call_next(request)
         try:
             request.state.device = await run_in_threadpool(
                 authenticate, request.headers.get('authorization', ''))
@@ -100,6 +104,16 @@ def create_ingest_app(config: ServerConfig) -> FastAPI:
             return meta
         except (TypeError, ValueError, UnicodeError):
             raise IngestError('invalid_metadata') from None
+
+    @app.get('/health')
+    def health():
+        try:
+            config.credentials()
+            with closing(sqlite3.connect(config.ledger_path.as_uri() + '?mode=ro', uri=True)) as db:
+                db.execute('SELECT id FROM recording_jobs LIMIT 1').fetchone()
+            return {'status': 'ok', 'service': 'logbook-ingest'}
+        except (OSError, ValueError, sqlite3.Error):
+            return JSONResponse({'status': 'unavailable', 'service': 'logbook-ingest'}, status_code=503)
 
     @app.post('/ingest/recordings/check')
     async def check(request: Request):

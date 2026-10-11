@@ -1,5 +1,25 @@
 # Remote ingestion acceptance record
 
+## Persistent receiver and newest recording — 2026-10-11
+
+The operator authorized restoration plus bounded supervision and existing-channel
+alarms. Port 18791 now accepts enrolled Mac uploads into the production ledger.
+Job 232 arrived with the expected 3,261,670 bytes and a verified retained hash.
+Transcription and publication were completed via the foreground pipeline because
+background Python cannot currently access Odin's LAN endpoint. The October 11
+inbox note and canonical daily log match vault commit
+`f1c6db2b4ba0b152ec9e0886b59a3bf10925f73e`, confirmed on remote main; graph delivery
+is also complete. No source audio was deleted.
+
+Boot-time service supervision and node-exporter/Prometheus/Grafana monitoring are
+installed. Controlled receiver termination recovered on the next one-minute
+check. Seven alert-rule tests passed, a real exhausted-recovery alert fired, and
+the existing email contact point's test returned `status: ok` at 20:41:19 UTC.
+Unattended transcription remains **not accepted** until background network access
+is corrected and verified. The operator was asked to check Local Network
+permission; no privacy settings were altered. Earlier stopped-pilot statements
+below describe the previous state.
+
 Verified 2026-10-10 on `feature/remote-sony-ingestion`. Implementation covers
 LGB-044 through LGB-047. Production version remains **1.2.3**.
 

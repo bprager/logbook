@@ -1,5 +1,47 @@
 # Status
 
+## Persistent upload recovery and latest recording — 2026-10-11
+
+Production receiver restored on enrolled Mac port 18791, using the existing
+credential hashes, backed-up production ledger and retained `remote-intake`.
+The Mac reported receipt; job 232 (October 11, 12:30, 3,261,670 bytes) arrived.
+Real Odin transcription, log routing, October 11 daily consolidation, vault
+publication and graph synchronization succeeded. Verified both note files against
+vault HEAD and remote main `f1c6db2b4ba0b152ec9e0886b59a3bf10925f73e`; retained audio
+SHA-256 matches. Existing unrelated vault `Home.md` edit was left untouched.
+
+Installed `local.logbook.supervisor` as a boot-time system LaunchDaemon running
+as `bernd`. It owns receiver, status API and periodic queue children, with three
+persisted repair attempts per incident, startup grace, ten-minute healthy reset
+and explicit reset command. Old user jobs are disabled; retention deletion is
+also disabled across login/reboot. OpenClaw services were not changed.
+
+Live receiver stop/recovery passed: PID 76979 was deliberately stopped and a
+replacement answered health checks after the next supervisor pass. State, audit
+history, read-only observer API, curses, web UI and metrics show service status
+and budgets. Node exporter now reads private supervision textfiles; the Logbook
+API stays loopback-only. Prometheus/Grafana rules and Logbook Operations dashboard
+are installed on Odin. Its systemd worker also has a three-start/15-minute limit,
+60-second restart delay and user lingering enabled. Seven Prometheus rule tests
+passed. Existing `home-email` delivery test returned HTTP 200, receiver status
+`ok`, notified at 2026-10-11T20:41:19Z. A real exhausted-recovery alarm fired.
+
+**Remaining blocker:** background Python on mimir cannot reach Odin's LAN API
+(`No route to host`), although foreground Python and a system curl daemon can.
+The new recording was therefore processed through the foreground pipeline.
+No network/privacy controls were bypassed. Asked the user to check Python/Logbook
+Local Network permission on mimir; awaiting that answer. The supervisor keeps
+uploads available and alarms on the failed dependency after bounded recovery.
+Do not claim unattended transcription is verified until service-context access
+and a subsequent processing pass succeed. The remote SSH alias/identity is fixed
+and strict host-key verification retained; existing network privacy settings
+remain unchanged.
+
+Validation: full quality gate passed with 293 tests and 100% changed-line
+coverage; Prometheus rule tests passed. Browser and real curses inspection
+confirmed recovery status, attempt counts and latest job 232 publication.
+No recordings deleted and no release tagged. See `docs/service-recovery.md`.
+
 ## Upload retry and measured watch progress — 2026-10-11
 
 Live Mac watch now initiates an immediate upload pass from retained recordings,

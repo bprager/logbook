@@ -37,6 +37,13 @@ production version remains 1.2.3.
 
 ### Changed
 
+- Add boot-time, unprivileged supervision for the receiver, API and queue worker,
+  with bounded Odin recovery, persistent three-attempt budgets, startup grace,
+  recovery history and explicit resets. Keep cleanup disabled and audio retained.
+- Expose recovery status in observer snapshots, terminal/web watch and metrics;
+  integrate the existing node exporter, Prometheus, Grafana and email alarm route.
+  Include tested rules for exhausted recovery, stopped monitoring and stalled
+  publication, plus a Logbook Operations dashboard.
 - Opening live Mac remote watch retries retained uploads even with Sony unplugged;
   subsequent retries honor persisted backoff and share the scheduled agent's lock.
   The dashboard shows measured upload bytes, receipt waiting and retry countdown.

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from logbook.supervisor import supervision_summary
+
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -71,6 +73,7 @@ def render_curses_frame(
         ),
         _line(f"Latest finished job  {format_observer_timestamp(visible.latest_finished_at)}", body_width),
         _line(_health_line(visible), body_width),
+        _line(supervision_summary(visible.services), body_width),
         _line(_recorder_line(recorder_status), body_width),
         _rule(width, "sep"),
     ]
@@ -132,6 +135,7 @@ def _compact_frame_lines(
     lines.extend([_line(_control_hint(recorder_status), body_width), _rule(width, "bottom")])
 
     optional = [
+        _line(supervision_summary(snapshot.services), body_width),
         _line(f"Latest finished job  {format_observer_timestamp(snapshot.latest_finished_at)}", body_width),
         _line(_recorder_line(recorder_status), body_width),
         _line(_stats_line(snapshot), body_width),

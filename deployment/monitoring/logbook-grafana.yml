@@ -1,0 +1,102 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "Logbook service delivery",
+      "folder": "Logbook",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "logbook-service-delivery",
+          "title": "Logbook service outage",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "datasourceUid": "hermodr-prometheus",
+              "model": {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "hermodr-prometheus"
+                },
+                "expr": "label_replace(ALERTS{alertstate=\"firing\",service=\"logbook\"}, \"source_alert\", \"$1\", \"alertname\", \"(.*)\") or vector(0)",
+                "instant": true,
+                "refId": "A",
+                "intervalMs": 1000,
+                "maxDataPoints": 43200
+              }
+            },
+            {
+              "refId": "B",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "type": "reduce",
+                "expression": "A",
+                "reducer": "last",
+                "refId": "B"
+              }
+            },
+            {
+              "refId": "C",
+              "relativeTimeRange": {
+                "from": 0,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "type": "threshold",
+                "expression": "B",
+                "refId": "C",
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [
+                        0
+                      ],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": [
+                        "C"
+                      ]
+                    },
+                    "reducer": {
+                      "params": [],
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ]
+              }
+            }
+          ],
+          "noDataState": "Alerting",
+          "execErrState": "Alerting",
+          "for": "0s",
+          "annotations": {
+            "summary": "Logbook needs attention: {{ $labels.source_alert }}",
+            "description": "An essential recording service or its recovery monitor is unavailable. Component: {{ $labels.component }}. Open the Logbook operations dashboard for recovery attempts and status.",
+            "action": "Inspect mimir service logs and restore the failing component. Retained audio must not be deleted. Reset an exhausted budget only after fixing the cause."
+          },
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "isPaused": false
+        }
+      ]
+    }
+  ]
+}

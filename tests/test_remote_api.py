@@ -86,3 +86,12 @@ class RemoteApiTests(RemoteStoreFixture, TestCase):
                     response = await client.post('/ingest/uploads', content=slow_body(), headers=self.headers)
                 self.assertEqual(response.status_code, 408)
         asyncio.run(exercise())
+
+    def test_receiver_health_is_path_safe_and_checks_credentials(self):
+        response = self.client.get('/health')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'status': 'ok', 'service': 'logbook-ingest'})
+        self.assertEqual(self.client.post('/health').status_code, 401)
+        self.credentials.write_text('invalid')
+        self.assertEqual(self.client.get('/health').status_code, 503)
+        self.assertNotIn(str(self.root), self.client.get('/health').text)
