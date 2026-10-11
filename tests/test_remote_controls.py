@@ -185,7 +185,8 @@ class RemoteControlsTests(TestCase):
                     patch('logbook.remote_controls.sys.stdout.isatty', return_value=True), \
                     patch('logbook.remote_tui.run_watch') as tui:
                 self.assertEqual(main(['watch', '--config', 'config']), 0)
-                self.assertEqual(tui.call_args.args[0](), {'state': 'not_started'})
+                self.assertEqual(tui.call_args.args[0]()['state'], 'not_started')
+                self.assertIn('upload', tui.call_args.args[0]())
             with patch('logbook.remote_controls.sys.stdin.isatty', return_value=False), \
                     contextlib.redirect_stderr(output):
                 self.assertEqual(main(['watch', '--config', 'config']), 1)

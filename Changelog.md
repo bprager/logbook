@@ -37,6 +37,10 @@ production version remains 1.2.3.
 
 ### Changed
 
+- Opening live Mac remote watch retries retained uploads even with Sony unplugged;
+  subsequent retries honor persisted backoff and share the scheduled agent's lock.
+  The dashboard shows measured upload bytes, receipt waiting and retry countdown.
+  Quitting safely leaves unfinished uploads resumable; `--once` remains read-only.
 - Remote watch supports guarded eject with `e`, with progress and persistent
   result feedback. Removed the separate `scripts/remote-eject` wrapper.
 - Mac buffer history records the last successful and failed activity and displays

@@ -202,3 +202,50 @@ class RemoteAgentTests(TestCase):
         box.snapshot(self.folder)
         meta = json.loads(box.pending(10**12)[0]['metadata'])
         self.assertEqual(meta['recorded_at'], '2026-10-09T08:00:00')
+
+    def test_watch_uploads_without_scanning_and_reports_confirmed_bytes(self):
+        box = Outbox(self.config)
+        box.snapshot(self.folder)
+        row = box.pending(10**12)[0]
+        box.failure(row['checksum'], 'transfer_unavailable', 4_000_000_000)
+        box.close()
+        progress = []
+        def respond(request):
+            if request.method == 'PUT':
+                return httpx.Response(200, json={'offset': 10})
+            if request.url.path.endswith('/complete'):
+                return httpx.Response(200, json={'state': 'present', 'receipt_id': 'r1'})
+            return httpx.Response(200, json={'state': 'uploading', 'upload_id': 'abc', 'offset': 4})
+        with httpx.Client(base_url='http://test', transport=httpx.MockTransport(respond)) as client, \
+                patch('logbook.remote_agent.validate_volume') as scan:
+            result = run_agent(self.config, client=client, scan=False, force=True,
+                               progress=progress.append)
+        scan.assert_not_called()
+        self.assertEqual(result['pending_bytes'], 0)
+        self.assertEqual([(p['done'], p['total']) for p in progress
+                          if p['stage'] == 'Uploading'], [(4, 10), (10, 10)])
+        self.assertIn('Waiting for receipt', [p['stage'] for p in progress])
+        self.assertEqual(progress[-1]['stage'], 'All buffered recordings received')
+        self.assertTrue(self.audio.exists())
+
+    def test_watch_respects_backoff_after_initial_attempt_and_can_cancel(self):
+        from logbook.remote_agent import UploadCancelled
+        box = Outbox(self.config)
+        box.snapshot(self.folder)
+        row = box.pending(10**12)[0]
+        box.failure(row['checksum'], 'transfer_unavailable', 4_000_000_000)
+        box.close()
+        progress = []
+        with patch('logbook.remote_agent.httpx.Client') as client:
+            run_agent(self.config, scan=False, progress=progress.append)
+        client.assert_not_called()
+        self.assertEqual(progress[-1]['stage'], 'Waiting for retry')
+        self.assertIn('next_attempt', progress[-1])
+        def cancel(event):
+            raise UploadCancelled()
+        with httpx.Client(base_url='http://test') as client:
+            with self.assertRaises(UploadCancelled):
+                run_agent(self.config, client=client, scan=False, force=True, progress=cancel)
+        box = Outbox(self.config)
+        self.addCleanup(box.close)
+        self.assertEqual(box.pending(10**12)[0]['retries'], 1)

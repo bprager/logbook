@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import curses
 import sqlite3
+import time
 from datetime import datetime
 
 
@@ -37,10 +38,27 @@ def render_status(status, width, height):
         lines[4] = 'No recordings buffered yet'
     elif status.get('state') == 'unavailable':
         lines[4:7] = ['Buffer unavailable; retrying automatically.', '', '']
+    if status.get('upload'):
+        lines[7:8] = _upload_lines(status['upload'])
     if status.get('message'):
         lines[2] = status['message']
     # Reserve the last line for controls, even in a very small terminal.
     return [line[:width] for line in lines[:height - 1] + ['[q] quit | [e] eject | [r] refresh | Esc / Ctrl-C']]
+
+
+def _upload_lines(upload):
+    stage = upload['stage']
+    if stage in ('Uploading', 'Waiting for receipt'):
+        done, total = upload['done'], upload['total']
+        fraction = min(1, max(0, done / total)) if total else 0
+        filled = int(20 * fraction)
+        return [stage + ' | current recording (measured)',
+                '[' + '#' * filled + '-' * (20 - filled) +
+                f'] {fraction:.0%} | {done:,}/{total:,} bytes confirmed']
+    if upload.get('next_attempt') is not None:
+        seconds = max(0, int(upload['next_attempt'] - time.time()))
+        stage += f' | next attempt in {seconds}s'
+    return [stage, '']
 
 
 def _activity_text(activity):

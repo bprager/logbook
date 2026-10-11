@@ -1,5 +1,28 @@
 # Status
 
+## Upload retry and measured watch progress — 2026-10-11
+
+Live Mac watch now initiates an immediate upload pass from retained recordings,
+without scanning or requiring Sony. Later passes honor the persisted retry times;
+the shared agent lock prevents overlapping uploads/eject. Scheduled launchd
+uploads already run independently of recorder connection. `--once` remains
+read-only, and mimir production watch behavior is unchanged.
+
+The background worker reports server-confirmed bytes per recording, connecting,
+receipt waiting, lock contention, and retry countdown. Quit stops at request
+boundaries without waiting for a slow network; retained files and server offsets
+support resumption. No source audio deleted, services changed, or release tagged.
+
+Verification: 278 tests passed through the full quality gate, 99% feature-branch
+changed-line coverage; upload-watch, remote controls, and remote TUI at 100%.
+A real curses terminal with an isolated simulated receiver displayed 22%, 44%,
+78%, 100%/waiting for receipt, then one received recording and its success time.
+Sony mount was absent, source remained intact, and q restored the terminal.
+Tests cover resume offsets, immediate retry overriding prior backoff, later
+backoff, concurrent uploader lock, missing buffer, and quitting during a request.
+This validates watch behavior; it does not verify a new production transfer from
+the MacBook or install the previously deferred persistent receiver.
+
 ## Watch eject and activity history — 2026-10-11
 
 Remote curses watch now binds `e` to the existing volume/checksum/agent-lock

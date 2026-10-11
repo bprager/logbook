@@ -186,8 +186,13 @@ class Outbox:
                 'storage_pressure': shutil.disk_usage(self.spool).free < self.config.reserve_bytes}
 
 
-def transfer(box, row, client):
+class UploadCancelled(Exception):
+    """Stop at a request boundary; the retained upload can resume later."""
+
+
+def transfer(box, row, client, progress=lambda event: None):
     meta = json.loads(row['metadata'])
+    progress({'stage': 'Connecting', 'done': 0, 'total': meta['size']})
     # Allocation is also the reconciliation query after a lost response.
     response = client.post('/ingest/uploads', json=meta)
     response.raise_for_status()
@@ -204,6 +209,7 @@ def transfer(box, row, client):
     audio = box.spool / row['checksum'] / 'audio.mp3'
     if audio.stat().st_size != meta['size'] or sha256_file(audio) != meta['sha256']:
         raise ValueError('spool_corruption')
+    progress({'stage': 'Uploading', 'done': offset, 'total': meta['size']})
     with audio.open('rb') as stream:
         stream.seek(offset)
         while chunk := stream.read(box.config.chunk_bytes):
@@ -214,48 +220,62 @@ def transfer(box, row, client):
             offset += len(chunk)
             if response.json().get('offset') != offset:
                 raise ValueError('invalid_offset')
+            progress({'stage': 'Uploading', 'done': offset, 'total': meta['size']})
+    progress({'stage': 'Waiting for receipt', 'done': offset, 'total': meta['size']})
     response = client.post('/ingest/uploads/' + upload_id + '/complete')
     response.raise_for_status()
     box.acknowledge(row['checksum'], response.json())
 
 
-def run_agent(config: AgentConfig, *, client=None, now=None):
+def run_agent(config: AgentConfig, *, client=None, now=None, scan=True, force=False,
+              progress=lambda event: None):
     config.validate()
     config.root.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (config.root / 'agent.lock').open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
+            progress({'stage': 'Uploader busy; waiting for its lock'})
             return {'busy': True}
         box = Outbox(config)
         owned_client = client is None
-        client = client or httpx.Client(base_url=config.server_url, timeout=30, follow_redirects=False,
-                                        trust_env=False,
-                                        headers={'Authorization': 'Bearer ' + read_secret(config.token_file)})
         try:
-            try:
-                box.snapshot(validate_volume(config))
-                scan_failure = ''
-            except PermissionError:
-                scan_failure = 'recorder_access_denied'
-            except (OSError, ValueError, subprocess.SubprocessError):
-                scan_failure = 'recorder_or_storage_unavailable'
-            for row in box.pending(time.time() if now is None else now):
+            scan_failure = None
+            if scan:
                 try:
-                    transfer(box, row, client)
-                except httpx.HTTPStatusError as error:
-                    code = 'authentication' if error.response.status_code in (401, 403) else 'server'
-                    box.failure(row['checksum'], code, time.time() if now is None else now)
-                except (httpx.HTTPError, OSError, ValueError, KeyError):
-                    box.failure(row['checksum'], 'transfer_unavailable',
-                                time.time() if now is None else now)
+                    box.snapshot(validate_volume(config))
+                    scan_failure = ''
+                except PermissionError:
+                    scan_failure = 'recorder_access_denied'
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    scan_failure = 'recorder_or_storage_unavailable'
+            rows = box.pending(float('inf') if force else time.time() if now is None else now)
+            if rows or scan:
+                client = client or httpx.Client(
+                    base_url=config.server_url, timeout=30, follow_redirects=False,
+                    trust_env=False,
+                    headers={'Authorization': 'Bearer ' + read_secret(config.token_file)})
+                for row in rows:
+                    try:
+                        transfer(box, row, client, progress=progress)
+                    except httpx.HTTPStatusError as error:
+                        code = 'authentication' if error.response.status_code in (401, 403) else 'server'
+                        box.failure(row['checksum'], code, time.time() if now is None else now)
+                    except (httpx.HTTPError, OSError, ValueError, KeyError):
+                        box.failure(row['checksum'], 'transfer_unavailable',
+                                    time.time() if now is None else now)
             status = box.status(scan_failure)
-            try:
-                client.post('/ingest/status', json=status).raise_for_status()
-            except httpx.HTTPError:
-                pass  # persisted locally; next scheduled run reports again
+            next_attempt = box.db.execute(
+                'SELECT min(next_attempt) FROM outbox WHERE receipt IS NULL').fetchone()[0]
+            progress({'stage': 'Waiting for retry' if next_attempt is not None
+                      else 'All buffered recordings received', 'next_attempt': next_attempt})
+            if client is not None:
+                try:
+                    client.post('/ingest/status', json=status).raise_for_status()
+                except httpx.HTTPError:
+                    pass  # persisted locally; next scheduled run reports again
             return status
         finally:
             box.close()
-            if owned_client:
+            if owned_client and client is not None:
                 client.close()

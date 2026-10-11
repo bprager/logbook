@@ -100,3 +100,18 @@ class RemoteTuiTests(TestCase):
                 run_watch(lambda: {}, ejector=ejector)
             if ejector:
                 ejector.assert_called_once()
+
+    def test_measured_upload_bar_receipt_wait_and_retry_delay(self):
+        status = {'upload': {'stage': 'Uploading', 'done': 25, 'total': 100}}
+        text = '\n'.join(render_status(status, 100, 30))
+        self.assertIn('[#####---------------] 25%', text)
+        self.assertIn('25/100 bytes confirmed', text)
+        self.assertIn('measured', text)
+        for stage in ('Connecting', 'Waiting for receipt'):
+            status['upload']['stage'] = stage
+            self.assertIn(stage, '\n'.join(render_status(status, 100, 30)))
+        status['upload'] = {'stage': 'Waiting for retry', 'next_attempt': 130}
+        with patch('logbook.remote_tui.time.time', return_value=100):
+            self.assertIn('next attempt in 30s', '\n'.join(render_status(status, 100, 30)))
+        status['upload'] = {'stage': 'Uploading', 'done': 0, 'total': 0}
+        self.assertIn('0%', '\n'.join(render_status(status, 100, 30)))

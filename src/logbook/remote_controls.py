@@ -37,21 +37,30 @@ def read_status(config):
 
 
 def watch(config, once=False, ui='curses'):
-    if not once and ui == 'curses':
-        if not sys.stdin.isatty() or not sys.stdout.isatty():
-            raise ValueError('Interactive terminal required; use --once or --ui compact.')
-        from logbook.remote_tui import run_watch
-        return run_watch(lambda: read_status(config), ejector=lambda: watch_eject(config))
-    try:
-        while True:
-            status = read_status(config)
-            detail = ' | '.join(f'{key.replace("_", " ")}: {value}' for key, value in status.items())
-            print(datetime.now().isoformat(timespec='seconds'), detail, flush=True)
-            if once:
-                return
-            time.sleep(2)
-    except KeyboardInterrupt:
+    from logbook.remote_upload_watch import WatchUploads
+
+    if once:
+        _print_status(read_status(config))
         return
+    if ui == 'curses' and (not sys.stdin.isatty() or not sys.stdout.isatty()):
+        raise ValueError('Interactive terminal required; use --once or --ui compact.')
+    with WatchUploads(config) as uploads:
+        def status():
+            return {**read_status(config), 'upload': uploads.snapshot()}
+        if ui == 'curses':
+            from logbook.remote_tui import run_watch
+            return run_watch(status, ejector=lambda: watch_eject(config))
+        try:
+            while True:
+                _print_status(status())
+                time.sleep(2)
+        except KeyboardInterrupt:
+            return
+
+
+def _print_status(status):
+    detail = ' | '.join(f'{key.replace("_", " ")}: {value}' for key, value in status.items())
+    print(datetime.now().isoformat(timespec='seconds'), detail, flush=True)
 
 
 def _sources(folder):
@@ -98,7 +107,7 @@ def watch_eject(config):
         ok, message = False, 'Eject blocked: verify recorder identity and complete local copies.'
     except (OSError, sqlite3.Error, subprocess.SubprocessError):
         ok, message = False, 'Eject blocked: recorder or storage unavailable; check access and retry.'
-    # Persist only operator-triggered activity; normal watch stays read-only.
+    # Persist the outcome of this explicit operator action.
     try:
         with closing(sqlite3.connect((config.root / 'outbox.sqlite').resolve().as_uri() + '?mode=rw', uri=True)) as db:
             with db:

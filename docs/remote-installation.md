@@ -324,7 +324,8 @@ central receipts, waiting files/bytes, retries and the last scan result. Receive
 means durable receiver receipt, **not** completed transcription or publication.
 Last scan is historical; `recorder_or_storage_unavailable` is expected after
 unplugging and is not proof of a failed upload. Watch accesses the recorder only
-when you explicitly press `e`; it never starts transfers. An empty queue does not
+when you explicitly press `e`. Live watch also starts buffered uploads without
+requiring the recorder to be connected. An empty queue does not
 by itself prove all Sony files have been copied; use guarded eject for that check.
 
 Eject validates the configured USB volume UUID and verifies every visible MP3 in
@@ -358,6 +359,26 @@ signed pilot still uses `~/Applications/LogbookRemote/source`, update that check
 with `git -C ~/Applications/LogbookRemote/source pull --ff-only` in addition to
 your watch checkout. Its next scheduled run loads the updated source; no signed
 app rebuild is needed for this Python-only change.
+
+### Uploads while watching
+
+Opening live Mac watch immediately retries retained pending recordings, including
+those waiting on an earlier retry delay. Subsequent attempts follow the persisted
+30-second to one-hour backoff. The installed scheduled agent already retries
+without the Sony connected; live watch adds another opportunity to deliver.
+Both uploaders share the same lock, so watch waits when the agent is busy.
+
+The dashboard shows connecting, a **measured** per-recording progress bar using
+server-confirmed bytes (including resumed bytes), waiting for a durable receipt,
+and a countdown before retry. Sending 100% of bytes is not yet a receipt. Recent
+successful and failed activity dates remain visible. The dashboard stays
+responsive while uploading; eject may ask you to wait for an active upload.
+
+Quitting stops new upload requests at the next request boundary. An in-flight
+request may finish; retained audio and server offsets allow the next attempt to
+resume safely. `--once` stays observation-only. Live `--ui compact` also uploads.
+Watch does not copy new Sony files; the installed agent handles that step.
+Mimir's production watch continues to observe transcription and publication.
 
 ### The same watch command on mimir and the MacBook
 

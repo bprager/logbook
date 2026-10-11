@@ -17,12 +17,12 @@ for arg in "$@"; do
 Usage: scripts/remote-watch [--once] [--env FILE | --config FILE]
 
 On mimir: watches transcription and Obsidian publication using the checkout .env.
-On a MacBook: watches the local recording buffer and upload receipts.
+On a MacBook: retries buffered uploads and watches delivery, even with Sony unplugged.
 A receipt confirms delivery, not transcription or publication.
 
 Selection: explicit --env/--config, then LOGBOOK_REMOTE_CONFIG, then the existing
 ~/Library/Application Support/LogbookRemotePilot/remote-agent.json, then .env.
-Live watch uses curses on both machines. Press e to eject safely.
+Live watch uses curses with upload progress on the MacBook. Press e to eject safely.
 Quit with q, Escape or Ctrl-C. Recent activity times appear when recorded.
 --once prints one snapshot; --ui compact explicitly selects scrolling output.
 Additional options are passed to the selected watcher.
