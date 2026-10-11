@@ -30,6 +30,8 @@ Existing `StartOnMount` runner, SQLite checksum job ledger, `process-mounted-rec
 
 ## Remote operator controls
 
+Remote app updates explicitly select the native hardware compiler architecture,
+then compile and verify signatures in a staging directory before replacement.
 The signed remote app uses `LSUIElement` so scheduled runs do not appear in the
 Dock. Keep mount/login events plus the one-minute retry schedule: upload recovery
 must continue after the recorder is removed. Read-only watch opens the local

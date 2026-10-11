@@ -287,13 +287,13 @@ def _render_mount_runner_app(
     )
 
 
-def _write_app_bundle(app: LaunchdAppBundle) -> None:
+def _write_app_bundle(app: LaunchdAppBundle, *, compiler: tuple[str, ...] = ("cc",)) -> None:
     app.executable_path.parent.mkdir(parents=True, exist_ok=True)
     app.source_path.parent.mkdir(parents=True, exist_ok=True)
     app.info_plist_path.write_text(app.info_plist_content, encoding="utf-8")
     app.source_path.write_text(app.source_content, encoding="utf-8")
     completed = subprocess.run(
-        ["cc", str(app.source_path), "-o", str(app.executable_path)],
+        [*compiler, str(app.source_path), "-o", str(app.executable_path)],
         text=True,
         capture_output=True,
         check=False,

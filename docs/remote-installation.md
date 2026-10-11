@@ -301,7 +301,14 @@ git pull --ff-only && .venv/bin/python -m pip install .
 scripts/update-remote-pilot 133E889C676E45CE7E7EB6CFC6E020DD0280DB24
 ```
 
-The helper rebuilds and signs the app at the existing installed path. Its signing
+The helper rebuilds and signs the app at the existing installed path.
+The build selects the hardware's native compiler architecture, including when
+launched from an Intel/Rosetta shell on Apple Silicon. No developer-tools
+reinstallation or signing-certificate replacement is needed for that mismatch.
+Compilation and signing happen in a separate staging directory; a failure leaves
+the installed app unchanged. A failed replacement restores the previous app.
+If an earlier updater failed with `libxcrun` / `missing compatible architecture`,
+pull and reinstall the latest code and rerun the same helper to repair the package. Its signing
 identity, settings, tokens, buffers and launch schedule stay the same. It does
 not activate production processing or change installed services. For another Mac,
 pass that Mac's own signing identity. Do not hand-edit a signed Info.plist.

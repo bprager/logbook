@@ -6,6 +6,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
 from logbook.launchd import _render_mount_runner_app, _write_app_bundle
@@ -29,10 +30,7 @@ def write_agent_package(config: AgentConfig, config_path: Path, output: Path,
     info = plistlib.loads(app.info_plist_content.encode())
     info['LSUIElement'] = True
     app = replace(app, info_plist_content=plistlib.dumps(info).decode())
-    _write_app_bundle(app)
-    subprocess.run(['/usr/bin/codesign', '--force', '--sign', signing_identity,
-                    '--identifier', 'ws.prager.logbook.remote-agent', str(app.bundle_path)], check=True)
-    subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(app.bundle_path)], check=True)
+    _write_signed_app(app, signing_identity)
     path = output / 'local.logbook.remote-agent.plist'
     path.write_bytes(plistlib.dumps({
         'Label': 'local.logbook.remote-agent',
@@ -46,6 +44,36 @@ def write_agent_package(config: AgentConfig, config_path: Path, output: Path,
     if config.ssh_host:
         paths += (write_tunnel_package(config, output),)
     return paths
+
+
+def native_compiler():
+    if sys.platform != 'darwin':
+        return ('cc',)
+    # Hardware capability remains visible even from an Intel/Rosetta shell.
+    result = subprocess.run(['/usr/sbin/sysctl', '-n', 'hw.optional.arm64'],
+                            capture_output=True, text=True, check=False, timeout=10)
+    architecture = '-arm64' if result.returncode == 0 and result.stdout.strip() == '1' else '-x86_64'
+    return ('/usr/bin/arch', architecture, '/usr/bin/cc')
+
+
+def _write_signed_app(app, signing_identity):
+    app.bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix='.remote-build-', dir=app.bundle_path.parent) as tmp:
+        staged = replace(app, bundle_path=Path(tmp) / app.bundle_path.name)
+        _write_app_bundle(staged, compiler=native_compiler())
+        subprocess.run(['/usr/bin/codesign', '--force', '--sign', signing_identity,
+                        '--identifier', 'ws.prager.logbook.remote-agent', str(staged.bundle_path)], check=True)
+        subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(staged.bundle_path)], check=True)
+        # Compilation and signature failures must not damage the installed app.
+        previous = Path(tmp) / 'previous.app'
+        if app.bundle_path.exists():
+            app.bundle_path.rename(previous)
+        try:
+            staged.bundle_path.rename(app.bundle_path)
+        except OSError:
+            if previous.exists():
+                previous.rename(app.bundle_path)
+            raise
 
 
 def write_tunnel_package(config: AgentConfig, output: Path):

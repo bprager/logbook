@@ -199,3 +199,18 @@ passes 246 tests with 99% feature-branch changed-line coverage; the new controls
 module has 100% statement and branch coverage.
 
 Production transcription/publication remains paused until the user returns.
+
+### Native compiler recovery — 2026-10-10
+
+The traveling Mac reported `libxcrun` containing arm64/arm64e while the compiler
+requested x86_64. Remote builds now query hardware capability and invoke the
+system compiler through an explicit native `arch` selection. On mimir, native
+arm64 compiler execution, generated app compilation, signing and strict signature
+verification pass. Intel and non-macOS selection paths are covered by unit tests;
+the complete original Rosetta failure cannot be reproduced on this host.
+
+Regression tests inject the reported compile failure and verify the existing
+bundle remains unchanged. Signing, signature verification and replacement failures
+also preserve the old bundle. The full quality gate passes 249 tests with 99%
+feature-branch changed-line coverage. The traveling Mac must retry its update to
+confirm recovery there; production publication remains paused.

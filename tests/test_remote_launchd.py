@@ -13,6 +13,74 @@ from logbook.launchd import _render_mount_runner_app, _write_app_bundle
 
 
 class RemoteLaunchdTests(TestCase):
+    def test_remote_compiler_uses_hardware_architecture(self):
+        from logbook.remote_launchd import native_compiler
+        with patch('logbook.remote_launchd.sys.platform', 'darwin'), \
+                patch('logbook.remote_launchd.subprocess.run') as run:
+            run.return_value = subprocess.CompletedProcess([], 0, '1\n', '')
+            self.assertEqual(native_compiler(), ('/usr/bin/arch', '-arm64', '/usr/bin/cc'))
+            run.assert_called_once_with(['/usr/sbin/sysctl', '-n', 'hw.optional.arm64'],
+                                        capture_output=True, text=True, check=False, timeout=10)
+            run.return_value = subprocess.CompletedProcess([], 0, '0\n', '')
+            self.assertEqual(native_compiler(), ('/usr/bin/arch', '-x86_64', '/usr/bin/cc'))
+            run.return_value = subprocess.CompletedProcess([], 1, '', 'unknown oid')
+            self.assertEqual(native_compiler(), ('/usr/bin/arch', '-x86_64', '/usr/bin/cc'))
+        with patch('logbook.remote_launchd.sys.platform', 'linux'):
+            self.assertEqual(native_compiler(), ('cc',))
+
+    def test_failed_remote_compile_preserves_installed_bundle(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = AgentConfig(root / 'buffer', root / 'SONY', 'SONY', 'uuid',
+                                 'REC_FILE/FOLDER01', 'UTC', 'https://mimir', root / 'token')
+            bundle = root / 'package' / 'LogbookRemoteAgent.app'
+            info = bundle / 'Contents' / 'Info.plist'
+            info.parent.mkdir(parents=True)
+            info.write_bytes(b'previous signed bundle')
+            with patch('logbook.remote_launchd.native_compiler', return_value=('cc',)), \
+                    patch('logbook.launchd.subprocess.run', return_value=subprocess.CompletedProcess(
+                        [], 1, '', "xcrun: libxcrun missing compatible architecture (need x86_64)")):
+                with self.assertRaisesRegex(RuntimeError, 'missing compatible architecture'):
+                    write_agent_package(config, root / 'config.json', root / 'package',
+                                        Path.cwd(), 'Logbook Local Signing')
+            self.assertEqual(info.read_bytes(), b'previous signed bundle')
+            self.assertEqual(list((root / 'package').iterdir()), [bundle])
+
+    def test_failed_signing_or_install_preserves_previous_bundle(self):
+        for failure in ('sign', 'verify', 'replace', 'first_install'):
+            with self.subTest(failure=failure), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config = AgentConfig(root / 'buffer', root / 'SONY', 'SONY', 'uuid',
+                                     'REC_FILE/FOLDER01', 'UTC', 'https://mimir', root / 'token')
+                bundle = root / 'package' / 'LogbookRemoteAgent.app'
+                if failure != 'first_install':
+                    bundle.mkdir(parents=True)
+                    (bundle / 'old').write_text('signed original')
+                def build(app, **kwargs):
+                    self.assertEqual(kwargs['compiler'], ('native-cc',))
+                    app.bundle_path.mkdir(parents=True)
+                def signing(command, **kwargs):
+                    if ((failure == 'sign' and '--sign' in command) or
+                            (failure == 'verify' and '--verify' in command)):
+                        raise subprocess.CalledProcessError(1, command)
+                    return subprocess.CompletedProcess(command, 0)
+                original_rename = Path.rename
+                def rename(path, destination):
+                    if path.name == 'LogbookRemoteAgent.app' and path.parent.name.startswith('.remote-build-'):
+                        raise OSError('simulated replacement failure')
+                    return original_rename(path, destination)
+                with patch('logbook.remote_launchd.native_compiler', return_value=('native-cc',)), \
+                        patch('logbook.remote_launchd._write_app_bundle', side_effect=build), \
+                        patch('logbook.remote_launchd.subprocess.run', side_effect=signing), \
+                        patch.object(Path, 'rename', rename):
+                    with self.assertRaises((OSError, subprocess.CalledProcessError)):
+                        write_agent_package(config, root / 'config.json', root / 'package',
+                                            Path.cwd(), 'Logbook Local Signing')
+                if failure == 'first_install':
+                    self.assertFalse(bundle.exists())
+                else:
+                    self.assertEqual((bundle / 'old').read_text(), 'signed original')
+
     def test_tunnel_is_loopback_only_and_restarts_without_prompts(self):
         from logbook.remote_launchd import write_tunnel_package
         with TemporaryDirectory() as tmp:

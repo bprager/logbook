@@ -23,6 +23,10 @@ production version remains 1.2.3.
 
 ### Changed
 
+- Remote app builds select the native Mac compiler architecture explicitly, fixing
+  Intel-shell/Apple-Silicon tool mismatches. Compile and verify the signed app in
+  a staging directory before replacing an existing package.
+
 - Remote Mac agent runs without a Dock icon while retaining mount/login triggers
   and automatic offline retries. Existing signed packages need rebuilding.
 
