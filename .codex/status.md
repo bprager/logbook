@@ -1,5 +1,13 @@
 # Status
 
+## First Mac automatic fresh-recording check — 2026-10-10
+
+After the operator recorded a new test and reconnected Sony, the managed pilot
+automatically advanced from 25 to 26 unique recordings. All 26 server-side
+sizes/checksums and ledger integrity passed; no pending uploads or device errors.
+No production processing or deletion. Offline/unplugged recovery and login/reboot
+remain the next physical checks, followed by second-Mac acceptance.
+
 ## Automatic SSH packaging — 2026-10-10
 
 Optional `ssh_host`/`ssh_remote_port` settings generate a dedicated tunnel

@@ -75,6 +75,19 @@ The ledger remained at 25 recordings with no unfinished uploads. This verifies
 initial managed-tunnel/signed-app execution, not yet network-change or reboot
 recovery. Fresh recording/mount acceptance remains to be exercised.
 
+### Fresh recording reconnect — 2026-10-10 (Pacific)
+
+The operator safely disconnected Sony, made a new test recording and reconnected
+it to Tene-MacBook-Air without running an ingestion command. The managed pilot
+reported at 2026-10-11 01:29:39 UTC. The isolated ledger increased from 25 to 26
+unique recordings and completed receipts, with no unfinished uploads. The new
+recording was 426,653 bytes; server-side verification checked sizes and SHA-256
+for all 26 files and SQLite integrity passed. Device pending bytes/retries were
+zero, failure null and storage pressure false. All audio remained in the isolated
+pilot at copied state. This proves automatic reconnect ingestion through the
+signed app and managed SSH tunnel; it does not distinguish the mount trigger
+from the independent minute schedule.
+
 ### Automatic SSH lifecycle — 2026-10-10
 
 Optional SSH configuration and a separately generated tunnel LaunchAgent are
