@@ -64,6 +64,17 @@ reviewer reran focused recovery tests and confirmed that fix.
 
 ## Physical acceptance progress
 
+### First Mac automatic pilot activation — 2026-10-10 (Pacific)
+
+The operator ran the short pilot installer on Tene-MacBook-Air and reported
+successful bootstrap of both `local.logbook.remote-tunnel` and
+`local.logbook.remote-agent`. The isolated receiver observed a new authenticated
+status at 2026-10-11 01:21:41 UTC, following the earlier manual report. Pending
+bytes and retries were zero, failure was null, and storage pressure was false.
+The ledger remained at 25 recordings with no unfinished uploads. This verifies
+initial managed-tunnel/signed-app execution, not yet network-change or reboot
+recovery. Fresh recording/mount acceptance remains to be exercised.
+
 ### Automatic SSH lifecycle — 2026-10-10
 
 Optional SSH configuration and a separately generated tunnel LaunchAgent are
