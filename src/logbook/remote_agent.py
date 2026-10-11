@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -41,6 +41,13 @@ def validate_volume(config: AgentConfig):
 
 def _signature(stat):
     return stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+def record_activity(db, outcome, activity, now=None):
+    timestamp = datetime.fromtimestamp(time.time() if now is None else now, timezone.utc)
+    db.execute('INSERT OR REPLACE INTO agent_status VALUES (?,?)',
+               ('last_' + outcome, json.dumps({'at': timestamp.isoformat(timespec='seconds'),
+                                               'activity': activity})))
 
 
 class Outbox:
@@ -86,8 +93,10 @@ class Outbox:
 
     def _register(self, meta):
         with self.db:
-            self.db.execute('INSERT OR IGNORE INTO outbox(checksum,metadata) VALUES (?,?)',
-                            (meta.sha256, json.dumps(asdict(meta))))
+            inserted = self.db.execute('INSERT OR IGNORE INTO outbox(checksum,metadata) VALUES (?,?)',
+                                       (meta.sha256, json.dumps(asdict(meta))))
+            if inserted.rowcount:
+                record_activity(self.db, 'success', 'Recording buffered')
 
     def snapshot(self, folder):
         for source in sorted(folder.iterdir()):
@@ -146,21 +155,28 @@ class Outbox:
 
     def failure(self, checksum, code, now):
         with self.db:
-            self.db.execute('UPDATE outbox SET retries=retries+1, failure=?, '
+            updated = self.db.execute('UPDATE outbox SET retries=retries+1, failure=?, '
                             'next_attempt=? + min(3600, 30 * (1 << min(retries,7))) '
-                            'WHERE checksum=?', (code, now, checksum))
+                            'WHERE checksum=? AND receipt IS NULL', (code, now, checksum))
+            if updated.rowcount:
+                record_activity(self.db, 'failure', 'Upload: ' + code, now)
 
     def acknowledge(self, checksum, receipt):
         if receipt.get('state') != 'present' or not isinstance(receipt.get('receipt_id'), str):
             raise ValueError('invalid_receipt')
         with self.db:
-            self.db.execute('UPDATE outbox SET receipt=?,failure=NULL WHERE checksum=?',
+            updated = self.db.execute('UPDATE outbox SET receipt=?,failure=NULL '
+                            'WHERE checksum=? AND receipt IS NULL',
                             (receipt['receipt_id'], checksum))
+            if updated.rowcount:
+                record_activity(self.db, 'success', 'Upload received')
 
     def status(self, failure=None):
         if failure is not None:
             with self.db:
                 self.db.execute("INSERT OR REPLACE INTO agent_status VALUES ('scan',?)", (failure,))
+                if failure:
+                    record_activity(self.db, 'failure', 'Recorder scan: ' + failure)
         rows = self.db.execute('SELECT * FROM outbox WHERE receipt IS NULL').fetchall()
         scan = self.db.execute("SELECT value FROM agent_status WHERE key='scan'").fetchone()
         return {'pending_bytes': sum(json.loads(row['metadata'])['size'] for row in rows),

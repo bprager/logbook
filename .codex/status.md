@@ -1,5 +1,24 @@
 # Status
 
+## Watch eject and activity history — 2026-10-11
+
+Remote curses watch now binds `e` to the existing volume/checksum/agent-lock
+guarded eject. Displays verification progress and persistent result feedback;
+diskutil output is captured so it cannot corrupt the screen. Removed the separate
+`scripts/remote-eject` wrapper; the low-level CLI command remains. Mimir keeps its
+existing dashboard eject control and dated recent-job/failure display.
+
+Mac `agent_status` now retains last-success/last-failure timestamps for new
+snapshots, upload receipts/failures, scan failures and watch eject outcomes.
+Display uses local timezone; legacy absent timestamps remain unknown. Read-only
+refresh never migrates or writes the buffer, and repeated snapshots/receipts do
+not fabricate new successful activity. No recording deletion or service changes.
+Full quality gate passed: 271 tests, 99% feature-branch changed-line coverage,
+100% coverage of remote dashboard/controls. Real-terminal verification showed
+the activity date/time and guarded refusal feedback. Successful physical eject
+was simulated; no live recorder was ejected. Update the actual uploader checkout
+as well as a separate watch checkout to begin collecting activity times.
+
 ## Curses remote watch — 2026-10-11
 
 Live `scripts/remote-watch` now defaults to curses on both mimir and the Mac

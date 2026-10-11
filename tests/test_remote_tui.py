@@ -63,3 +63,40 @@ class RemoteTuiTests(TestCase):
         with patch('logbook.remote_tui.curses.wrapper', side_effect=curses.error):
             with self.assertRaisesRegex(ValueError, '--once'):
                 run_watch(lambda: {})
+
+    def test_eject_key_displays_progress_and_persistent_outcome(self):
+        for outcome in [(True, 'Recorder ejected'), (False, 'Eject blocked: busy')]:
+            screen = Mock()
+            screen.getmaxyx.return_value = (24, 80)
+            screen.getch.side_effect = [ord('e'), -1, ord('q')]
+            ejector = Mock(return_value=outcome)
+            with patch('logbook.remote_tui.curses.wrapper', side_effect=lambda fn: fn(screen)), \
+                 patch('logbook.remote_tui.curses.curs_set'):
+                run_watch(lambda: {'state': 'not_started'}, ejector=ejector)
+            ejector.assert_called_once()
+            drawn = str(screen.addnstr.call_args_list)
+            self.assertIn('Verifying', drawn)
+            self.assertIn(outcome[1], drawn)
+            self.assertIn('[e] eject', drawn)
+
+    def test_activity_dates_are_local_and_missing_dates_are_explicit(self):
+        text = '\n'.join(render_status({'last_success': {'at':'2026-10-11T19:00:00+00:00',
+            'activity':'Upload received'}, 'last_failure': {'at':'2026-10-11T18:00:00+00:00',
+            'activity':'Upload: transfer_unavailable'}}, 100, 30))
+        self.assertIn('2026-10-11', text)
+        self.assertIn('Upload received', text)
+        self.assertIn('Last success', text)
+        self.assertIn('Last failure', text)
+        self.assertIn('Not recorded', '\n'.join(render_status({}, 100, 30)))
+
+    def test_eject_without_callback_and_resize_during_progress(self):
+        for ejector in (None, Mock(return_value=(True, 'Ejected'))):
+            screen = Mock()
+            screen.getmaxyx.return_value = (2, 8)
+            screen.getch.side_effect = [ord('e'), ord('q')]
+            screen.addnstr.side_effect = curses.error('resize')
+            with patch('logbook.remote_tui.curses.wrapper', side_effect=lambda fn: fn(screen)), \
+                 patch('logbook.remote_tui.curses.curs_set'):
+                run_watch(lambda: {}, ejector=ejector)
+            if ejector:
+                ejector.assert_called_once()

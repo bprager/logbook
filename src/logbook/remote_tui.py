@@ -1,4 +1,4 @@
-"""Read-only curses dashboard for a traveling Mac's recording buffer."""
+"""Curses observation and explicit guarded eject for a traveling Mac's buffer."""
 from __future__ import annotations
 
 import curses
@@ -29,16 +29,28 @@ def render_status(status, width, height):
         '',
         'Receipt = delivery to mimir, not transcription or publication.',
         'Unplugged recorder: retained uploads can still retry.',
+        '',
+        'Last success: ' + _activity_text(status.get('last_success')),
+        'Last failure: ' + _activity_text(status.get('last_failure')),
     ]
     if status.get('state') == 'not_started':
         lines[4] = 'No recordings buffered yet'
     elif status.get('state') == 'unavailable':
         lines[4:7] = ['Buffer unavailable; retrying automatically.', '', '']
+    if status.get('message'):
+        lines[2] = status['message']
     # Reserve the last line for controls, even in a very small terminal.
-    return [line[:width] for line in lines[:height - 1] + ['[q] quit | Esc / Ctrl-C | [r] refresh']]
+    return [line[:width] for line in lines[:height - 1] + ['[q] quit | [e] eject | [r] refresh | Esc / Ctrl-C']]
 
 
-def run_watch(provider):
+def _activity_text(activity):
+    if not activity:
+        return 'Not recorded'
+    stamp = datetime.fromisoformat(activity['at']).astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
+    return stamp + ' | ' + activity['activity']
+
+
+def run_watch(provider, ejector=None):
     def dashboard(screen):
         try:
             curses.curs_set(0)
@@ -46,11 +58,13 @@ def run_watch(provider):
             pass
         screen.keypad(True)
         screen.timeout(2000)
+        message = None
         while True:
             try:
                 status = provider()
             except (OSError, ValueError, sqlite3.Error):
                 status = {'state': 'unavailable'}
+            status = {**status, 'message': message}
             height, width = screen.getmaxyx()
             screen.erase()
             for row, line in enumerate(render_status(status, max(0, width - 1), height)):
@@ -59,8 +73,20 @@ def run_watch(provider):
                 except curses.error:
                     pass  # A resize can race drawing; redraw using the next dimensions.
             screen.refresh()
-            if screen.getch() in (ord('q'), ord('Q'), 27):
+            key = screen.getch()
+            if key in (ord('q'), ord('Q'), 27):
                 return
+            if key in (ord('e'), ord('E')):
+                if ejector is None:
+                    message = 'Eject unavailable in this view.'
+                    continue
+                try:
+                    screen.addnstr(min(2, max(0, height - 1)), 0,
+                                   'Verifying local copies before eject...', max(0, width - 1))
+                    screen.refresh()
+                except curses.error:
+                    pass
+                _, message = ejector()
             # Timeout, refresh key and KEY_RESIZE all redraw a fresh snapshot.
     try:
         curses.wrapper(dashboard)

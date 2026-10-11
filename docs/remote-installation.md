@@ -316,16 +316,16 @@ pass that Mac's own signing identity. Do not hand-edit a signed Info.plist.
 ```bash
 scripts/remote-watch
 scripts/remote-watch --once
-scripts/remote-eject
 ```
 
-Stop watch with Ctrl-C. It reads only the local outbox and shows buffered files,
+Press `e` inside watch to eject; quit with `q`, Escape or Ctrl-C. The separate
+`scripts/remote-eject` wrapper has been removed. Normal monitoring reads the local outbox and shows buffered files,
 central receipts, waiting files/bytes, retries and the last scan result. Received
 means durable receiver receipt, **not** completed transcription or publication.
 Last scan is historical; `recorder_or_storage_unavailable` is expected after
-unplugging and is not proof of a failed upload. Watch does not access the recorder
-or start transfers. An empty queue does not by itself prove all Sony files have
-been copied; use the guarded eject command for that check.
+unplugging and is not proof of a failed upload. Watch accesses the recorder only
+when you explicitly press `e`; it never starts transfers. An empty queue does not
+by itself prove all Sony files have been copied; use guarded eject for that check.
 
 Eject validates the configured USB volume UUID and verifies every visible MP3 in
 its configured recording folder against a registered local snapshot and matching
@@ -342,9 +342,22 @@ These tools inspect the configured `REC_FILE/FOLDER01`, as does ingestion; they
 do not promise to copy recordings from other Sony folders.
 
 For another configuration, pass `--config /absolute/path/remote-agent.json` to
-watch/eject, or set `LOGBOOK_REMOTE_CONFIG`. The wrappers default to the existing
-`LogbookRemotePilot` configuration. The installed commands are also available as
+watch, or set `LOGBOOK_REMOTE_CONFIG`. The installed commands remain available as
 `logbook-remote watch --config ...` and `logbook-remote eject --config ...`.
+
+The Mac dashboard shows the latest successful and failed activity with local date,
+time and timezone. New snapshots, upload receipts, upload/scan failures, and
+watch-triggered eject outcomes are recorded persistently. A later success keeps
+the previous failure visible as history. Older buffers without recorded activity
+times show `Not recorded`; dates are not inferred from recording or file times.
+Normal status refreshes do not write to the buffer. Eject feedback stays visible
+after refresh, and failed verification leaves the recorder mounted.
+
+Activity recording requires the uploader's checkout to be updated too. If the
+signed pilot still uses `~/Applications/LogbookRemote/source`, update that checkout
+with `git -C ~/Applications/LogbookRemote/source pull --ff-only` in addition to
+your watch checkout. Its next scheduled run loads the updated source; no signed
+app rebuild is needed for this Python-only change.
 
 ### The same watch command on mimir and the MacBook
 
@@ -362,8 +375,8 @@ The live curses view requires an interactive terminal, including an SSH terminal
 use `--once` for redirected output.
 
 The script locates its checkout from its own path, so an absolute invocation
-also works from another directory. It only observes; it does not start uploads
-or processing.
+also works from another directory. Apart from explicit guarded eject, it only
+observes; it does not start uploads or processing.
 
 Explicit `--env FILE` selects production watch; explicit `--config FILE` selects
 the Mac agent watch. Otherwise selection uses `LOGBOOK_REMOTE_CONFIG`, the

@@ -37,6 +37,12 @@ production version remains 1.2.3.
 
 ### Changed
 
+- Remote watch supports guarded eject with `e`, with progress and persistent
+  result feedback. Removed the separate `scripts/remote-eject` wrapper.
+- Mac buffer history records the last successful and failed activity and displays
+  local dates/times, preserving failure history after recovery. Existing buffers
+  without timestamps show `Not recorded` until new activity occurs.
+
 - Live remote watch now uses an in-place curses dashboard on Mac agents and the
   existing production curses dashboard on mimir. Includes receipt progress,
   pending size, retry/error details, resize handling and q/Escape/Ctrl-C exit.

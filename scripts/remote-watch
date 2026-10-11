@@ -22,7 +22,8 @@ A receipt confirms delivery, not transcription or publication.
 
 Selection: explicit --env/--config, then LOGBOOK_REMOTE_CONFIG, then the existing
 ~/Library/Application Support/LogbookRemotePilot/remote-agent.json, then .env.
-Live watch uses curses on both machines. Quit with q, Escape or Ctrl-C.
+Live watch uses curses on both machines. Press e to eject safely.
+Quit with q, Escape or Ctrl-C. Recent activity times appear when recorded.
 --once prints one snapshot; --ui compact explicitly selects scrolling output.
 Additional options are passed to the selected watcher.
 HELP

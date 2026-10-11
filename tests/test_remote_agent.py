@@ -176,7 +176,8 @@ class RemoteAgentTests(TestCase):
             client = httpx.Client(base_url='http://test', transport=httpx.MockTransport(
                 lambda request, status=status: httpx.Response(status)))
             with patch('logbook.remote_agent.validate_volume', return_value=self.folder):
-                result = run_agent(self.config, client=client, now=10**12 + status * 100)
+                # Future retry clock must also be a representable activity date.
+                result = run_agent(self.config, client=client, now=4_000_000_000 + status * 100)
             self.assertEqual(result['pending_bytes'], 10)
         def reply(request):
             if request.method == 'PUT':

@@ -72,7 +72,7 @@ class RemoteControlsTests(TestCase):
         with patch('logbook.remote_controls.subprocess.run') as run:
             self.assertEqual(remote_controls.eject(self.config), 1)
             run.assert_called_once_with(['/usr/sbin/diskutil', 'eject', str(self.config.mount_path)],
-                                        check=True, timeout=30)
+                                        check=True, timeout=30, capture_output=True)
         self.assertEqual(self.audio.read_bytes(), b'audio')
         self.assertEqual(remote_controls.read_status(self.config)['pending'], 1)
         (self.config.root / 'spool' / self.digest / 'audio.mp3').write_bytes(b'wrong')
@@ -119,6 +119,58 @@ class RemoteControlsTests(TestCase):
         with contextlib.closing(remote_controls._database(self.config)) as db:
             with self.assertRaises(sqlite3.OperationalError):
                 db.execute('DELETE FROM outbox')
+
+    def test_activity_times_survive_restart_and_success_keeps_failure_history(self):
+        self.snapshot()
+        box = Outbox(self.config)
+        box.failure(self.digest, 'transfer_unavailable', 1791745200)
+        box.acknowledge(self.digest, {'state': 'present', 'receipt_id': 'receipt'})
+        box.close()
+        state = remote_controls.read_status(self.config)
+        self.assertEqual(state['last_failure']['at'], '2026-10-11T19:00:00+00:00')
+        self.assertEqual(state['last_failure']['activity'], 'Upload: transfer_unavailable')
+        self.assertEqual(state['last_success']['activity'], 'Upload received')
+        self.assertTrue(state['last_success']['at'])
+        self.assertIsNone(state['failure'])
+        box = Outbox(self.config)
+        box.snapshot(self.folder)
+        box.acknowledge(self.digest, {'state': 'present', 'receipt_id': 'receipt'})
+        box.failure(self.digest, 'server', 1791745300)
+        box.close()
+        self.assertEqual(remote_controls.read_status(self.config), state)
+
+    def test_old_buffers_show_unknown_activity_times_without_writing(self):
+        self.snapshot()
+        with sqlite3.connect(self.config.root / 'outbox.sqlite') as db:
+            db.execute('DELETE FROM agent_status')
+        before = (self.config.root / 'outbox.sqlite').read_bytes()
+        state = remote_controls.read_status(self.config)
+        self.assertIsNone(state['last_success'])
+        self.assertIsNone(state['last_failure'])
+        self.assertEqual((self.config.root / 'outbox.sqlite').read_bytes(), before)
+
+    def test_watch_eject_records_outcomes_and_captures_command_output(self):
+        self.snapshot()
+        with patch('logbook.remote_controls.subprocess.run') as run:
+            ok, message = remote_controls.watch_eject(self.config)
+        self.assertTrue(ok)
+        self.assertIn('1 recording', message)
+        self.assertTrue(run.call_args.kwargs['capture_output'])
+        self.assertEqual(remote_controls.read_status(self.config)['last_success']['activity'], 'Recorder ejected')
+        for error in (BlockingIOError('private path'), ValueError('wrong volume'),
+                      subprocess.TimeoutExpired('diskutil', 30), sqlite3.OperationalError('private path')):
+            with patch('logbook.remote_controls.eject', side_effect=error):
+                ok, message = remote_controls.watch_eject(self.config)
+            self.assertFalse(ok)
+            self.assertNotIn('private path', message)
+            self.assertEqual(remote_controls.read_status(self.config)['last_failure']['activity'], 'Eject blocked')
+        self.assertTrue(self.audio.exists())
+
+    def test_eject_can_report_failure_before_buffer_exists(self):
+        ok, message = remote_controls.watch_eject(self.config)
+        self.assertFalse(ok)
+        self.assertIn('Activity time could not be saved', message)
+        self.assertFalse(self.config.root.exists())
 
     def test_watch_once_loop_interrupt_and_cli_errors(self):
         from logbook.remote_cli import main
