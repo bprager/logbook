@@ -180,3 +180,22 @@ Follow the checklist in [installation and recovery](remote-installation.md).
 Before activation, explicitly decide the independent audio-backup and Mac spool
 retention policies. Acknowledged Mac snapshots are currently retained; existing
 saga backups still exclude audio. No v1.3.0 version promotion or tag was created.
+
+### Quiet agent and remote operator tools — 2026-10-10
+
+The remote package now sets `LSUIElement` before signing. On mimir, an isolated
+signed test app was launched through Launch Services and inspected through
+NSWorkspace: activation policy was `1` (accessory/background agent). It exited
+normally. The generated remote package also passes native codesign verification.
+This verifies the packaging behavior without changing a live agent installation.
+The traveling Mac must rebuild its existing signed package before visual acceptance.
+
+Automated tests verify read-only watch, persistent offline queue and receipt
+counts, source preservation, offline eject after checksum verification, and
+refusal for a busy agent, wrong volume, missing/damaged snapshot, symlink or source
+change during verification. Eject is mocked in these tests: no physical recorder
+was ejected. Wrapper help and shell syntax checks pass. The full quality gate
+passes 246 tests with 99% feature-branch changed-line coverage; the new controls
+module has 100% statement and branch coverage.
+
+Production transcription/publication remains paused until the user returns.

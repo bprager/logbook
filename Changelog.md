@@ -21,7 +21,16 @@ production version remains 1.2.3.
 
 ## [Unreleased]
 
+### Changed
+
+- Remote Mac agent runs without a Dock icon while retaining mount/login triggers
+  and automatic offline retries. Existing signed packages need rebuilding.
+
 ### Added
+
+- Remote terminal watch and guarded eject commands. Eject verifies source and
+  retained buffer checksums under the agent lock, works offline, and refuses
+  missing, damaged or changing copies without deleting recorder audio.
 
 - Short-command installer for the already-enrolled, separate Mac pilot, avoiding
   long pasted setup blocks and refusing to overwrite installed services.

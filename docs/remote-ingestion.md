@@ -28,6 +28,16 @@ Existing `StartOnMount` runner, SQLite checksum job ledger, `process-mounted-rec
 9. Preserve current local audio retention and saga non-audio backup policy. A remote upload acknowledgment means durable receipt on mimir, not necessarily a second independent audio backup; explicitly decide durability/backup policy before production and document any risk window.
 10. Expose redacted ingest status, device last-seen, pending bytes, failures and retry counts through existing observer interfaces; no raw audio paths, transcripts or credentials.
 
+## Remote operator controls
+
+The signed remote app uses `LSUIElement` so scheduled runs do not appear in the
+Dock. Keep mount/login events plus the one-minute retry schedule: upload recovery
+must continue after the recorder is removed. Read-only watch opens the local
+outbox in SQLite read-only mode. Explicit eject shares the agent lock, validates
+the USB identity, hashes sources and retained snapshots, and refuses incomplete
+or changed copies before a normal diskutil eject. No server connection is needed.
+The existing mimir app, pipeline and retention services are unchanged.
+
 ## Acceptance
 
 - Connecting Sony to either MacBook launches ingestion without manual application steps after one-time setup and permissions.

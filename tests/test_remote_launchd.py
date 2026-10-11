@@ -97,6 +97,9 @@ class RemoteLaunchdTests(TestCase):
             def execute(command, **kwargs):
                 if command[0] == 'cc':
                     return original_run(command, **kwargs)
+                if sys.platform == 'darwin':
+                    command = [('-' if arg == 'Logbook Local Signing' else arg) for arg in command]
+                    return original_run(command, **kwargs)
                 return subprocess.CompletedProcess(command, 0)
             with patch('logbook.remote_launchd.subprocess.run', side_effect=execute) as run:
                 paths = write_agent_package(config, root / 'config.json', root / 'package',
@@ -109,6 +112,7 @@ class RemoteLaunchdTests(TestCase):
             app = root / 'package' / 'LogbookRemoteAgent.app'
             info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
             self.assertEqual(info['CFBundleIdentifier'], 'ws.prager.logbook.remote-agent')
+            self.assertTrue(info['LSUIElement'])
             source = (app / 'Contents/Resources/LogbookMountRunner.c').read_text()
             self.assertIn('logbook.remote_cli', source)
             self.assertIn('agent-run', source)

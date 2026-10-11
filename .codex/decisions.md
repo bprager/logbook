@@ -2,6 +2,15 @@
 
 ## Accepted
 
+### D-020: Quiet remote retries and buffer-verified eject
+
+Keep remote mount/login triggers and minute-based retries, but package the remote
+signed app as an `LSUIElement` background agent. Mount-only triggering would strand
+buffered uploads after offline ejection. Remote watch is read-only. Explicit eject
+requires verified local copies under the agent lock, not network delivery or
+transcription; normal diskutil eject is never forced. This does not alter mimir
+pruning, and production activation remains paused at the user's request.
+
 ### D-019: Support the existing SSH jump route for traveling Macs
 
 Use an optional loopback-only SSH LaunchAgent with strict host-key checking,

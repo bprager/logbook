@@ -1195,6 +1195,7 @@ Status: Implemented on feature branch; release acceptance pending. Priority: P0.
 Status: Implemented on feature branch; first Mac signed read/manual SSH pilot passed. Automatic SSH packaging added; physical login/recovery and second-Mac acceptance pending. Priority: P0. Dependencies: LGB-044, LGB-005, LGB-021.
 
 - Persistent snapshots, resumable transfers, bounded retries and signed mount/login/interval app packaging tested with synthetic recordings.
+- Remote-only background app packaging removes recurring Dock presence; read-only watch and checksum-guarded offline eject added. Rebuild the traveling Mac package to apply. Physical Dock/eject acceptance remains pending.
 
 - Package a stable macOS app identity with launchd mount detection, Sony validation, local SQLite outbox, atomic spool, resumable transfer and offline retry.
 - Support both MacBook Air machines with separate revocable credentials and no manual steps after installation.

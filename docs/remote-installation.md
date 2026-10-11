@@ -282,3 +282,59 @@ Do not unload the existing mimir mount runner or retention job. Keep outboxes,
 upload metadata and the ledger for recovery. Schema migration is additive; older
 code ignores the extra tables. Do not restore an old ledger over newly received
 recordings without reconciling durable receipts first.
+
+## Quiet agent and remote terminal tools
+
+The remote signed app sets `LSUIElement=true`, Apple's
+[background agent setting](https://developer.apple.com/documentation/bundleresources/information-property-list/lsuielement).
+It still starts on volume mounts, at login and every minute. The periodic run
+retries buffered uploads after an outage even when the Sony has been unplugged;
+mount-only scheduling would prevent that recovery. This setting applies only to
+the remote app, not the existing mimir mount runner.
+
+For the already installed traveling-Mac pilot, run these commands **in a local
+MacBook terminal**, not inside an SSH session on mimir:
+
+```bash
+cd "$HOME/Applications/LogbookRemote/source"
+git pull --ff-only && .venv/bin/python -m pip install .
+scripts/update-remote-pilot 133E889C676E45CE7E7EB6CFC6E020DD0280DB24
+```
+
+The helper rebuilds and signs the app at the existing installed path. Its signing
+identity, settings, tokens, buffers and launch schedule stay the same. It does
+not activate production processing or change installed services. For another Mac,
+pass that Mac's own signing identity. Do not hand-edit a signed Info.plist.
+
+```bash
+scripts/remote-watch
+scripts/remote-watch --once
+scripts/remote-eject
+```
+
+Stop watch with Ctrl-C. It reads only the local outbox and shows buffered files,
+central receipts, waiting files/bytes, retries and the last scan result. Received
+means durable receiver receipt, **not** completed transcription or publication.
+Last scan is historical; `recorder_or_storage_unavailable` is expected after
+unplugging and is not proof of a failed upload. Watch does not access the recorder
+or start transfers. An empty queue does not by itself prove all Sony files have
+been copied; use the guarded eject command for that check.
+
+Eject validates the configured USB volume UUID and verifies every visible MP3 in
+its configured recording folder against a registered local snapshot and matching
+SHA-256 bytes. It holds the agent lock throughout and checks for source changes
+before asking macOS to eject normally (never forcibly). It refuses missing or
+corrupt copies, a wrong volume, unreadable files or a busy agent. Wait for copying
+to finish and retry on refusal. macOS may request Terminal removable-volume
+permission for this verification; denial leaves the recorder mounted. The check
+can take time because it reads all recordings and their local copies.
+
+Network access and central receipt are not prerequisites for eject: verified
+local snapshots remain available for automatic retries. Eject never deletes audio.
+These tools inspect the configured `REC_FILE/FOLDER01`, as does ingestion; they
+do not promise to copy recordings from other Sony folders.
+
+For another configuration, pass `--config /absolute/path/remote-agent.json` to
+watch/eject, or set `LOGBOOK_REMOTE_CONFIG`. The wrappers default to the existing
+`LogbookRemotePilot` configuration. The installed commands are also available as
+`logbook-remote watch --config ...` and `logbook-remote eject --config ...`.

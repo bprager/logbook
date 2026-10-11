@@ -4,6 +4,7 @@ from __future__ import annotations
 import plistlib
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -25,6 +26,9 @@ def write_agent_package(config: AgentConfig, config_path: Path, output: Path,
         recorder_dir=config.mount_path / config.recordings_path,
         module='logbook.remote_cli', command='agent-run', config_arg='--config',
         bundle_identifier='ws.prager.logbook.remote-agent', display_name='Logbook Remote Agent')
+    info = plistlib.loads(app.info_plist_content.encode())
+    info['LSUIElement'] = True
+    app = replace(app, info_plist_content=plistlib.dumps(info).decode())
     _write_app_bundle(app)
     subprocess.run(['/usr/bin/codesign', '--force', '--sign', signing_identity,
                     '--identifier', 'ws.prager.logbook.remote-agent', str(app.bundle_path)], check=True)
