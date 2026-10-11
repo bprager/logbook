@@ -64,6 +64,24 @@ reviewer reran focused recovery tests and confirmed that fix.
 
 ## Physical acceptance progress
 
+### Receiver outage with recorder unplugged — 2026-10-10 (Pacific)
+
+To preserve the operator's active SSH/tmux session, only the isolated pilot
+receiver was stopped; Wi-Fi and SSH services stayed available. Starting from
+26 receipts, the operator made another recording, connected Sony for two minutes,
+then safely ejected/unplugged it. After receiver restart, the agent reported
+918,800 pending bytes and three outage-related retries. Without a manual run or
+recorder reconnection, automatic retry delivered the recording at
+2026-10-11 01:46:02 UTC. Pending bytes and retries returned to zero. The remaining
+`recorder_or_storage_unavailable` scan status agrees with the unplugged recorder.
+
+Server verification confirmed 27 unique recordings/receipts, zero unfinished
+uploads, matching sizes and SHA-256 for all 27 files, and SQLite integrity `ok`.
+All recordings remained copied in the isolated pilot, with no downstream
+processing or deletion. This proves physical offline buffering and delivery
+after receiver recovery with the source unavailable. Wi-Fi roaming and physical
+logout/reboot are separate outstanding tests, not implied by this result.
+
 ### First Mac automatic pilot activation — 2026-10-10 (Pacific)
 
 The operator ran the short pilot installer on Tene-MacBook-Air and reported

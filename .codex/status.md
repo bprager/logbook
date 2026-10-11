@@ -1,5 +1,15 @@
 # Status
 
+## Physical outage recovery passed — 2026-10-10
+
+The first Mac retained a new recording during an isolated receiver outage,
+then automatically delivered its 918,800-byte snapshot after receiver restart
+while Sony stayed unplugged. There are 27 unique pilot recordings/receipts;
+all checksums/sizes and ledger integrity passed, with zero pending uploads.
+Wi-Fi and the operator's SSH/tmux session remained available. No production
+processing or deletion. Physical login/reboot, Wi-Fi roaming, second-Mac setup
+and the retention decision remain outstanding.
+
 ## First Mac automatic fresh-recording check — 2026-10-10
 
 After the operator recorded a new test and reconnected Sony, the managed pilot
