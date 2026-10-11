@@ -1,5 +1,29 @@
 # Status
 
+## Production remote-audio acceptance passed — 2026-10-10 (Pacific)
+
+User authorized production transcription/publication verification and repairs,
+with no recording deletion or release tag. Backed up production and verified
+restore (216 jobs); matched all 27 pilot checksums, skipped 22 existing jobs,
+and imported five new jobs 227–231 through durable intake with import audits.
+Real Odin transcription, Obsidian publication and graph synchronization passed.
+Vault `9ebc274` has one canonical log for each of October 9–10, three entries per
+date, ordered by time. Repeated processing did no duplicate work; all audio remains.
+
+Fixed current Memgraph `read-only` error recognition and inaccurate successful-job
+counts, with failing-then-passing regression tests. Reconciled deleted dead letter
+137 as discarded with the prior Obsidian deletion commits recorded in its audit.
+Final vault check: 218 synchronized eligible jobs, zero blocked.
+Full quality gate passed: 250 tests, 99% feature-branch changed-line coverage,
+Python/Markdown checks and observer build. Final live services are healthy with
+zero pending uploads or graph jobs; the earlier failure remains in audit history.
+
+Cleanup LaunchAgent was unloaded; retain audio. Production version stays 1.2.3.
+No persistent production remote receiver/worker was installed; pilot receiver is
+stopped. Next: physical second-Mac/login/roaming acceptance and explicit audio
+backup/retention policy before unattended rollout. Full evidence is in
+`docs/remote-acceptance.md`. Earlier pause statements below are historical.
+
 ## Physical outage recovery passed — 2026-10-10
 
 The first Mac retained a new recording during an isolated receiver outage,

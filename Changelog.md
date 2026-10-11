@@ -21,6 +21,20 @@ production version remains 1.2.3.
 
 ## [Unreleased]
 
+### Fixed
+
+- Recognize both Memgraph storage-conflict spellings so production graph retries
+  recover, and report only successful jobs in the graph synchronization count.
+
+### Verified
+
+- Transcribed five retained remote recordings on production Odin, published and
+  verified the October 9–10 Obsidian logs, and completed their graph updates.
+  Repeated processing produced no duplicates. Preserved all pilot audio, paused
+  scheduled cleanup, and reconciled a previously deleted dead-letter note through
+  the audit trail. See `docs/remote-acceptance.md` for evidence and remaining rollout
+  checks. No release tag or version promotion.
+
 ### Changed
 
 - Remote app builds select the native Mac compiler architecture explicitly, fixing

@@ -1304,7 +1304,7 @@ def _sync_memory_graph_for_jobs(
 
     status = "ok" if timed_out == 0 and failed == 0 else "partial"
     print(f"memory_graph_sync={status}")
-    print(f"memory_graph_jobs_synced={len(job_ids)}")
+    print(f"memory_graph_jobs_synced={len(job_ids) - timed_out - failed}")
     print(f"memory_graph_nodes_written={written_nodes}")
     print(f"memory_graph_relationships_written={written_relationships}")
     print(f"memory_graph_jobs_timed_out={timed_out}")

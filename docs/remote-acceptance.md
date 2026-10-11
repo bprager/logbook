@@ -3,6 +3,55 @@
 Verified 2026-10-10 on `feature/remote-sony-ingestion`. Implementation covers
 LGB-044 through LGB-047. Production version remains **1.2.3**.
 
+## Production transcription and publication — 2026-10-10 (Pacific)
+
+The operator authorized production verification and needed repairs, excluding
+recording deletion and release tagging. This supersedes the historical pause
+below for this bounded acceptance run, not the remaining two-Mac rollout checks.
+
+- Created non-audio backup `logbook-backup-20261011T051232Z` at the configured
+  saga target through Odin. Local restore drill passed: SQLite integrity `ok`,
+  schema 2, 216 jobs and 33 audit records.
+- Verified all 27 retained pilot recordings by size and SHA-256. Twenty-two
+  already matched production jobs. Imported the five new recordings through
+  `RemoteStore` allocation, chunk verification and durable completion under the
+  pipeline lock; recorded import audits. Production has 221 unique jobs, with
+  new jobs 227–231. Pilot receipts and audio remain separate and unchanged.
+- Ran production `process-queued`: five real Odin `large-v3` transcriptions,
+  five log routes, two canonical daily logs, and five publication confirmations.
+  There were no transcription, routing, consolidation or publication failures.
+- October 9 retained its existing 11:05 entry and gained late entries at 14:13
+  and 14:17. October 10 contains 12:21, 18:27 and 18:39. Each date has exactly
+  one canonical log, three entries and timestamp ordering. All five inbox notes
+  and both daily logs match their committed bytes in the remote vault.
+- Verified actual remote vault `main` at
+  `9ebc274346b68b02faee865b13639733fcfa3243`; inbox publication was `1163ac5`.
+  The pre-existing unrelated `Home.md` edit remains uncommitted and preserved.
+- Reconciled historical dead letter 137 through the audited discard operation:
+  Obsidian commits `ae1d4c8` and `885c131` had already deleted its note. No note
+  was restored or removed by this run, and no audio was deleted. Final publication
+  verification reports 218 synchronized eligible jobs and zero blocked jobs.
+- Live graph retries exposed a newer Memgraph error spelling, `read-only`, which
+  the existing `read only` match missed. Regression tests reproduced the problem;
+  the fix recognizes both spellings. Sync summaries now count successful jobs
+  only, excluding failed and timed-out attempts. The final live retry synchronized
+  all remaining jobs; jobs 227–231 all have graph completion records.
+- Repeated processing produced zero transcriptions, routes or consolidations.
+  All 27 pilot audio checksums and all five new production copies still match.
+- Final quality gate passed: Ruff, mypy, Markdown lint, observer build, 250 tests,
+  and 99% feature-branch changed-line coverage. Final live status reports Odin,
+  SQLite and Memgraph healthy, zero unfinished uploads and zero pending graph jobs.
+  The earlier failed run remains visible as historical audit evidence.
+
+The scheduled `local.logbook.retention-audit` cleanup was unloaded to preserve
+audio during acceptance. Retention configuration remains 168 hours. No release
+version or tag changed. The isolated receiver is stopped; no persistent production
+remote receiver or queued-worker LaunchAgent was installed. This verifies retained
+remote audio through production processing, not an unattended production rollout.
+
+Physical second-Mac setup, login/reboot and Wi-Fi roaming, quiet-app/eject
+acceptance, independent audio-backup policy, and future cleanup remain separate.
+
 ## Automated evidence
 
 `LOGBOOK_COVERAGE_COMPARE_REF=origin/main scripts/quality-gate` passed:

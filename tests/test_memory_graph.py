@@ -68,6 +68,24 @@ class MemoryGraphTests(TestCase):
                 )
 
             self.assertIn("memory_graph_sync=timed_out job_id=58", output.getvalue())
+            self.assertIn("memory_graph_jobs_synced=0", output.getvalue())
+
+    def test_memory_sync_summary_counts_only_successful_jobs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            config = _seed_memory_fixture(Path(tmp))
+            config = replace(config, memgraph=MemgraphConfig(uri="bolt://memgraph.test:7687"))
+            output = io.StringIO()
+            results = [
+                subprocess.CompletedProcess([], 0, "nodes_written=2\nrelationships_written=1\n", ""),
+                subprocess.CompletedProcess([], 1, "", "storage unavailable"),
+                subprocess.TimeoutExpired([], timeout=1),
+            ]
+            with patch("logbook.cli.subprocess.run", side_effect=results), redirect_stdout(output):
+                _sync_memory_graph_for_jobs(config, (1, 2, 3), env_path=Path(".env"))
+            self.assertIn("memory_graph_jobs_synced=1\n", output.getvalue())
+            self.assertIn("memory_graph_jobs_failed=1\n", output.getvalue())
+            self.assertIn("memory_graph_jobs_timed_out=1\n", output.getvalue())
+            self.assertIn("memory_graph_nodes_written=2\n", output.getvalue())
 
     def test_builds_proof_carrying_graph_without_source_audio_paths(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -590,7 +608,7 @@ class FlakyIndexGraphClient(RecordingGraphClient):
         if cypher.startswith("CREATE INDEX"):
             self.index_attempts += 1
             if self.index_attempts == 1:
-                raise RuntimeError("Cannot get read only access to the storage")
+                raise RuntimeError("Cannot get read-only access to the storage. Try stopping other parallel queries.")
         super().run(cypher, parameters)
 
 

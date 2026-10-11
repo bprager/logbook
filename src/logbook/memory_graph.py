@@ -1007,7 +1007,7 @@ def _run_with_transient_storage_retry(
 
 
 def _is_transient_storage_access_error(error: Exception) -> bool:
-    return "Cannot get read only access to the storage" in str(error)
+    return "Cannot get read only access to the storage" in str(error).replace("read-only", "read only")
 
 
 def _id_prefixes() -> list[str]:
