@@ -352,6 +352,15 @@ Run `scripts/remote-watch` on either machine, including in an SSH session on
 mimir. On the MacBook it shows the local buffer and upload receipts. On mimir,
 without a local agent configuration, it shows production transcription and
 Obsidian publication using the checkout's `.env`. `--once` works in both modes.
+Live watch opens a curses dashboard on both machines, refreshing in place instead
+of scrolling. Quit with `q`, Escape or Ctrl-C; press `r` to refresh immediately.
+The Mac dashboard shows local buffer counts, receipt progress, pending bytes,
+retry count, last upload error and historical recorder scan status. A receipt
+still means delivery only, not completed transcription or publication.
+Use `--ui compact` explicitly for scrolling text, or `--once` for one snapshot.
+The live curses view requires an interactive terminal, including an SSH terminal;
+use `--once` for redirected output.
+
 The script locates its checkout from its own path, so an absolute invocation
 also works from another directory. It only observes; it does not start uploads
 or processing.
@@ -361,5 +370,7 @@ the Mac agent watch. Otherwise selection uses `LOGBOOK_REMOTE_CONFIG`, the
 existing `LogbookRemotePilot/remote-agent.json`, then the checkout `.env`, in that
 order. An explicitly configured missing file is an error, not a fallback to a
 different watcher. If both configurations exist, use `--env` to select production.
-Other options are forwarded to the selected watcher; `--ui curses` is available
-in production mode. Run `scripts/remote-watch --help` for the shared options.
+Other options are forwarded to the selected watcher. Run
+`scripts/remote-watch --help` for the shared options. After pulling this change,
+the wrapper uses checkout code directly; rebuilding the signed uploader is not
+required for the watch dashboard.

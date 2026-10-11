@@ -37,6 +37,11 @@ production version remains 1.2.3.
 
 ### Changed
 
+- Live remote watch now uses an in-place curses dashboard on Mac agents and the
+  existing production curses dashboard on mimir. Includes receipt progress,
+  pending size, retry/error details, resize handling and q/Escape/Ctrl-C exit.
+  `--once` and explicit `--ui compact` remain available for text output.
+
 - `scripts/remote-watch` now selects the local Mac upload buffer or mimir's
   production watcher from available configuration. Supports explicit `--config`
   and `--env` selection and invocation from outside the checkout.

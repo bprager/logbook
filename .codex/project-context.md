@@ -63,6 +63,11 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 
 ## Repo Practices
 
+- User preference: terminal monitoring tools should default to an in-place
+  curses TUI with a clear quit key, not scrolling status output. Keep explicit
+  one-shot/plain alternatives. Saved globally in Memgraph as
+  `monitoring-tui-default`; local mirror: `~/.ai/preferences/global.json`.
+
 - Keep generated audio, logs, databases, model caches, and secrets out of git.
 - Put implementation decisions in `.codex/decisions.md`.
 - Keep backlog dependencies in `.codex/backlog.md` and memgraph.

@@ -5,6 +5,7 @@ import fcntl
 import json
 import sqlite3
 import subprocess
+import sys
 import time
 from contextlib import closing
 from datetime import datetime
@@ -32,7 +33,12 @@ def read_status(config):
             'last_scan': scan[0] if scan else None}
 
 
-def watch(config, once=False):
+def watch(config, once=False, ui='curses'):
+    if not once and ui == 'curses':
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ValueError('Interactive terminal required; use --once or --ui compact.')
+        from logbook.remote_tui import run_watch
+        return run_watch(lambda: read_status(config))
     try:
         while True:
             status = read_status(config)

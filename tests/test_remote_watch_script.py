@@ -81,6 +81,17 @@ class RemoteWatchScriptTests(TestCase):
         self.assertIn('--config', result.stdout)
         self.assertIn('--once', result.stdout)
 
+    def test_production_live_defaults_to_curses_but_respects_plain_and_json(self):
+        (self.root / '.env').touch()
+        args = json.loads(self.run_watch().stdout)[0]
+        self.assertEqual(args[3:5], ['--ui', 'curses'])
+        for options in [('--ui', 'compact'), ('--ui=compact',), ('--json', '--once')]:
+            args = json.loads(self.run_watch(*options).stdout)[0]
+            self.assertNotIn('curses', args)
+            self.assertEqual(args[-len(options):], list(options))
+        args = json.loads(self.run_watch('--env', 'custom.env').stdout)[0]
+        self.assertEqual(args, ['-m', 'logbook.cli', 'watch', '--ui', 'curses', '--env', 'custom.env'])
+
     def test_real_macbook_watcher_reads_buffer_without_changing_it(self):
         self.agent.parent.mkdir(parents=True)
         token = self.agent.parent / 'token'

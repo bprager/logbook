@@ -19,6 +19,7 @@ def main(argv=None):
         command.add_argument('--config', required=True, type=Path)
         if name == 'watch':
             command.add_argument('--once', action='store_true')
+            command.add_argument('--ui', choices=('curses', 'compact'), default='curses')
         elif name == 'package-tunnel':
             command.add_argument('--output', required=True, type=Path)
         elif name in ('package-agent', 'package-server'):
@@ -34,7 +35,7 @@ def main(argv=None):
         from logbook.remote_controls import eject, watch
         try:
             if args.command == 'watch':
-                watch(config, args.once)
+                watch(config, args.once, args.ui)
             else:
                 count = eject(config)
                 print(f'Ejected: {count} recordings verified in the local buffer. Pending uploads will resume when connected.')

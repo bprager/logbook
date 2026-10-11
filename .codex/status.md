@@ -1,5 +1,17 @@
 # Status
 
+## Curses remote watch — 2026-10-11
+
+Live `scripts/remote-watch` now defaults to curses on both mimir and the Mac
+agent. `--once` stays plain; `--ui compact` explicitly selects scrolling output.
+Remote dashboard displays receipt counts/progress, pending size, retries and
+historical errors/scans, handles resize and quits with q/Escape/Ctrl-C.
+Verified actual terminal rendering and q exit on live mimir and a synthetic
+28-recording Mac buffer. Monitoring remains read-only. Global TUI-first
+preference saved in Memgraph and synchronized to `~/.ai/preferences/global.json`.
+Full quality gate passed: 264 tests, 99% feature-branch changed-line coverage,
+and 100% statement/branch coverage for the new remote dashboard module.
+
 ## Portable watch — 2026-10-11
 
 `scripts/remote-watch` works on mimir (including SSH sessions) and the traveling

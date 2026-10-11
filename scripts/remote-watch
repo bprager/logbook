@@ -6,10 +6,12 @@ export PYTHONPATH="$repo_root/src${PYTHONPATH:+:$PYTHONPATH}"
 # Select by local configuration, not hostname: this also works over SSH.
 explicit_env=false
 explicit_config=false
+production_curses=true
 for arg in "$@"; do
   case "$arg" in
     --env|--env=*) explicit_env=true ;;
     --config|--config=*) explicit_config=true ;;
+    --once|--json|--ui|--ui=*) production_curses=false ;;
     -h|--help)
       cat <<'HELP'
 Usage: scripts/remote-watch [--once] [--env FILE | --config FILE]
@@ -20,8 +22,9 @@ A receipt confirms delivery, not transcription or publication.
 
 Selection: explicit --env/--config, then LOGBOOK_REMOTE_CONFIG, then the existing
 ~/Library/Application Support/LogbookRemotePilot/remote-agent.json, then .env.
---once prints one snapshot; otherwise watch refreshes until Ctrl-C.
-Additional options are passed to the selected watcher (e.g. --ui curses on mimir).
+Live watch uses curses on both machines. Quit with q, Escape or Ctrl-C.
+--once prints one snapshot; --ui compact explicitly selects scrolling output.
+Additional options are passed to the selected watcher.
 HELP
       exit 0 ;;
   esac
@@ -31,8 +34,15 @@ if "$explicit_env" && "$explicit_config"; then
   echo 'Choose either --env or --config, not both.' >&2
   exit 2
 fi
-if "$explicit_env"; then
+watch_production() {
+  if "$production_curses"; then
+    set -- --ui curses "$@"
+  fi
   exec "$repo_root/.venv/bin/python" -m logbook.cli watch "$@"
+}
+
+if "$explicit_env"; then
+  watch_production "$@"
 elif "$explicit_config"; then
   exec "$repo_root/.venv/bin/python" -m logbook.remote_cli watch "$@"
 fi
@@ -41,7 +51,7 @@ agent_config="${LOGBOOK_REMOTE_CONFIG:-$HOME/Library/Application Support/Logbook
 if [[ -n "${LOGBOOK_REMOTE_CONFIG:-}" || -f "$agent_config" ]]; then
   exec "$repo_root/.venv/bin/python" -m logbook.remote_cli watch --config "$agent_config" "$@"
 elif [[ -f "$repo_root/.env" ]]; then
-  exec "$repo_root/.venv/bin/python" -m logbook.cli watch --env "$repo_root/.env" "$@"
+  watch_production --env "$repo_root/.env" "$@"
 fi
 
 echo 'No watch configuration found. Use --env FILE on mimir or --config FILE on the MacBook.' >&2

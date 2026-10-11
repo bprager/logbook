@@ -128,7 +128,19 @@ class RemoteControlsTests(TestCase):
             self.assertEqual(main(['watch', '--config', 'config', '--once']), 0)
             self.assertIn('not_started', output.getvalue())
             with patch('logbook.remote_controls.time.sleep', side_effect=KeyboardInterrupt):
+                self.assertEqual(main(['watch', '--config', 'config', '--ui', 'compact']), 0)
+            with patch('logbook.remote_controls.sys.stdin.isatty', return_value=True), \
+                    patch('logbook.remote_controls.sys.stdout.isatty', return_value=True), \
+                    patch('logbook.remote_tui.run_watch') as tui:
                 self.assertEqual(main(['watch', '--config', 'config']), 0)
+                self.assertEqual(tui.call_args.args[0](), {'state': 'not_started'})
+            with patch('logbook.remote_controls.sys.stdin.isatty', return_value=False), \
+                    contextlib.redirect_stderr(output):
+                self.assertEqual(main(['watch', '--config', 'config']), 1)
+            with patch('logbook.remote_controls.sys.stdin.isatty', return_value=True), \
+                    patch('logbook.remote_controls.sys.stdout.isatty', return_value=False), \
+                    contextlib.redirect_stderr(output):
+                self.assertEqual(main(['watch', '--config', 'config']), 1)
             with patch('logbook.remote_controls.eject', return_value=1):
                 self.assertEqual(main(['eject', '--config', 'config']), 0)
             with patch('logbook.remote_controls.eject', side_effect=ValueError('not safely buffered')), \
