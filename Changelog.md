@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Added
 
+- Short-command installer for the already-enrolled, separate Mac pilot, avoiding
+  long pasted setup blocks and refusing to overwrite installed services.
 - Optional automatic SSH tunnel through an existing jump-host alias, with login
   startup, connection health checks and launchd recovery. Package generation does
   not activate services; offline recording buffers remain independent.

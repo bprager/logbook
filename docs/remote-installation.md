@@ -10,6 +10,15 @@ on either Mac. These are Logbook services, not OpenClaw services.
 
 ### SSH transport for travel
 
+For the already-enrolled Tene-MacBook-Air pilot, the former pasted installer is
+available as `scripts/install-remote-pilot.py`. Run it with the checkout's virtual
+environment and `--signing-identity CERTIFICATE_FINGERPRINT`. It requires the
+existing `LogbookRemotePilot/remote-agent.json`, preserves the existing token,
+uses `jump-mimir` and pilot port 18791, generates the signed pilot package and
+loads the two user jobs. It refuses an existing installation or a configuration
+pointing at another buffer. This helper activates only the explicitly requested
+pilot; general package-generation commands below remain non-activating.
+
 A VPN is optional. With existing key-authenticated SSH access through fenrir,
 use [the SSH template](examples/remote-agent-ssh.json). `ssh_host` is the existing
 SSH alias, such as `jump-mimir`; routing and keys stay in `~/.ssh/config`.
