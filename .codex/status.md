@@ -1,5 +1,16 @@
 # Status
 
+## Portable watch — 2026-10-11
+
+`scripts/remote-watch` works on mimir (including SSH sessions) and the traveling
+Mac. Explicit `--env`/`--config` wins, followed by `LOGBOOK_REMOTE_CONFIG`, existing
+pilot agent settings, then checkout `.env`. Source imports and the default env
+are anchored to the checkout, while explicit relative paths retain caller meaning.
+Verified against live mimir status and a real synthetic Mac outbox; watch leaves
+the outbox and source unchanged. No processing, service or retention changes.
+Full quality gate passed: 257 tests, lint/type checks, observer build and 99%
+feature-branch changed-line coverage.
+
 ## Production remote-audio acceptance passed — 2026-10-10 (Pacific)
 
 User authorized production transcription/publication verification and repairs,

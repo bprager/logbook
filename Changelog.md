@@ -37,6 +37,10 @@ production version remains 1.2.3.
 
 ### Changed
 
+- `scripts/remote-watch` now selects the local Mac upload buffer or mimir's
+  production watcher from available configuration. Supports explicit `--config`
+  and `--env` selection and invocation from outside the checkout.
+
 - Remote app builds select the native Mac compiler architecture explicitly, fixing
   Intel-shell/Apple-Silicon tool mismatches. Compile and verify the signed app in
   a staging directory before replacing an existing package.

@@ -345,3 +345,21 @@ For another configuration, pass `--config /absolute/path/remote-agent.json` to
 watch/eject, or set `LOGBOOK_REMOTE_CONFIG`. The wrappers default to the existing
 `LogbookRemotePilot` configuration. The installed commands are also available as
 `logbook-remote watch --config ...` and `logbook-remote eject --config ...`.
+
+### The same watch command on mimir and the MacBook
+
+Run `scripts/remote-watch` on either machine, including in an SSH session on
+mimir. On the MacBook it shows the local buffer and upload receipts. On mimir,
+without a local agent configuration, it shows production transcription and
+Obsidian publication using the checkout's `.env`. `--once` works in both modes.
+The script locates its checkout from its own path, so an absolute invocation
+also works from another directory. It only observes; it does not start uploads
+or processing.
+
+Explicit `--env FILE` selects production watch; explicit `--config FILE` selects
+the Mac agent watch. Otherwise selection uses `LOGBOOK_REMOTE_CONFIG`, the
+existing `LogbookRemotePilot/remote-agent.json`, then the checkout `.env`, in that
+order. An explicitly configured missing file is an error, not a fallback to a
+different watcher. If both configurations exist, use `--env` to select production.
+Other options are forwarded to the selected watcher; `--ui curses` is available
+in production mode. Run `scripts/remote-watch --help` for the shared options.
