@@ -11,10 +11,12 @@ from logbook.remote_config import AgentConfig, ServerConfig, load_remote_config
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='logbook-remote')
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('agent-run', 'serve', 'package-agent', 'package-server'):
+    for name in ('agent-run', 'serve', 'package-agent', 'package-server', 'package-tunnel'):
         command = commands.add_parser(name)
         command.add_argument('--config', required=True, type=Path)
-        if name in ('package-agent', 'package-server'):
+        if name == 'package-tunnel':
+            command.add_argument('--output', required=True, type=Path)
+        elif name in ('package-agent', 'package-server'):
             command.add_argument('--output', required=True, type=Path)
             command.add_argument('--repo', required=True, type=Path)
             if name == 'package-agent':
@@ -23,7 +25,10 @@ def main(argv=None):
                 command.add_argument('--env', required=True, type=Path)
     args = parser.parse_args(argv)
     config = load_remote_config(args.config, ServerConfig if args.command in ('serve', 'package-server') else AgentConfig)
-    if args.command == 'serve':
+    if args.command == 'package-tunnel':
+        from logbook.remote_launchd import write_tunnel_package
+        print(write_tunnel_package(config, args.output))
+    elif args.command == 'serve':
         import uvicorn
         from logbook.remote_api import create_ingest_app
         uvicorn.run(create_ingest_app(config), host=config.bind_host, port=config.port,

@@ -52,6 +52,18 @@ class RemoteConfigTests(TestCase):
             with self.assertRaises(ValueError):
                 self.server.credentials()
 
+    def test_ssh_transport_is_optional_and_loopback_only(self):
+        replace(self.agent, ssh_host='jump-mimir', ssh_remote_port=18791).validate()
+        for changes in ({'ssh_host': '-oProxyCommand=bad'}, {'ssh_host': 'jump mimir'},
+                        {'ssh_host': None}, {'ssh_remote_port': 0}, {'ssh_remote_port': True},
+                        {'ssh_remote_port': 65536}, {'server_url': 'http://localhost:18791'},
+                        {'server_url': 'http://127.0.0.1'}, {'server_url': 'http://127.0.0.1:0'},
+                        {'server_url': 'https://127.0.0.1:18791'},
+                        {'server_url': 'http://100.64.0.1:18791', 'vpn_transport': True},
+                        {'vpn_transport': True}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                replace(self.agent, **({'ssh_host': 'jump-mimir'} | changes)).validate()
+
     def test_agent_rejects_unsafe_settings_and_secret_permissions(self):
         for changes in ({'vpn_transport': 'false'}, {'server_url': 'ftp://host'}, {'server_url': 'https://a:b@host'},
                         {'server_url': 'https://host/path'}, {'server_url': 'http://8.8.8.8'},

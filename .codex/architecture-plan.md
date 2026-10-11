@@ -1,5 +1,13 @@
 # Architecture Plan
 
+## Remote SSH transport — 2026-10-10
+
+An optional dedicated user LaunchAgent maintains a loopback SSH tunnel using
+`jump-mimir` through fenrir. This is a transport alternative to VPN; the signed
+recorder app and its durable outbox remain independent of connection state.
+The mimir-to-Odin processing path and guarded retention are unchanged.
+Package generation never loads jobs; see `docs/remote-installation.md`.
+
 Updated: 2026-04-30
 
 ## Infrastructure Findings From `prager.ws`

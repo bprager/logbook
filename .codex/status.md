@@ -1,5 +1,14 @@
 # Status
 
+## Automatic SSH packaging — 2026-10-10
+
+Optional `ssh_host`/`ssh_remote_port` settings generate a dedicated tunnel
+LaunchAgent, also available through `package-tunnel`. Hardened configuration
+propagates to jump hosts without modifying existing SSH settings. Native SSH
+inspection, an isolated real launchd restart/forwarding drill and all 237 tests
+pass (99% changed-line coverage). Physical Mac login/network recovery is next;
+production activation and recorder deletion remain unapproved.
+
 ## First physical remote pilot — 2026-10-10
 
 Tene-MacBook-Air successfully built the signed app and buffered 25 Sony files.

@@ -21,6 +21,9 @@ class RemoteCliTests(TestCase):
             with patch('logbook.remote_launchd.write_server_package', return_value=['server']):
                 self.assertEqual(main(['package-server', '--config', 'sample.json', '--env', '.env',
                                        '--output', 'out', '--repo', '.']), 0)
+            with patch('logbook.remote_launchd.write_tunnel_package', return_value='tunnel') as tunnel:
+                self.assertEqual(main(['package-tunnel', '--config', 'sample.json', '--output', 'out']), 0)
+                tunnel.assert_called_once()
             with patch('logbook.remote_launchd.write_agent_package', return_value=['package']) as package:
                 self.assertEqual(main(['package-agent', '--config', 'sample.json', '--output', 'out',
                                        '--repo', '.', '--signing-identity', 'Local']), 0)

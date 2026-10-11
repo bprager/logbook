@@ -8,6 +8,65 @@ on either Mac. These are Logbook services, not OpenClaw services.
 
 ## Prepare each Mac
 
+### SSH transport for travel
+
+A VPN is optional. With existing key-authenticated SSH access through fenrir,
+use [the SSH template](examples/remote-agent-ssh.json). `ssh_host` is the existing
+SSH alias, such as `jump-mimir`; routing and keys stay in `~/.ssh/config`.
+`ssh_remote_port` is the receiver port on the final SSH destination, mimir.
+`server_url` must be the Mac's explicit `http://127.0.0.1:PORT` listener;
+keep `vpn_transport` false. No fixed travel IP or inbound Mac connection is needed.
+
+`package-agent` also generates `local.logbook.remote-tunnel.plist` when SSH is
+configured. Generate only that plist without rebuilding an existing app with:
+
+```sh
+.venv/bin/logbook-remote package-tunnel \
+  --config '/absolute/settings/remote-agent.json' \
+  --output '/absolute/LogbookRemotePackage'
+```
+
+Before activation, verify the following succeeds, including after a fresh login:
+
+```sh
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes jump-mimir hostname
+```
+
+Enroll and verify both SSH hops' host keys beforehand. The tunnel never accepts
+unknown/changed host keys or prompts for passwords. Passphrase-protected keys
+must be available to the login service, not only the terminal. Do not disable
+host-key verification to fix failures. The alias should not define other forwards.
+
+After approval, install both generated plists in `~/Library/LaunchAgents/` and
+bootstrap each into `gui/$(id -u)`. Keep the generated app and settings in place.
+The tunnel starts at login and retries failures/exits with a 30-second throttle.
+Keepalives detect unresponsive peers after approximately 45 seconds. It forwards
+only from Mac loopback to mimir loopback. Agent/X11 forwarding and connection
+sharing are disabled. An occupied local port fails safely, without takeover.
+Inspect `logs/tunnel.err.log` in the agent root for connection failures.
+Keep the generated `remote-ssh.conf` beside the package: it applies these settings
+before including `~/.ssh/config`, and SSH passes it to jump-host child processes.
+The service remains in the foreground so launchd supervises the real connection.
+
+The recorder agent independently runs on mounts, at login and every minute.
+Pending uploads retain their persisted retry schedule (30 seconds up to one
+hour); tunnel recovery does not reset it. Logout stops these per-user jobs;
+login restores them. SSH-blocking networks require another network or transport.
+
+Pilot deployments must use a separate Mac buffer and central ledger, with
+distinct ports (18791). A pilot receipt must never acknowledge the production
+buffer. To stop the installed jobs without removing recordings:
+
+```sh
+launchctl bootout gui/$(id -u)/local.logbook.remote-agent
+launchctl bootout gui/$(id -u)/local.logbook.remote-tunnel
+```
+
+Remove only their installed plists to prevent next-login activation. Retain
+buffers and credentials. Existing production mount and retention jobs are separate.
+
+### Agent package
+
 If an earlier checkout fails installation with “A second file is being added to
 the wheel archive”, update the feature branch with `git pull --ff-only` and retry
 `.venv/bin/python -m pip install .`. The duplicate observer-asset packaging rule

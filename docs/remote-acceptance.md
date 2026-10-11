@@ -9,8 +9,8 @@ LGB-044 through LGB-047. Production version remains **1.2.3**.
 
 - Ruff and mypy checks.
 - Markdown lint and existing observer web build.
-- 233 tests, including 43 focused remote-ingestion tests.
-- 98% whole-branch changed-line coverage, above the 97% required threshold.
+- 237 tests, including 46 focused remote-ingestion tests.
+- 99% whole-branch changed-line coverage, above the 97% required threshold.
 - Existing direct USB, consolidation, vault synchronization, retention and backup
   regression suites remain passing.
 
@@ -63,6 +63,24 @@ registration and all receipts now commit before those parts are reclaimed. The
 reviewer reran focused recovery tests and confirmed that fix.
 
 ## Physical acceptance progress
+
+### Automatic SSH lifecycle — 2026-10-10
+
+Optional SSH configuration and a separately generated tunnel LaunchAgent are
+implemented. Native OpenSSH inspection verifies the hardened configuration is
+passed to ProxyJump children and applies noninteractive authentication, strict
+host keys, connection timeouts and foreground operation on both hops. Independent
+review found the initial missing jump-hop inheritance; it is fixed and covered.
+
+An isolated launchd job on mimir used the actual generated command/config to
+forward traffic through SSH to fenrir's SSH port. The test terminated only its
+own SSH process, verified launchd started a new process and forwarding recovered,
+then unloaded the test job. No production jobs changed. Full tests cover existing
+offline buffering/restart recovery, and the quality gate passed 237 tests.
+
+This is not physical MacBook logout, Wi-Fi change or wake-from-sleep acceptance.
+Those checks and signed-app delivery through the managed jump route remain the
+next pilot steps. Package generation does not activate production or pilot jobs.
 
 ### First traveling MacBook pilot — 2026-10-10 (Pacific)
 

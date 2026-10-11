@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Added
 
+- Optional automatic SSH tunnel through an existing jump-host alias, with login
+  startup, connection health checks and launchd recovery. Package generation does
+  not activate services; offline recording buffers remain independent.
 - Verified the first traveling MacBook's signed recorder read and isolated SSH
   upload pilot: 25 recordings, matching server checksums, no incomplete uploads.
 - Recorded an isolated real-HTTP remote ingestion pilot: two offline agent

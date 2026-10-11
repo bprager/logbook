@@ -2,6 +2,14 @@
 
 ## Accepted
 
+### D-019: Support the existing SSH jump route for traveling Macs
+
+Use an optional loopback-only SSH LaunchAgent with strict host-key checking,
+noninteractive authentication, keepalives and restart throttling. SSH keys stay
+in the existing Mac SSH setup and are separate from upload bearer credentials.
+VPN is an alternative, not a prerequisite. Pilot and production receipts remain
+separate. Production activation still requires explicit approval.
+
 ### D-001: Logs are staged before final rendering
 
 All log entries are written to `10 - Logs/00 - Inbox` first. Final daily logs under `06 - Timestamps` are rendered later from staged entries and ledger state.

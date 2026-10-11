@@ -83,11 +83,22 @@ class AgentConfig:
     reserve_bytes: int = 1024**3
     max_bytes: int = 2 * 1024**3
     chunk_bytes: int = 1024**2
+    ssh_host: str = ''
+    ssh_remote_port: int = 8790
 
     def validate(self):
         if type(self.vpn_transport) is not bool:
             raise ValueError('vpn_transport must be a JSON boolean')
         url = urlsplit(self.server_url)
+        if not isinstance(self.ssh_host, str) or (self.ssh_host and
+                not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,252}', self.ssh_host)):
+            raise ValueError('ssh_host must be a plain SSH configuration alias')
+        if type(self.ssh_remote_port) is not int or not 1 <= self.ssh_remote_port <= 65535:
+            raise ValueError('invalid SSH destination port')
+        if self.ssh_host and (url.scheme != 'http' or url.hostname != '127.0.0.1'
+                              or url.port is None or not 1 <= url.port <= 65535
+                              or self.vpn_transport):
+            raise ValueError('SSH requires an explicit http://127.0.0.1:PORT URL without VPN mode')
         if (url.scheme not in ('http', 'https') or not url.hostname or url.username
                 or url.password or url.query or url.fragment or url.path not in ('', '/')):
             raise ValueError('invalid ingest URL')
