@@ -71,6 +71,33 @@ Those conditions require their underlying problem to be corrected.
 
 ## Installation and maintenance
 
+### Onsite Sony mount helper
+
+The existing `LogbookMountRunner.app` must use the same project Python environment
+as the supervised services. A legacy helper compiled with Homebrew's global
+Python can stop before emitting pipeline telemetry when a dependency is added.
+Check its generated C source for the interpreter path; older bundles keep the
+source under `Contents/MacOS`, newer bundles under `Contents/Resources`.
+Back up the existing app before rebuilding it with the checkout's `.venv` Python:
+
+```bash
+.venv/bin/python -m logbook.cli launchd-render --env "$PWD/.env" \
+  --repo-root "$PWD" --python-bin "$PWD/.venv/bin/python"
+launchctl kickstart "gui/$(id -u)/local.logbook.recorder.mount-probe"
+.venv/bin/python -m logbook.cli watch --env .env --once
+```
+
+Rendering refreshes the generated mount app and generated plist files. It does
+not install or load those plists. Keep the installed remote services, supervisor,
+and retention settings intact. Verify the mount run reaches vault sync and a
+second run skips the same recordings. Keep the service checkout on the deployed
+branch: switching it to an older version changes the code loaded by every new
+worker and can exhaust queue recovery. Use a separate checkout for older versions.
+After restoring the deployed code, reset only the affected queue budget using
+the command below.
+
+### Supervisor package
+
 Generate the unprivileged daemon package with the checkout's Python:
 
 ```bash

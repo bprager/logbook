@@ -8,7 +8,7 @@ from unittest import TestCase
 
 
 class CliImportTests(TestCase):
-    def test_cli_import_does_not_require_fastapi_for_non_server_commands(self) -> None:
+    def test_cli_import_does_not_require_server_dependencies_for_non_server_commands(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         env = os.environ.copy()
         env["PYTHONPATH"] = str(repo_root / "src")
@@ -18,8 +18,8 @@ import builtins
 real_import = builtins.__import__
 
 def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == "fastapi" or name.startswith("fastapi."):
-        raise ModuleNotFoundError("No module named 'fastapi'")
+    if name.split(".")[0] in {"fastapi", "httpx"}:
+        raise ModuleNotFoundError(f"No module named '{name}'")
     return real_import(name, globals, locals, fromlist, level)
 
 builtins.__import__ = blocked_import

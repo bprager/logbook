@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Keep recorder and recovery commands usable without loading the supervisor's
+  HTTP client. Repair Mimir's legacy onsite mount helper to use the project
+  environment, and document recovery without changing remote ingestion.
 - Recognize both Memgraph storage-conflict spellings so production graph retries
   recover, and report only successful jobs in the graph synchronization count.
 

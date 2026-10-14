@@ -13,8 +13,6 @@ import time
 from pathlib import Path
 from threading import Event
 
-import httpx
-
 from logbook.metrics import MetricSample, render_prometheus_metrics
 
 
@@ -118,6 +116,10 @@ class ManagedService:
                 return now - self.started_at < self.spec.get('timeout', 1800)
         elif 'restart_command' not in self.spec:
             return False
+        # Recorder/recovery commands and read-only snapshots do not need the
+        # supervisor's HTTP client just to import their CLI.
+        import httpx
+
         try:
             response = httpx.get(self.spec['health_url'], timeout=3, trust_env=False)
             response.raise_for_status()

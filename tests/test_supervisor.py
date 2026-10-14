@@ -109,12 +109,12 @@ class RecoveryTests(TestCase):
             with patch('logbook.supervisor.subprocess.run') as restart:
                 service.start(100)
                 restart.assert_called_once()
-            with patch('logbook.supervisor.httpx.get', side_effect=httpx.ConnectError('offline')):
+            with patch('httpx.get', side_effect=httpx.ConnectError('offline')):
                 self.assertIsNone(service.healthy(120))
                 self.assertFalse(service.healthy(200))
             reply = Mock()
             reply.json.return_value = {'healthy': True}
-            with patch('logbook.supervisor.httpx.get', return_value=reply):
+            with patch('httpx.get', return_value=reply):
                 self.assertTrue(service.healthy(200))
                 reply.json.return_value = {'healthy': False}
                 self.assertFalse(service.healthy(201))
