@@ -1,5 +1,21 @@
 # Status
 
+## Ingestion service recovery — 2026-10-21
+
+Development was on `main` while production expected the remote-ingestion branch;
+the supervisor repeatedly failed to import its missing module. Restored deployed
+revision `50de098`, reset only the queue recovery budget and isolated production
+source in `~/VoiceIngest/services/releases/50de0984acf3a389134ef34b108fae77dbb68348`.
+Installed/generated supervisor settings and the onsite recorder helper now use
+that snapshot. Existing `.venv` and `.env` remain required in the project path.
+
+Verified receiver/API health, all four supervised components healthy, zero
+exhausted budgets, successful scheduled queue runs, no incomplete ledger jobs and
+no unpublished remote deliveries. Receiver/API and queue remained functional with
+development switched to `main`. Full quality gate passed with 293 tests. Audio
+retained; Sony absent, so a fresh physical-recorder import was not exercised.
+See `docs/service-recovery.md` for deployment and rollback details.
+
 ## Persistent upload recovery and latest recording — 2026-10-11
 
 Production receiver restored on enrolled Mac port 18791, using the existing

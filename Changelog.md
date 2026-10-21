@@ -23,6 +23,11 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Restore ingestion after the development checkout lost the deployed service
+  modules. Pin the live supervisor and recorder helper to a validated source
+  snapshot so development branch changes cannot remove their code; restore the
+  queue recovery allowance and verify service health and completed processing.
+
 - Keep recorder and recovery commands usable without loading the supervisor's
   HTTP client. Repair Mimir's legacy onsite mount helper to use the project
   environment, and document recovery without changing remote ingestion.

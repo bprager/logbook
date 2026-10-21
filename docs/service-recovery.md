@@ -71,6 +71,45 @@ Those conditions require their underlying problem to be corrected.
 
 ## Installation and maintenance
 
+### Production source isolation
+
+On October 21, the development checkout was on `main`, which did not contain
+`logbook.supervisor`, `logbook.remote_cli`, or `process-queued`. The installed
+supervisor still imported that checkout and repeatedly exited with
+`No module named logbook.supervisor`. Its last saved queue budget was exhausted.
+
+The deployed source is now a Git archive of commit
+`50de0984acf3a389134ef34b108fae77dbb68348`, stored under
+`~/VoiceIngest/services/releases/<commit>`. `DEPLOYED_COMMIT` records its revision.
+Both the installed and generated supervisor plists use that directory as their
+working directory and its `src` directory as `PYTHONPATH`. Children inherit it.
+The onsite mount app also uses this source directory. Credentials, the existing
+Python environment, device registry, ledger and recovery budgets remain external.
+Do not remove the project's `.venv` or `.env`; those paths are still in use.
+
+For an update, validate the selected revision first, export it into a new release
+directory, and point the supervisor and mount helper at that directory. Preserve
+the old source and configuration for rollback. Update both the installed and
+generated supervisor plist; a later package generation must not silently point
+production at the development checkout again. The helper's `--repo-root` must be
+the release directory, while `--env` and `--python-bin` retain their absolute
+production paths. Loading a new system plist requires administrator access.
+Wait for the old supervisor to stop before bootstrapping its replacement.
+
+After deployment, check fresh health responses, supervisor state and a completed
+scheduled queue run. Confirm source isolation by switching the development
+checkout to an older branch and verifying those checks again. On October 21,
+receiver/API checks and scheduled queue processing succeeded with development
+on `main`; all four supervised components were healthy with zero exhausted
+budgets, no unfinished ledger jobs and no unpublished remote deliveries.
+All 293 tests and the full quality gate passed. The Sony was disconnected, so
+a fresh physical-recorder import remains unverified until it is reconnected.
+
+Configuration backups are under `~/VoiceIngest/services/repair-20261021T181335Z`
+and `mount-helper-20261021T181623Z`; verify actual directory names before rollback.
+Restore the saved plist only after ensuring its referenced source is available.
+Source audio was not deleted during this recovery.
+
 ### Onsite Sony mount helper
 
 The existing `LogbookMountRunner.app` must use the same project Python environment
@@ -82,26 +121,30 @@ Back up the existing app before rebuilding it with the checkout's `.venv` Python
 
 ```bash
 .venv/bin/python -m logbook.cli launchd-render --env "$PWD/.env" \
-  --repo-root "$PWD" --python-bin "$PWD/.venv/bin/python"
+  --repo-root "$LOGBOOK_RELEASE_ROOT" --python-bin "$PWD/.venv/bin/python"
 launchctl kickstart "gui/$(id -u)/local.logbook.recorder.mount-probe"
 .venv/bin/python -m logbook.cli watch --env .env --once
 ```
 
-Rendering refreshes the generated mount app and generated plist files. It does
-not install or load those plists. Keep the installed remote services, supervisor,
+Rendering refreshes the generated mount app and generated plist files. Set
+`LOGBOOK_RELEASE_ROOT` to the validated release directory above first. Rendering
+does not install or load those plists. Keep the installed remote services, supervisor,
 and retention settings intact. Verify the mount run reaches vault sync and a
-second run skips the same recordings. Keep the service checkout on the deployed
-branch: switching it to an older version changes the code loaded by every new
-worker and can exhaust queue recovery. Use a separate checkout for older versions.
+second run skips the same recordings. Keep live service imports on the validated
+release snapshot. A mutable development checkout is not a deployment directory.
 After restoring the deployed code, reset only the affected queue budget using
 the command below.
 
 ### Supervisor package
 
-Generate the unprivileged daemon package with the checkout's Python:
+Generate the unprivileged daemon package from the validated release directory,
+using the existing production Python and environment paths:
 
 ```bash
-.venv/bin/python -m logbook.service_install --env .env \
+cd "$LOGBOOK_RELEASE_ROOT"
+PYTHONPATH="$LOGBOOK_RELEASE_ROOT/src" \
+  /Users/bernd/Projects/Logbook/.venv/bin/python -m logbook.service_install \
+  --env /Users/bernd/Projects/Logbook/.env \
   --server-config ~/VoiceIngest/services/remote-server.json \
   --output ~/VoiceIngest/services/production-package --odin-host odin
 ```
