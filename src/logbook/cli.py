@@ -1030,7 +1030,7 @@ def _pipeline_copy(config, reporter, copy_recorder):
     reporter.finish_stage(
         "copy",
         event="succeeded" if copy_stage_ok else "failed",
-        safe_detail=copy_result.discovery_error,
+        safe_detail=copy_result.discovery_error or "; ".join(copy_result.validation.warnings) or None,
     )
     return copy_stage_ok, copy_result.copied_count
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 import types
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -20,6 +22,35 @@ from logbook.odin_worker import (
 
 
 class OdinWorkerTests(TestCase):
+    def test_health_responds_while_transcription_is_running(self) -> None:
+        started, release = Event(), Event()
+
+        class SlowTranscriber(_FakeTranscriber):
+            def transcribe(self, *args, **kwargs):
+                started.set()
+                release.wait(timeout=5)
+                return super().transcribe(*args, **kwargs)
+
+        with TemporaryDirectory() as tmp:
+            app = create_odin_worker_app(
+                OdinWorkerConfig(root=Path(tmp), odin=_odin_config()),
+                transcriber=SlowTranscriber(),
+            )
+            with TestClient(app) as client, ThreadPoolExecutor(max_workers=2) as pool:
+                submit = pool.submit(
+                    client.post, "/jobs",
+                    data={"job_id": "17", "checksum_sha256": "abc123"},
+                    files={"audio": ("meeting.mp3", b"audio", "audio/mpeg")},
+                )
+                try:
+                    self.assertTrue(started.wait(timeout=2))
+                    health = pool.submit(client.get, "/health").result(timeout=2)
+                    self.assertTrue(health.json()["healthy"])
+                    self.assertFalse(submit.done())
+                finally:
+                    release.set()
+                self.assertEqual(submit.result(timeout=2).status_code, 200)
+
     def test_worker_health_reports_model_readiness(self) -> None:
         with TemporaryDirectory() as tmp:
             app = create_odin_worker_app(

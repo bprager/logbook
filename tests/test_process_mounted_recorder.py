@@ -13,6 +13,7 @@ from logbook.config import load_app_config
 from logbook.copying import CopyResult, copy_discovered_recordings
 from logbook.ledger import open_ledger
 from logbook.odin import FakeOdinClient
+from logbook.observer import build_observer_snapshot
 from logbook.recorder import RecorderValidation
 from logbook.routing import route_transcripts
 from logbook.transcription import transcribe_copied_with_fake_odin
@@ -38,6 +39,24 @@ class _TransientOdinClient(FakeOdinClient):
 
 
 class ProcessMountedRecorderTests(TestCase):
+    def test_missing_recorder_explains_copy_failure_in_monitor(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            missing_recorder = copy_discovered_recordings(config)
+            with (
+                patch("logbook.cli.copy_discovered_recordings_with_retries", return_value=missing_recorder),
+                patch("logbook.cli.HttpOdinClient", FakeOdinClient),
+            ):
+                self.assertEqual(_process_mounted_recorder(env_path), 1)
+
+            snapshot = build_observer_snapshot(config)
+            self.assertEqual(len(snapshot.recent_failures), 1)
+            detail = snapshot.recent_failures[0].safe_detail
+            self.assertIn("recordings directory does not exist", detail)
+            self.assertNotIn(str(root), detail)
+
     def test_process_mounted_recorder_consolidates_routed_log_entries(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

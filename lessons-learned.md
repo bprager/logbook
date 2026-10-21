@@ -1,5 +1,18 @@
 # Lessons Learned
 
+## 2026-10-21: A Busy GPU Worker Must Still Answer Health Checks
+
+The async upload handler called synchronous transcription and speaker labeling
+directly. Long recordings blocked the HTTP event loop, so supervisor health
+checks timed out and restarted a worker that was still doing useful work.
+Run inference in a thread and keep an async lock around it to preserve serial
+GPU processing. Verify health responds while an inference request remains active.
+
+The same incident found the Sony present in the USB tree but exposing no storage
+disk. Reconnecting restored the disk and automatic import. A healthy empty queue
+does not prove recorder access: check discovery, mounted storage, and publication
+of an actual fresh recording. Save validation warnings in copy-stage telemetry.
+
 ## 2026-10-21: Production Must Not Import A Mutable Development Checkout
 
 The installed supervisor imported the project's `src` directory. Switching that

@@ -1,5 +1,22 @@
 # Status
 
+## Recorder storage and busy-worker recovery — 2026-10-21
+
+Follow-up investigation found the Sony visible on USB but exposing no disk or
+mounted volume. Reconnecting restored `IC RECORDER` and the existing mount helper
+automatically copied four new recordings (jobs 250–253). Their filenames and
+filesystem dates say October 20–21, 2025; year correction awaits the operator's
+answer. Original recordings remain untouched.
+
+Live processing exposed a separate worker fault: synchronous transcription inside
+the async upload handler blocked health requests, triggering supervisor restarts.
+A regression test reproduced the health timeout. Transcription now runs in a
+thread with an async lock preserving serial GPU work. The targeted patch was
+backed up and applied on Odin, preserving its existing WAV conversion changes.
+Full quality gate passes: 295 tests, type checks, lint, web build, and 100% changed
+line coverage. Recorder validation warnings now reach monitor copy-failure detail;
+a regression test verifies the missing-folder explanation and path redaction.
+
 ## Ingestion service recovery — 2026-10-21
 
 Development was on `main` while production expected the remote-ingestion branch;

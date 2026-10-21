@@ -23,6 +23,12 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Keep Odin health checks responsive during transcription and speaker labeling,
+  preventing the supervisor from restarting a busy worker. Preserve one-at-a-time
+  GPU processing.
+- Preserve recorder validation warnings in monitor copy failures, so an absent
+  or unreadable recorder folder has an explanation instead of only an exit code.
+
 - Restore ingestion after the development checkout lost the deployed service
   modules. Pin the live supervisor and recorder helper to a validated source
   snapshot so development branch changes cannot remove their code; restore the
