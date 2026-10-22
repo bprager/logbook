@@ -5,8 +5,9 @@
 Follow-up investigation found the Sony visible on USB but exposing no disk or
 mounted volume. Reconnecting restored `IC RECORDER` and the existing mount helper
 automatically copied four new recordings (jobs 250–253). Their filenames and
-filesystem dates say October 20–21, 2025; year correction awaits the operator's
-answer. Original recordings remain untouched.
+filesystem dates say October 20–21, 2025. The operator confirmed these belong to
+2026; audited corrections now place two entries on October 20 and one entry plus
+the meeting on October 21. Original recordings remain untouched.
 
 Live processing exposed a separate worker fault: synchronous transcription inside
 the async upload handler blocked health requests, triggering supervisor restarts.
@@ -16,6 +17,27 @@ backed up and applied on Odin, preserving its existing WAV conversion changes.
 Full quality gate passes: 295 tests, type checks, lint, web build, and 100% changed
 line coverage. Recorder validation warnings now reach monitor copy-failure detail;
 a regression test verifies the missing-folder explanation and path redaction.
+
+Deployed worker health fix from `5fc327f`; verified live health during speaker
+labeling, subsequent successful publication, and all four supervised services
+healthy with zero exhausted budgets. Recorder helper now imports a frozen
+`services/releases/5fc327fdae37a2dd87471f8bdbba962a25a40aa8` snapshot; supervisor
+receiver/API/queue retain their previous validated snapshot.
+
+Vault commits `0561705` and `1236a18` publish the corrected notes and remove two
+identical inbox duplicates. Vault HEAD matches remote main at `1236a18`. Original
+and copied audio checksums were verified during correction; ledger backup and
+original generated notes are in `services/year-correction-20261021T194536Z`.
+Memgraph MCP corrected four job dates, 296 evidence dates, and seven note
+references after direct graph sync could not connect. Obsidian visibly displays
+the corrected October 21 meeting with three named speaker labels; 15 closing
+segments remain unassigned, and all 211 transcript segments are preserved.
+
+A repeat recorder run was interrupted when its volume disappeared during
+hashing. Fresh replay idempotency remains physically unverified; the corrected
+vault has one daily log per date and one inbox/meeting note per recovered job.
+Earlier failed-run history is retained. Set the recorder's year to 2026 before
+new recordings; source filenames and filesystem dates were not rewritten.
 
 ## Ingestion service recovery — 2026-10-21
 

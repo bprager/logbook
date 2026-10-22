@@ -9,6 +9,13 @@ listeners. OpenClaw ownership and runtime are unaffected.
 
 ## Recovery policy
 
+GPU work must not block the worker's HTTP event loop. A busy worker still needs
+to answer health checks; otherwise the supervisor can restart useful processing.
+The October 21 repair runs transcription and speaker labeling in a thread while
+an async lock preserves serial GPU work. Verify health during an actual long job,
+not only while idle. The recorder helper now uses frozen revision `5fc327f`; the
+supervisor's receiver/API/queue still use the validated `50de098` snapshot below.
+
 The supervisor checks services once per minute. Receiver/API checks require an
 HTTP health response; the receiver checks its ledger and credential registry.
 A newly started process has 90 seconds to become ready. Startup grace is not
