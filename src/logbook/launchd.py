@@ -111,6 +111,7 @@ def render_launchd_package(
         src_path=src_path,
         env_path=env_path,
         recorder_dir=config.recorder.recordings_dir,
+        recorder_mount_path=config.recorder.mount_path,
     )
     mount_probe_plist = {
         "Label": mount_probe_label,
@@ -200,6 +201,7 @@ def _render_mount_runner_app(
     src_path: Path,
     env_path: Path,
     recorder_dir: Path,
+    recorder_mount_path: Path | None = None,
     module: str = "logbook.cli",
     command: str = "process-mounted-recorder",
     config_arg: str = "--env",
@@ -241,6 +243,16 @@ def _render_mount_runner_app(
             '        perror("setenv");',
             "        return 112;",
             "    }",
+            *(
+                [
+                    f"    if (access({_c_string(str(recorder_mount_path))}, F_OK) != 0 && errno == ENOENT) {{",
+                    '        printf("recorder absent; no import requested\\n");',
+                    "        return 0;",
+                    "    }",
+                ]
+                if recorder_mount_path is not None
+                else []
+            ),
             f"    DIR *recorder_dir = opendir({_c_string(str(recorder_dir))});",
             "    if (recorder_dir != NULL) {",
             "        closedir(recorder_dir);",

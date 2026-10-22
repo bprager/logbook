@@ -1,5 +1,35 @@
 # Status
 
+## Watch failure history and absent-recorder triggers — 2026-10-22
+
+The reported 21:02 Odin connection failure recovered through the supervised queue:
+job 254 was published at 21:03. Mounted-recorder runs subsequently succeeded at
+21:27 and 22:01. The observer previously displayed every failed attempt in its
+24-hour window without recovery status. It now labels later successful retries
+from the same command and host as recovered, requiring publication evidence for
+job-specific failures. Genuine unresolved failures sort first; the failures-only
+filter excludes recovered attempts and expected recorder disconnection notices.
+Failure counts explicitly describe historical attempts; original SQLite run
+records remain unchanged.
+
+The native onsite helper now exits successfully without starting Python when
+the Sony mount is absent. `StartOnMount` also fires for unrelated disks. A mounted
+Sony with a missing/unreadable recordings folder still runs validation and reports
+errors; the remote Mac helper retains its offline-buffer retry behavior. Existing
+missing-folder attempts are informational only while the mount itself is absent,
+and become failures again if it is present but its folder is still missing.
+
+Job 254 inherited the same incorrect recorder year. Applied the already confirmed
+2026 correction with ledger/note backups and an audit record, preserving audio.
+The October 21 daily log now contains both the 07:48 and 14:20 entries, published
+in vault commit `a83a6fe`.
+
+Validation: full quality gate passes with 299 tests and 100% changed-line coverage.
+Independent review found no important issues. The live local snapshot shows the
+quoted connection failure as recovered, disconnected-recorder attempts as
+informational, all supervised services healthy, and no unfinished recordings.
+Restart an already-running watch process to load the updated observer code.
+
 ## Recorder storage and busy-worker recovery — 2026-10-21
 
 Follow-up investigation found the Sony visible on USB but exposing no disk or

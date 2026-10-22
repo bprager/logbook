@@ -23,6 +23,12 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Mark recovered pipeline attempts in watch history and keep the failure filter
+  focused on unresolved problems. Preserve the original failure records and
+  distinguish historical attempt totals from current job failures.
+- Ignore unrelated mount events when the onsite Sony volume is absent, while
+  retaining errors for a connected recorder whose recordings cannot be read.
+
 - Keep Odin health checks responsive during transcription and speaker labeling,
   preventing the supervisor from restarting a busy worker. Preserve one-at-a-time
   GPU processing.

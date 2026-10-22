@@ -75,6 +75,7 @@ class ObserverFailure:
     source: str = "job"
     run_id: str | None = None
     command: str | None = None
+    recovered_at: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -86,6 +87,7 @@ class ObserverFailure:
             "source": self.source,
             "run_id": self.run_id,
             "command": self.command,
+            "recovered_at": _local_observer_timestamp(self.recovered_at),
         }
 
 
@@ -200,13 +202,13 @@ def build_observer_snapshot(
         for row in rows
         if (failure := _failure_outcome(row, window_start, config)) is not None
     )
-    pipeline_failures = _failed_pipeline_runs(config.sqlite_path, window_start, config)
+    pipeline_failures = _failed_pipeline_runs(config.sqlite_path, window_start, config, generated)
     failures = sorted(
         (
             failure
             for failure in (*job_failures, *pipeline_failures)
         ),
-        key=lambda item: (item.occurred_at, item.job_id),
+        key=lambda item: (item.status not in {"recovered", "recorder_absent"}, item.occurred_at, item.job_id),
         reverse=True,
     )[:limit]
     durations = [
@@ -287,7 +289,7 @@ def render_observer_snapshot(
     else:
         lines.append("  none in 24h")
 
-    lines.extend(["", "Failures and review"])
+    lines.extend(["", "Failures and review (attempt history; recovered attempts marked)"])
     if snapshot.recent_failures:
         lines.extend(f"  {_render_failure(item)}" for item in snapshot.recent_failures)
     else:
@@ -299,7 +301,7 @@ def render_observer_snapshot(
             "",
             (
                 f"Stats {stats.window}  jobs {stats.jobs_seen}  ok {stats.succeeded}  "
-                f"dead_letters {stats.dead_letters}  failed {stats.failed}  "
+                f"dead_letters {stats.dead_letters}  failed {stats.failed} attempts  "
                 f"p50 {_format_duration(stats.p50_duration_seconds)}  "
                 f"p90 {_format_duration(stats.p90_duration_seconds)}"
             ),
@@ -404,7 +406,7 @@ def render_full_observer_dashboard(
     else:
         lines.append(_box_line("none in window", width))
 
-    lines.extend([_box_sep(width), _box_line("FAILURES AND REVIEW", width)])
+    lines.extend([_box_sep(width), _box_line("FAILURES AND REVIEW (attempt history)", width)])
     if snapshot.recent_failures:
         lines.extend(_box_line(_render_failure(item), width) for item in snapshot.recent_failures[:5])
     else:
@@ -430,7 +432,9 @@ def filter_observer_snapshot(snapshot: ObserverSnapshot, status_filter: str) -> 
     if status_filter == "all":
         return snapshot
     if status_filter == "failed":
-        return replace(snapshot, recent_finished=())
+        return replace(snapshot, recent_finished=(), recent_failures=tuple(
+            item for item in snapshot.recent_failures if item.status not in {"recovered", "recorder_absent"}
+        ))
     if status_filter == "success":
         return replace(
             snapshot,
@@ -499,6 +503,7 @@ def observer_snapshot_from_dict(payload: dict[str, object]) -> ObserverSnapshot:
                 source=str(item.get("source") or "job"),
                 run_id=_optional_str(item.get("run_id")),
                 command=_optional_str(item.get("command")),
+                recovered_at=_optional_str(item.get("recovered_at")),
             )
             for item in recent_failures
             if isinstance(item, dict)
@@ -654,6 +659,7 @@ def _failed_pipeline_runs(
     sqlite_path: Path,
     window_start: datetime,
     config: AppConfig,
+    generated_at: datetime | None = None,
 ) -> tuple[ObserverFailure, ...]:
     uri = f"file:{sqlite_path}?mode=ro"
     try:
@@ -663,7 +669,19 @@ def _failed_pipeline_runs(
             rows = connection.execute(
                 """
                 SELECT runs.id, runs.command, runs.finished_at, runs.exit_code,
-                       failed_stage.job_id, failed_stage.stage, failed_stage.safe_detail
+                       failed_stage.job_id, failed_stage.stage, failed_stage.safe_detail,
+                       (SELECT MIN(success.finished_at) FROM pipeline_runs AS success
+                        WHERE success.command = runs.command AND success.host = runs.host
+                          AND success.status = 'succeeded'
+                          AND success.started_at > runs.finished_at
+                          AND success.finished_at <= ?
+                          AND (failed_stage.job_id IS NULL OR EXISTS (
+                              SELECT 1 FROM recording_jobs AS job
+                              WHERE job.id = failed_stage.job_id
+                                AND job.vault_synced_at >= runs.finished_at
+                                AND job.status IN ('consolidated', 'meeting_written',
+                                                   'category_written', 'dead_letter_written')
+                          ))) AS recovered_at
                 FROM pipeline_runs AS runs
                 LEFT JOIN pipeline_stage_events AS failed_stage
                   ON failed_stage.id = (
@@ -675,14 +693,27 @@ def _failed_pipeline_runs(
                       LIMIT 1
                   )
                 WHERE runs.status = 'failed'
+                  AND runs.finished_at >= ? AND runs.finished_at <= ?
                 ORDER BY runs.finished_at DESC
-                """
+                """,
+                (
+                    (generated_at or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
+                    window_start.isoformat(timespec="seconds"),
+                    (generated_at or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
+                ),
             ).fetchall()
         finally:
             connection.close()
     except sqlite3.Error:
         return ()
 
+    recorder_absent = False
+    try:
+        config.recorder.mount_path.stat()
+    except FileNotFoundError:
+        recorder_absent = True
+    except OSError:
+        pass  # An inaccessible volume is still a genuine access problem.
     failures: list[ObserverFailure] = []
     for row in rows:
         occurred_at = _parse_datetime(row["finished_at"])
@@ -690,18 +721,24 @@ def _failed_pipeline_runs(
             continue
         stage = _optional_str(row["stage"])
         detail = _optional_str(row["safe_detail"])
+        absent_copy = (
+            recorder_absent and stage == "copy" and row["job_id"] is None
+            and row["command"] == "process-mounted-recorder"
+            and bool(detail and detail.startswith("recordings directory does not exist:"))
+        )
         fallback = f"exit_code={row['exit_code']}" if row["exit_code"] is not None else "failed"
         safe_detail = f"{stage}: {detail or fallback}" if stage else (detail or fallback)
         failures.append(
             ObserverFailure(
                 job_id=int(row["job_id"]) if row["job_id"] is not None else 0,
-                status="failed",
+                status="recovered" if row["recovered_at"] else ("recorder_absent" if absent_copy else "failed"),
                 classification="pipeline",
                 occurred_at=occurred_at.isoformat(timespec="seconds"),
                 safe_detail=_safe_detail(safe_detail, config),
                 source="pipeline_run",
                 run_id=str(row["id"]),
                 command=str(row["command"] or "pipeline"),
+                recovered_at=_optional_str(row["recovered_at"]),
             )
         )
     return tuple(failures)
@@ -1049,7 +1086,11 @@ def _render_failure(item: ObserverFailure) -> str:
         short_id = item.run_id.removeprefix("run-")[:8] if item.run_id else ""
         run_id = f" {short_id}" if short_id else ""
         occurred_at = format_observer_timestamp(item.occurred_at)
-        return f"fail  run{run_id} {command}  {item.safe_detail}  {occurred_at}"
+        label = "past" if item.status == "recovered" else ("info" if item.status == "recorder_absent" else "fail")
+        recovery = f"  recovered {format_observer_timestamp(item.recovered_at)}" if item.recovered_at else ""
+        if item.status == "recorder_absent":
+            recovery = "  recorder currently disconnected"
+        return f"{label}  run{run_id} {command}  {item.safe_detail}  {occurred_at}{recovery}"
     classification = item.classification or "unknown"
     occurred_at = format_observer_timestamp(item.occurred_at)
     return f"fail  #{item.job_id} {classification}  {item.safe_detail}  {occurred_at}"

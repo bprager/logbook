@@ -1,6 +1,8 @@
 import plistlib
 import io
 import tempfile
+import subprocess
+from dataclasses import replace
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import TestCase
@@ -11,6 +13,34 @@ from logbook.launchd import render_launchd_package, write_launchd_package
 
 
 class LaunchdPackagingTests(TestCase):
+    def test_mount_runner_ignores_unrelated_mounts_but_checks_connected_recorder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            mount = root / "Sony"
+            config = replace(config, recorder=replace(config.recorder, mount_path=mount))
+            repo = root / "repo"
+            repo.mkdir()
+            marker = root / "pipeline-started"
+            python = root / "python"
+            python.write_text(f'#!/bin/sh\ntouch "{marker}"\n')
+            python.chmod(0o755)
+            package = render_launchd_package(
+                config=config, env_path=env_path, output_dir=root / "generated",
+                repo_root=repo, python_bin=str(python),
+            )
+            write_launchd_package(package)
+            absent = subprocess.run([str(package.mount_runner.executable_path)], capture_output=True, text=True)
+            self.assertEqual(absent.returncode, 0)
+            self.assertFalse(marker.exists(), absent.stdout + absent.stderr)
+            self.assertIn("recorder absent", absent.stdout)
+            mount.mkdir()
+            connected = subprocess.run([str(package.mount_runner.executable_path)], capture_output=True, text=True)
+            self.assertEqual(connected.returncode, 0)
+            self.assertTrue(marker.exists())
+            self.assertIn("recorder preflight failed", connected.stderr)
+
     def test_render_launchd_package_uses_bounded_commands(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

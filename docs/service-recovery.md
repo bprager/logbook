@@ -55,6 +55,16 @@ opened to the LAN. All audio is retained; retention cleanup remains disabled.
 
 ## Alarms
 
+Watch's failure list is attempt history, not a list of currently broken services.
+A later successful run from the same command and host marks an earlier failure
+as recovered. Job-specific failures additionally require a finalized job with
+newer vault publication evidence. The failures-only filter excludes recovered
+attempts; original failure rows remain available in the all view and ledger.
+Missing-folder history is informational while the Sony mount itself is absent,
+but remains an error if the mount is present or cannot be checked. Unrelated
+disk mounts no longer start the onsite import while the Sony is disconnected.
+Remote Mac agents still retry their offline buffers without a connected recorder.
+
 Deployment definitions are in `deployment/monitoring`. Prometheus on Odin checks:
 
 - Three recovery attempts exhausted.

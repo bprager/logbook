@@ -106,7 +106,7 @@ export default function App() {
   const stage = snapshot?.active_stage
   const progressPercent = numeric(stage?.progress_percent)
   const running = snapshot?.current_run !== null && snapshot?.current_run !== undefined
-  const failureCount = snapshot?.recent_failures.length ?? 0
+  const failureCount = snapshot?.recent_failures.filter((item) => !["recovered", "recorder_absent"].includes(item.status)).length ?? 0
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -121,7 +121,7 @@ export default function App() {
               {failureCount > 0 ? (
                 <Badge variant="destructive">{failureCount} failures</Badge>
               ) : (
-                <Badge variant="outline">no recent failures</Badge>
+                <Badge variant="outline">no unresolved failures</Badge>
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -299,7 +299,7 @@ function FailureTable({ items }: { items: Failure[] }) {
           key={item.job_id}
         >
           <span className="flex items-center gap-2">
-            <XCircle className="h-4 w-4 text-destructive" />
+            {["recovered", "recorder_absent"].includes(item.status) ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4 text-destructive" />}
             #{item.job_id}
           </span>
           <span className="truncate">{item.status}</span>
