@@ -23,9 +23,9 @@ identity marker is installed. Backup and verification evidence are under
 
 The loaded mount agent points to the signed app at its original path. Its source
 still uses the validated `a3c3044` release; service settings and audio are unchanged.
-Asked the operator to safely reconnect twice, allowing the first prompt if needed.
-Remembered removable-volume permission remains unverified until that physical
-check completes. All-application private-key access is broader than necessary;
+The operator confirmed that reconnecting no longer produces the removable-volume
+permission popup. The live permission-persistence check is complete.
+All-application private-key access is broader than necessary;
 code signing needs only `/usr/bin/codesign`.
 
 ## Watch failure history and absent-recorder triggers — 2026-10-22
