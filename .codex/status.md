@@ -12,16 +12,21 @@ Independent review found no remaining blocking issues.
 
 Created and authorized code-signing-only trust for `Logbook Local Signing` in
 Mimir's login keychain. Verified one valid identity, fingerprint
-`E92D88974170921362110915C4CADD72385CA252`, expiring October 19, 2036. The
-background signing attempt returned `errSecInternalComponent` before replacing
-the installed helper. The computer-control tool blocks iTerm2 access. The operator
-was asked to run `/private/tmp/logbook-install-permanent-signing.py` with the
-project Python in Terminal and authorize codesign's access to this specific key.
-The script backs up the installed helper, signs two different binaries, checks
-matching designated requirements, then installs the verified copy and marker.
-Do not claim live installation or remembered removable-volume approval until
-that step and reconnect checks have been verified. Existing source snapshot,
-service settings and audio remain unchanged.
+`E92D88974170921362110915C4CADD72385CA252`, expiring October 19, 2036. Background
+signing returned `errSecInternalComponent`, including after the operator enabled
+all-application access to the key. Running the prepared installer in the operator's
+Terminal succeeded at 20:44 UTC. The installed app passes strict verification
+with access to the saved certificate trust settings. Two binaries with different
+SHA-256 hashes have identical certificate-based designated requirements; the
+identity marker is installed. Backup and verification evidence are under
+`~/VoiceIngest/services/signing/install-20261022T204441Z`.
+
+The loaded mount agent points to the signed app at its original path. Its source
+still uses the validated `a3c3044` release; service settings and audio are unchanged.
+Asked the operator to safely reconnect twice, allowing the first prompt if needed.
+Remembered removable-volume permission remains unverified until that physical
+check completes. All-application private-key access is broader than necessary;
+code signing needs only `/usr/bin/codesign`.
 
 ## Watch failure history and absent-recorder triggers — 2026-10-22
 
