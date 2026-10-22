@@ -23,6 +23,10 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Support a permanent local signing certificate for the Sony mount helper and
+  remember it for later rebuilds, preserving its macOS permission identity.
+  Verify each signed replacement before installing it; keep the existing helper
+  if compilation, signing or verification fails.
 - Mark recovered pipeline attempts in watch history and keep the failure filter
   focused on unresolved problems. Preserve the original failure records and
   distinguish historical attempt totals from current job failures.

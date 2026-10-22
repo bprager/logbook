@@ -152,6 +152,41 @@ release snapshot. A mutable development checkout is not a deployment directory.
 After restoring the deployed code, reset only the affected queue budget using
 the command below.
 
+### Preserve the mount helper's macOS permission identity
+
+An ad-hoc signature identifies one exact build. Recompiling that helper changes
+its identity and can cause another removable-volume permission prompt. Use one
+permanent local code-signing certificate, the same app path and the same bundle
+identifier for future builds. Keep the certificate and its private key in the
+login keychain; limit its trust to code signing. Do not grant general certificate
+trust or Full Disk Access as a substitute.
+
+After creating and trusting the certificate, find its SHA-1 identity with
+`security find-identity -v -p codesigning`. Pass that fingerprint once:
+
+```bash
+.venv/bin/python -m logbook.cli launchd-render --env "$PWD/.env" \
+  --repo-root "$LOGBOOK_RELEASE_ROOT" --python-bin "$PWD/.venv/bin/python" \
+  --signing-identity "$LOGBOOK_SIGNING_IDENTITY"
+```
+
+Set `LOGBOOK_SIGNING_IDENTITY` to the verified certificate fingerprint first.
+The renderer remembers it in `~/VoiceIngest/launchd/signing-identity` and reuses
+it when the option is omitted. Preserve that file and the keychain identity during
+updates. If signing fails, restore access to that same certificate instead of
+removing the marker or switching to ad-hoc signing. A replacement is compiled,
+signed and verified in a temporary directory before replacing the existing app.
+If installation and restoration both fail, the old app remains beside the
+destination as `LogbookMountRunner.app.previous`. Recover that backup before
+rebuilding again; the renderer refuses to overwrite an existing recovery copy.
+Rendering also refreshes generated plists; it does not install or load them.
+
+Verify with `codesign --verify --strict` and compare `codesign -d -r-` for two
+builds. Their designated requirements must match even when their code hashes
+differ. macOS can require one final removable-volume approval after migrating
+from the old ad-hoc signature. Reconnect the Sony twice to check persistence;
+automated signature checks alone do not prove that the permission is remembered.
+
 ### Supervisor package
 
 Generate the unprivileged daemon package from the validated release directory,

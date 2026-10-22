@@ -560,6 +560,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     launchd_render_parser.add_argument("--env", type=Path, default=Path(".env"))
     launchd_render_parser.add_argument(
+        "--signing-identity", default=None,
+        help="permanent code-signing certificate; remembered for future helper rebuilds",
+    )
+    launchd_render_parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -711,7 +715,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cleanup-audio":
         return _cleanup_audio(args.env, execute=args.execute, include_recorder=args.include_recorder)
     if args.command == "launchd-render":
-        return _launchd_render(args.env, args.output_dir, args.repo_root, args.python_bin)
+        return _launchd_render(args.env, args.output_dir, args.repo_root, args.python_bin, args.signing_identity)
     if args.command == "backup-run":
         return _backup_run(args.env, args.backup_root, args.repo_root, execute=args.execute)
     if args.command == "backup-restore-drill":
@@ -2594,6 +2598,7 @@ def _launchd_render(
     output_dir: Path | None,
     repo_root: Path,
     python_bin: str,
+    signing_identity: str | None = None,
 ) -> int:
     try:
         config = load_app_config(env_path)
@@ -2609,7 +2614,7 @@ def _launchd_render(
         repo_root=repo_root,
         python_bin=python_bin,
     )
-    paths = write_launchd_package(package)
+    paths = write_launchd_package(package, signing_identity=signing_identity)
 
     print("Render launchd package")
     print(f"env_path={env_path}")

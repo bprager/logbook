@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import plistlib
 import json
+import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from logbook.config import AppConfig
+from logbook.markdown import atomic_write_text
 
 
 DEFAULT_API_LABEL = "local.logbook.api"
@@ -176,16 +179,76 @@ def render_launchd_package(
     )
 
 
-def write_launchd_package(package: LaunchdPackage) -> tuple[Path, ...]:
+def write_launchd_package(
+    package: LaunchdPackage, *, signing_identity: str | None = None,
+) -> tuple[Path, ...]:
     package.output_dir.mkdir(parents=True, exist_ok=True)
     package.logs_dir.mkdir(parents=True, exist_ok=True)
-    _write_app_bundle(package.mount_runner)
+    identity_path = package.output_dir / "signing-identity"
+    previous_identity = identity_path.read_text(encoding="utf-8") if identity_path.exists() else None
+    if signing_identity is None and identity_path.exists():
+        signing_identity = (previous_identity or "").strip()
+    if signing_identity is not None:
+        if not signing_identity.strip() or signing_identity.strip() == "-":
+            raise ValueError("use a permanent signing certificate; temporary signing loses permissions")
+        atomic_write_text(identity_path, signing_identity.strip() + "\n")
+        try:
+            _write_signed_app_bundle(package.mount_runner, signing_identity.strip())
+        except Exception:
+            if previous_identity is not None:
+                atomic_write_text(identity_path, previous_identity)
+            raise
+    else:
+        if sys.platform == "darwin" and package.mount_runner.bundle_path.exists():
+            signature = subprocess.run(
+                ["/usr/bin/codesign", "--display", "--verbose=2",
+                 str(package.mount_runner.bundle_path)], capture_output=True, text=True, check=False,
+            )
+            if "Authority=" in signature.stderr:
+                raise ValueError("existing helper is certificate-signed; specify its signing identity")
+            if not (
+                signature.returncode == 0 and "Signature=adhoc" in signature.stderr
+                or "code object is not signed at all" in signature.stderr
+            ):
+                raise ValueError(f"cannot establish existing helper signing identity: {signature.stderr.strip()}")
+        _write_app_bundle(package.mount_runner)
     written_paths: list[Path] = []
     for plist in package.plists:
         path = package.output_dir / plist.filename
         path.write_text(plist.content, encoding="utf-8")
         written_paths.append(path)
     return tuple(written_paths)
+
+
+def _write_signed_app_bundle(app: LaunchdAppBundle, signing_identity: str) -> None:
+    """Replace the installed helper only after its new signature is verified."""
+    app.bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    identifier = plistlib.loads(app.info_plist_content.encode("utf-8"))["CFBundleIdentifier"]
+    with TemporaryDirectory(
+        prefix=".mount-build-", dir=app.bundle_path.parent, ignore_cleanup_errors=True,
+    ) as tmp:
+        staged = replace(app, bundle_path=Path(tmp) / app.bundle_path.name)
+        _write_app_bundle(staged)
+        subprocess.run(
+            ["/usr/bin/codesign", "--force", "--sign", signing_identity,
+             "--identifier", identifier, str(staged.bundle_path)], check=True,
+        )
+        subprocess.run(
+            ["/usr/bin/codesign", "--verify", "--strict", str(staged.bundle_path)], check=True,
+        )
+        previous = app.bundle_path.with_name(app.bundle_path.name + ".previous")
+        if previous.exists():
+            raise FileExistsError(f"recover the previous helper before rebuilding: {previous}")
+        if app.bundle_path.exists():
+            app.bundle_path.rename(previous)
+        try:
+            staged.bundle_path.rename(app.bundle_path)
+        except OSError:
+            if previous.exists():
+                previous.rename(app.bundle_path)
+            raise
+        if previous.exists():
+            shutil.rmtree(previous, ignore_errors=True)
 
 
 def _render_plist(label: str, data: dict) -> LaunchdPlist:

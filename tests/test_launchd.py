@@ -6,13 +6,141 @@ from dataclasses import replace
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 from logbook.cli import main
 from logbook.config import load_app_config
-from logbook.launchd import render_launchd_package, write_launchd_package
+from logbook.launchd import render_launchd_package, write_launchd_package, _write_signed_app_bundle
 
 
 class LaunchdPackagingTests(TestCase):
+    def test_missing_identity_marker_cannot_downgrade_certificate_signed_app(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package = render_launchd_package(
+                config=load_app_config(_write_env(root)), env_path=root / '.env',
+                output_dir=root / 'generated', repo_root=root,
+            )
+            package.mount_runner.bundle_path.mkdir(parents=True)
+            with patch('logbook.launchd.sys.platform', 'darwin'), \
+                    patch('logbook.launchd.subprocess.run', return_value=subprocess.CompletedProcess(
+                        [], 0, '', 'Authority=Logbook Local Signing\n')), \
+                    patch('logbook.launchd._write_app_bundle') as build:
+                with self.assertRaisesRegex(ValueError, 'certificate-signed'):
+                    write_launchd_package(package)
+                build.assert_not_called()
+            for returncode, detail in ((1, 'signature inspection failed'), (0, 'Signature=adhoc'),
+                                       (1, 'code object is not signed at all')):
+                with patch('logbook.launchd.sys.platform', 'darwin'), \
+                        patch('logbook.launchd.subprocess.run', return_value=subprocess.CompletedProcess(
+                            [], returncode, '', detail)), \
+                        patch('logbook.launchd._write_app_bundle') as build:
+                    if 'failed' in detail:
+                        with self.assertRaisesRegex(ValueError, 'cannot establish'):
+                            write_launchd_package(package)
+                        build.assert_not_called()
+                    else:
+                        write_launchd_package(package)
+                        build.assert_called_once()
+
+    def test_signed_helper_replacement_preserves_previous_app_on_failure(self) -> None:
+        for failure in ('compile', 'sign', 'verify', 'replace', 'restore', 'stale_backup', 'first_install', 'none'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                package = render_launchd_package(
+                    config=load_app_config(_write_env(root)), env_path=root / '.env',
+                    output_dir=root / 'generated', repo_root=root,
+                )
+                app = package.mount_runner
+                if failure != 'first_install':
+                    app.bundle_path.mkdir(parents=True)
+                    (app.bundle_path / 'old').write_text('previous signed app')
+                previous = app.bundle_path.with_name(app.bundle_path.name + '.previous')
+                if failure == 'stale_backup':
+                    previous.mkdir()
+                def build(staged):
+                    if failure == 'compile':
+                        raise OSError('simulated compiler failure')
+                    staged.bundle_path.mkdir(parents=True)
+                    (staged.bundle_path / 'new').write_text('new signed app')
+                def sign(command, **kwargs):
+                    if failure == 'sign' and '--sign' in command or failure == 'verify' and '--verify' in command:
+                        raise subprocess.CalledProcessError(1, command)
+                    return subprocess.CompletedProcess(command, 0)
+                original = Path.rename
+                def rename(path, target):
+                    if failure == 'restore' and path == previous:
+                        raise OSError('simulated restore failure')
+                    if failure in ('replace', 'restore', 'first_install') and path.parent.name.startswith('.mount-build-'):
+                        raise OSError('simulated install failure')
+                    return original(path, target)
+                with patch('logbook.launchd._write_app_bundle', side_effect=build), \
+                        patch('logbook.launchd.subprocess.run', side_effect=sign) as signing, \
+                        patch.object(Path, 'rename', rename):
+                    if failure == 'none':
+                        _write_signed_app_bundle(app, 'A' * 40)
+                        self.assertTrue((app.bundle_path / 'new').is_file())
+                        self.assertIn('ws.prager.logbook.mount-runner', signing.call_args_list[0].args[0])
+                    else:
+                        with self.assertRaises((OSError, subprocess.CalledProcessError)):
+                            _write_signed_app_bundle(app, 'A' * 40)
+                        if failure == 'restore':
+                            self.assertFalse(app.bundle_path.exists())
+                            self.assertEqual((previous / 'old').read_text(), 'previous signed app')
+                        elif failure == 'first_install':
+                            self.assertFalse(app.bundle_path.exists())
+                        else:
+                            self.assertEqual((app.bundle_path / 'old').read_text(), 'previous signed app')
+
+    def test_cli_remembers_explicit_signing_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            env_path = _write_env(root)
+            with patch('logbook.launchd._write_signed_app_bundle') as signing, redirect_stdout(io.StringIO()):
+                result = main(['launchd-render', '--env', str(env_path), '--output-dir', str(root / 'generated'),
+                               '--signing-identity', 'A' * 40])
+            self.assertEqual(result, 0)
+            self.assertEqual(signing.call_args.args[1], 'A' * 40)
+
+    def test_identity_is_saved_before_replacement_and_survives_signing_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package = render_launchd_package(
+                config=load_app_config(_write_env(root)), env_path=root / '.env',
+                output_dir=root / 'generated', repo_root=root,
+            )
+            with patch('logbook.launchd.atomic_write_text', side_effect=OSError('disk full')), \
+                    patch('logbook.launchd._write_signed_app_bundle') as signing:
+                with self.assertRaises(OSError):
+                    write_launchd_package(package, signing_identity='A' * 40)
+                signing.assert_not_called()
+            with patch('logbook.launchd._write_signed_app_bundle', side_effect=OSError('signing unavailable')):
+                with self.assertRaises(OSError):
+                    write_launchd_package(package, signing_identity='A' * 40)
+            self.assertEqual((package.output_dir / 'signing-identity').read_text().strip(), 'A' * 40)
+            with patch('logbook.launchd._write_signed_app_bundle', side_effect=OSError('signing unavailable')):
+                with self.assertRaises(OSError):
+                    write_launchd_package(package, signing_identity='B' * 40)
+            self.assertEqual((package.output_dir / 'signing-identity').read_text().strip(), 'A' * 40)
+
+    def test_persistent_signing_identity_is_remembered_for_future_rebuilds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package = render_launchd_package(
+                config=load_app_config(_write_env(root)), env_path=root / '.env',
+                output_dir=root / 'generated', repo_root=root,
+            )
+            with patch('logbook.launchd._write_signed_app_bundle', create=True) as sign:
+                write_launchd_package(package, signing_identity='A' * 40)
+                self.assertEqual((package.output_dir / 'signing-identity').read_text().strip(), 'A' * 40)
+                write_launchd_package(package)
+                self.assertEqual(sign.call_count, 2)
+                self.assertEqual(sign.call_args.args, (package.mount_runner, 'A' * 40))
+                for invalid in ('', '-'):
+                    (package.output_dir / 'signing-identity').write_text(invalid)
+                    with self.assertRaises(ValueError):
+                        write_launchd_package(package)
+
     def test_mount_runner_ignores_unrelated_mounts_but_checks_connected_recorder(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -1,5 +1,28 @@
 # Status
 
+## Permanent recorder-helper signing — 2026-10-22
+
+Added optional permanent certificate signing to `launchd-render`. The identity is
+remembered for future rebuilds; an existing certificate-signed app cannot silently
+fall back to ad-hoc signing when its marker is missing. Builds are staged and
+verified before replacement. Failed builds retain the installed helper and its
+working identity; a failed restoration leaves a recovery copy outside temporary
+cleanup. Full quality gate passes: 304 tests and 100% changed-line coverage.
+Independent review found no remaining blocking issues.
+
+Created and authorized code-signing-only trust for `Logbook Local Signing` in
+Mimir's login keychain. Verified one valid identity, fingerprint
+`E92D88974170921362110915C4CADD72385CA252`, expiring October 19, 2036. The
+background signing attempt returned `errSecInternalComponent` before replacing
+the installed helper. The computer-control tool blocks iTerm2 access. The operator
+was asked to run `/private/tmp/logbook-install-permanent-signing.py` with the
+project Python in Terminal and authorize codesign's access to this specific key.
+The script backs up the installed helper, signs two different binaries, checks
+matching designated requirements, then installs the verified copy and marker.
+Do not claim live installation or remembered removable-volume approval until
+that step and reconnect checks have been verified. Existing source snapshot,
+service settings and audio remain unchanged.
+
 ## Watch failure history and absent-recorder triggers — 2026-10-22
 
 The reported 21:02 Odin connection failure recovered through the supervised queue:
