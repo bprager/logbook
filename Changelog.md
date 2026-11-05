@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Require a held local graph writer lock throughout guarded repair and rollback.
+
 - Coordinate Logbook's graph sync and repair commands with a shared local
   write lock; an occupied lock returns an error for retry.
 

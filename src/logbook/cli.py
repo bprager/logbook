@@ -29,6 +29,7 @@ from logbook.dead_letters import (
 )
 from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
 from logbook.entity_linker import link_daily_log_entities
+from logbook.graph_write_lock import GraphWriteLock
 from logbook.insights import extract_insights
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
@@ -1992,18 +1993,18 @@ def _extract_insights(
 def _with_graph_write_lock(env_path: Path, operation: Callable[[], int]) -> int:
     try:
         config = load_app_config(env_path)
-        config.processing_root.mkdir(parents=True, exist_ok=True)
-        lock = (config.processing_root / "graph-write.lock").open("a")
+        lock = GraphWriteLock(config.processing_root)
+        lock.__enter__()
+    except BlockingIOError:
+        print("graph_write_busy=yes", file=sys.stderr)
+        return 2
     except (ConfigError, OSError) as error:
         print(f"graph_write_lock_error: {error}", file=sys.stderr)
         return 2
-    with lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            print("graph_write_busy=yes", file=sys.stderr)
-            return 2
+    try:
         return operation()
+    finally:
+        lock.__exit__(None, None, None)
 
 
 def _memory_graph_sync(env_path: Path, job_id: int | None, execute: bool) -> int:
