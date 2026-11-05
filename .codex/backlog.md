@@ -3,10 +3,11 @@
 ## November 5 graph repair safety
 
 An experimental bounded repair/rollback module has isolated graph tests. It is
-not enabled for live use: a real isolated concurrency test demonstrated duplicate
-IDs when two unconstrained writers check and create concurrently. Resolve
-coordination with all graph writers and validate recovery before applying any
-repair. Preserve stale graph data.
+not enabled for live use. It now requires node uniqueness constraints and locks
+relationship endpoints during each transaction; isolated tests reject the observed
+same-label and same-endpoint races. Cross-label identifier collisions, relationship
+IDs with different endpoints, constraint changes, and live rollout remain unverified.
+Resolve these gaps and validate recovery before any repair. Preserve stale data.
 
 ## November 5 audio cleanup protection
 
