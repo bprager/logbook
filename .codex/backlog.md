@@ -3,8 +3,11 @@
 ## November 5 audio cleanup protection
 
 Preserve unreviewed recordings until reviewed and block cleanup when the final
-note is missing. Keep scheduled cleanup disabled; deploy the tested guard to
-the isolated service release and verify the actual cleanup plan before release.
+note is missing. Scheduled cleanup remains disabled. Isolated release
+`4e3041d53a9cd348766dfa5e9617bcab865ad1b9` serves a live plan blocking all
+three unreviewed recordings; protected copies match their checksums. Next
+review the three recordings and restore missing notes deliberately. Separately
+investigate graph drift using an exact dry run before any graph writes.
 
 ## October 5 diary-routing repair
 
