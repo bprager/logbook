@@ -16,7 +16,7 @@ _BATCH = "_logbook_repair_batch"
 _DIGEST = "_logbook_repair_digest"
 _LOCK = "_logbook_repair_lock"
 _RESERVED = {_BATCH, _DIGEST, _LOCK}
-_TYPES = {"GENERATED", "HAS_SEGMENT", "MENTIONED_IN", "SUPPORTED_BY"}
+_TYPES = {"GENERATED", "HAS_SEGMENT", "MENTIONED_IN", "RELATES_TO", "SUPPORTED_BY"}
 _PREFIXES = ("logbook:job:", "logbook:topic:", "logbook:person:", "logbook:project:")
 
 
@@ -28,6 +28,17 @@ def _digest(kind: str, identity: object, props: dict[str, Any]) -> str:
 def _check_batch(batch: str) -> None:
     if str(uuid.UUID(batch)) != batch:
         raise ValueError("batch ID must be a canonical UUID")
+
+
+
+def _lock_endpoints(tx: Any, endpoint_ids: list[str], batch: str) -> None:
+    """Lock endpoints in stable order without changing their committed properties."""
+    for endpoint in sorted(set(endpoint_ids)):
+        rows = list(tx.run('MATCH (n {id:$id}) RETURN properties(n) AS props', id=endpoint))
+        if len(rows) != 1 or _LOCK in rows[0]['props']:
+            raise ValueError("relationship endpoint missing, ambiguous, or reserved")
+        tx.run('MATCH (n {id:$id}) SET n._logbook_repair_lock=$batch '
+               'REMOVE n._logbook_repair_lock', id=endpoint, batch=batch).consume()
 
 
 def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
@@ -48,6 +59,14 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
         if rel.type not in _TYPES or _RESERVED.intersection(rel.properties) or 'id' in rel.properties:
             raise ValueError("invalid relationship")
 
+    constraints = {
+        row['label'] for row in session.run('SHOW CONSTRAINT INFO')
+        if row['constraint type'] == 'unique' and row['properties'] == ['id']
+    }
+    if ('LogbookRepairBatch' not in constraints
+            or any(label not in constraints for node in nodes for label in node.labels)):
+        raise ValueError("required node uniqueness constraints are absent")
+
     def write(tx: Any) -> None:
         row = tx.run('MATCH (n:LogbookRepairBatch {id:$batch}) RETURN count(n) AS n',
                      batch=batch).single()
@@ -61,6 +80,8 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
             props.update({_BATCH: batch, _DIGEST: digest})
             labels = ':'.join(node.labels)
             tx.run(f'CREATE (n:{labels}) SET n = $props', props=props).consume()
+        _lock_endpoints(tx, [endpoint for rel in relationships
+                             for endpoint in (rel.start_id, rel.end_id)], batch)
         for rel in relationships:
             if tx.run('MATCH ()-[r]->() WHERE r.id=$id RETURN count(r) AS n',
                       id=rel.id).single()['n']:

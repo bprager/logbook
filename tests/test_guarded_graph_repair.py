@@ -5,10 +5,12 @@ import unittest
 import uuid
 try:
     from neo4j import GraphDatabase
+    from neo4j.exceptions import TransientError
 except ImportError:
     GraphDatabase = None
+    TransientError = Exception
 
-from logbook.guarded_graph_repair import apply_batch, rollback_batch
+from logbook.guarded_graph_repair import _lock_endpoints, apply_batch, rollback_batch
 from logbook.memory_graph import MemoryNode, MemoryRelationship
 
 
@@ -20,6 +22,11 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.driver = GraphDatabase.driver(os.environ['LOGBOOK_TEST_GRAPH_URI'])
         self.session = self.driver.session()
+        constraints = list(self.session.run('SHOW CONSTRAINT INFO'))
+        for label in ('LogbookJob', 'LogbookRepairBatch'):
+            if not any(r['label'] == label and r['properties'] == ['id']
+                       and r['constraint type'] == 'unique' for r in constraints):
+                self.session.run(f'CREATE CONSTRAINT ON (n:{label}) ASSERT n.id IS UNIQUE').consume()
         self.batch = str(uuid.uuid4())
         self.foreign = 'fixture:foreign:' + self.batch
         self.node_id = 'logbook:job:fixture-' + self.batch
@@ -38,6 +45,30 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
 
     def apply(self):
         return apply_batch(self.session, self.batch, [self.node], [self.rel])
+
+    def test_endpoint_lock_rejects_stale_concurrent_relationship_write(self):
+        self.session.run('CREATE (:LogbookJob {id:$id})', id=self.node_id).consume()
+        other = self.driver.session()
+        try:
+            first = self.session.begin_transaction()
+            second = other.begin_transaction()
+            for tx in (first, second):
+                self.assertEqual(tx.run('MATCH ()-[r {id:$id}]->() RETURN count(r) AS n',
+                                        id=self.rel_id).single()['n'], 0)
+            _lock_endpoints(first, [self.node_id, self.foreign], self.batch)
+            first.run('MATCH (a {id:$a}), (b {id:$b}) CREATE (a)-[:GENERATED {id:$id}]->(b)',
+                      a=self.node_id, b=self.foreign, id=self.rel_id).consume()
+            first.commit()
+            with self.assertRaises(TransientError):
+                second.run('MATCH (a {id:$a}), (b {id:$b}) '
+                           'CREATE (a)-[:GENERATED {id:$id}]->(b)',
+                           a=self.node_id, b=self.foreign, id=self.rel_id).consume()
+                second.commit()
+            row = self.session.run('MATCH ()-[r {id:$id}]->() RETURN count(r) AS n',
+                                   id=self.rel_id).single()
+            self.assertEqual(row['n'], 1)
+        finally:
+            other.close()
 
     def test_apply_and_rollback_preserve_unrelated_node(self):
         self.apply()
@@ -119,6 +150,13 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         finally:
             self.session.run('MATCH (n {id:$id}) DELETE n', id=existing_id).consume()
 
+    def test_rejects_node_without_database_uniqueness_constraint(self):
+        node = MemoryNode(self.node_id, ('FixtureUnconstrained',), {'project': 'logbook'})
+        with self.assertRaises(ValueError):
+            apply_batch(self.session, self.batch, [node], [])
+        row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
+        self.assertEqual(row['n'], 0)
+
     def test_validation_rejects_unsafe_input(self):
         with self.assertRaises(ValueError):
             apply_batch(self.session, self.batch.upper(), [self.node], [])
@@ -163,6 +201,14 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
             rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
         self.assertEqual(row['n'], 1)
+
+    def test_supports_existing_relates_to_relationship_type(self):
+        rel = MemoryRelationship(self.rel_id, self.node_id, 'RELATES_TO', self.foreign,
+                                 {'project': 'logbook'})
+        apply_batch(self.session, self.batch, [self.node], [rel])
+        rollback_batch(self.session, self.batch)
+        row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
+        self.assertEqual(row['n'], 0)
 
     def test_existing_id_is_never_overwritten(self):
         self.session.run('CREATE (:LogbookJob {id:$id, status:"existing"})', id=self.node_id).consume()
