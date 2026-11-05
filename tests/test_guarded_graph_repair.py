@@ -11,6 +11,9 @@ except ImportError:
     TransientError = Exception
 
 from logbook.guarded_graph_repair import _lock_endpoints, apply_batch, rollback_batch
+from logbook.graph_write_lock import GraphWriteLock
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from logbook.memory_graph import MemoryNode, MemoryRelationship
 
 
@@ -20,6 +23,9 @@ from logbook.memory_graph import MemoryNode, MemoryRelationship
 )
 class GuardedRepairIntegrationTests(unittest.TestCase):
     def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.lock = GraphWriteLock(Path(self.tmp.name))
+        self.lock.__enter__()
         self.driver = GraphDatabase.driver(os.environ['LOGBOOK_TEST_GRAPH_URI'])
         self.session = self.driver.session()
         constraints = list(self.session.run('SHOW CONSTRAINT INFO'))
@@ -42,15 +48,23 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.session.run('MATCH (m:LogbookRepairBatch {id:$id}) DELETE m', id=self.batch).consume()
         self.session.close()
         self.driver.close()
+        self.lock.__exit__(None, None, None)
+        self.tmp.cleanup()
+
+    def apply_batch(self, *args):
+        return apply_batch(*args, lock=self.lock)
+
+    def rollback_batch(self, *args):
+        return rollback_batch(*args, lock=self.lock)
 
     def apply(self):
-        return apply_batch(self.session, self.batch, [self.node], [self.rel])
+        return self.apply_batch(self.session, self.batch, [self.node], [self.rel])
 
     def test_relationship_only_batch_can_be_rolled_back(self):
         self.session.run('CREATE (:LogbookJob {id:$id, project:"logbook"})',
                          id=self.node_id).consume()
-        apply_batch(self.session, self.batch, [], [self.rel])
-        rollback_batch(self.session, self.batch)
+        self.apply_batch(self.session, self.batch, [], [self.rel])
+        self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH ()-[r {id:$id}]->() RETURN count(r) AS n',
                                id=self.rel_id).single()
         self.assertEqual(row['n'], 0)
@@ -80,9 +94,9 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
                 return self.session.execute_write(lambda tx: callback(CountingTransaction(tx)))
         counted = CountingSession(self.session)
         try:
-            apply_batch(counted, self.batch, nodes, [])
+            self.apply_batch(counted, self.batch, nodes, [])
             self.assertLessEqual(counted.calls, 12)
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
             row = self.session.run('MATCH (n) WHERE n.id IN $ids RETURN count(n) AS n',
                                    ids=ids).single()
             self.assertEqual(row['n'], 0)
@@ -115,7 +129,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
 
     def test_apply_and_rollback_preserve_unrelated_node(self):
         self.apply()
-        rollback_batch(self.session, self.batch)
+        self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH (n) WHERE n.id IN $ids RETURN count(n) AS n',
                                ids=[self.node_id, self.foreign]).single()
         self.assertEqual(row['n'], 1)
@@ -125,7 +139,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.session.run('MATCH (a {id:$a}), (b {id:$b}) CREATE (b)-[:OTHER]->(a)',
                          a=self.node_id, b=self.foreign).consume()
         with self.assertRaises(ValueError):
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
         self.assertEqual(row['n'], 1)
 
@@ -133,7 +147,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.apply()
         self.session.run('MATCH (n {id:$id}) SET n.status = "changed"', id=self.node_id).consume()
         with self.assertRaises(ValueError):
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH (n {id:$id}) RETURN n.status AS status', id=self.node_id).single()
         self.assertEqual(row['status'], 'changed')
 
@@ -142,7 +156,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.session.run('MATCH ()-[r {id:$id}]->() REMOVE r._logbook_repair_batch',
                          id=self.rel_id).consume()
         with self.assertRaises(ValueError):
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
         self.assertEqual(row['n'], 1)
 
@@ -151,7 +165,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.session.run('MATCH (n {id:$id}) REMOVE n._logbook_repair_batch',
                          id=self.node_id).consume()
         with self.assertRaises(ValueError):
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH ()-[r {id:$id}]->() RETURN count(r) AS n', id=self.rel_id).single()
         self.assertEqual(row['n'], 1)
 
@@ -159,11 +173,11 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         other_id = 'logbook:job:' + str(int(self.node_id.rsplit(':', 1)[1]) + 1)
         other = MemoryNode(other_id, ('LogbookJob',), {'project': 'logbook'})
         try:
-            apply_batch(self.session, self.batch, [self.node, other], [self.rel])
+            self.apply_batch(self.session, self.batch, [self.node, other], [self.rel])
             self.session.run('MATCH (n {id:$id}) REMOVE n._logbook_repair_batch',
                              id=other_id).consume()
             with self.assertRaises(ValueError):
-                rollback_batch(self.session, self.batch)
+                self.rollback_batch(self.session, self.batch)
             row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n',
                                    id=self.node_id).single()
             self.assertEqual(row['n'], 1)
@@ -175,7 +189,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.session.run('MATCH ()-[r {id:$id}]->() SET r.project="changed"',
                          id=self.rel_id).consume()
         with self.assertRaises(ValueError):
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH ()-[r {id:$id}]->() RETURN r.project AS project',
                                id=self.rel_id).single()
         self.assertEqual(row['project'], 'changed')
@@ -186,7 +200,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.session.run('CREATE (:LogbookJob {id:$id})', id=existing_id).consume()
         try:
             with self.assertRaises(ValueError):
-                apply_batch(self.session, self.batch, [self.node, other], [])
+                self.apply_batch(self.session, self.batch, [self.node, other], [])
             row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n',
                                    id=self.node_id).single()
             self.assertEqual(row['n'], 0)
@@ -197,23 +211,23 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         node = MemoryNode('logbook:topic:fixture-' + self.batch, ('Topic',),
                           {'project': 'logbook'})
         with self.assertRaises(ValueError):
-            apply_batch(self.session, self.batch, [node], [])
+            self.apply_batch(self.session, self.batch, [node], [])
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=node.id).single()
         self.assertEqual(row['n'], 0)
 
     def test_validation_rejects_unsafe_input(self):
         with self.assertRaises(ValueError):
-            apply_batch(self.session, self.batch.upper(), [self.node], [])
+            self.apply_batch(self.session, self.batch.upper(), [self.node], [])
         with self.assertRaises(ValueError):
-            apply_batch(self.session, self.batch, [], [])
+            self.apply_batch(self.session, self.batch, [], [])
         with self.assertRaises(ValueError):
-            apply_batch(self.session, self.batch, [self.node, self.node], [])
+            self.apply_batch(self.session, self.batch, [self.node, self.node], [])
         invalid = MemoryNode(self.node_id, ('Unsafe-Label',), {})
         with self.assertRaises(ValueError):
-            apply_batch(self.session, self.batch, [invalid], [])
+            self.apply_batch(self.session, self.batch, [invalid], [])
         invalid_rel = MemoryRelationship(self.rel_id, self.node_id, 'UNSAFE', self.foreign, {})
         with self.assertRaises(ValueError):
-            apply_batch(self.session, self.batch, [self.node], [invalid_rel])
+            self.apply_batch(self.session, self.batch, [self.node], [invalid_rel])
 
     def test_repeat_batch_is_rejected(self):
         self.apply()
@@ -232,18 +246,18 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         rel = MemoryRelationship(f'{self.node_id}:generated:logbook:person:missing', self.node_id,
                                  'GENERATED', 'logbook:person:missing', {})
         with self.assertRaises(ValueError):
-            apply_batch(self.session, self.batch, [self.node], [rel])
+            self.apply_batch(self.session, self.batch, [self.node], [rel])
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
         self.assertEqual(row['n'], 0)
 
     def test_missing_or_changed_manifest_refuses_rollback(self):
         with self.assertRaises(ValueError):
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
         self.apply()
         self.session.run('MATCH (m:LogbookRepairBatch {id:$id}) SET m.nodes=[]',
                          id=self.batch).consume()
         with self.assertRaises(ValueError):
-            rollback_batch(self.session, self.batch)
+            self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
         self.assertEqual(row['n'], 1)
 
@@ -251,8 +265,8 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         rel = MemoryRelationship(f'{self.node_id}:relates-to:{self.foreign}',
                                  self.node_id, 'RELATES_TO', self.foreign,
                                  {'project': 'logbook'})
-        apply_batch(self.session, self.batch, [self.node], [rel])
-        rollback_batch(self.session, self.batch)
+        self.apply_batch(self.session, self.batch, [self.node], [rel])
+        self.rollback_batch(self.session, self.batch)
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
         self.assertEqual(row['n'], 0)
 

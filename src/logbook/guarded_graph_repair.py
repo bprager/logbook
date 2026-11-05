@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 from logbook.memory_graph import MemoryNode, MemoryRelationship, _safe_properties
+from logbook.graph_write_lock import GraphWriteLock
 
 _BATCH = "_logbook_repair_batch"
 _DIGEST = "_logbook_repair_digest"
@@ -88,7 +89,7 @@ def _lock_endpoints(tx: Any, endpoint_ids: list[str], batch: str) -> None:
 
 
 def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
-                relationships: list[MemoryRelationship]) -> None:
+                relationships: list[MemoryRelationship], *, lock: GraphWriteLock | None = None) -> None:
     _check_batch(batch)
     if not (nodes or relationships) or len(nodes) + len(relationships) > 500:
         raise ValueError("batch must contain records and at most 500 records")
@@ -105,6 +106,9 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
         if (not _is_canonical_relationship(rel) or _RESERVED.intersection(rel.properties)
                 or 'id' in rel.properties):
             raise ValueError("invalid relationship")
+
+    if not isinstance(lock, GraphWriteLock) or not lock.held:
+        raise ValueError("held writer lock required")
 
     constraints = {
         row['label'] for row in session.run('SHOW CONSTRAINT INFO')
@@ -162,8 +166,10 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
     session.execute_write(write)
 
 
-def rollback_batch(session: Any, batch: str) -> None:
+def rollback_batch(session: Any, batch: str, *, lock: GraphWriteLock | None = None) -> None:
     _check_batch(batch)
+    if not isinstance(lock, GraphWriteLock) or not lock.held:
+        raise ValueError("held writer lock required")
 
     def write(tx: Any) -> None:
         # Taking write locks before checking makes later conflicting writes abort one transaction.
