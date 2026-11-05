@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Keep unreviewed recordings and recordings with missing final notes out of
+  audio cleanup, even after their retention period has elapsed.
+
 - Support a permanent local signing certificate for the Sony mount helper and
   remember it for later rebuilds, preserving its macOS permission identity.
   Verify each signed replacement before installing it; keep the existing helper

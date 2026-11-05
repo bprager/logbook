@@ -1,5 +1,11 @@
 # Backlog
 
+## November 5 audio cleanup protection
+
+Preserve unreviewed recordings until reviewed and block cleanup when the final
+note is missing. Keep scheduled cleanup disabled; deploy the tested guard to
+the isolated service release and verify the actual cleanup plan before release.
+
 ## October 5 diary-routing repair
 
 Restored jobs 213/214 (September 30 and October 2), verified canonical content and
