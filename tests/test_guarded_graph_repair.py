@@ -28,9 +28,9 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
                        and r['constraint type'] == 'unique' for r in constraints):
                 self.session.run(f'CREATE CONSTRAINT ON (n:{label}) ASSERT n.id IS UNIQUE').consume()
         self.batch = str(uuid.uuid4())
-        self.foreign = 'fixture:foreign:' + self.batch
-        self.node_id = 'logbook:job:fixture-' + self.batch
-        self.rel_id = 'logbook:job:fixture-rel-' + self.batch
+        self.foreign = 'logbook:person:fixture-' + self.batch
+        self.node_id = 'logbook:job:' + str(1000000 + uuid.uuid4().int % 1000000000000)
+        self.rel_id = f'{self.node_id}:generated:{self.foreign}'
         self.session.run('CREATE (:FixtureForeign {id: $id})', id=self.foreign).consume()
         self.node = MemoryNode(self.node_id, ('LogbookJob',), {'project': 'logbook', 'status': 'test'})
         self.rel = MemoryRelationship(self.rel_id, self.node_id, 'GENERATED', self.foreign,
@@ -113,7 +113,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.assertEqual(row['n'], 1)
 
     def test_rollback_refuses_partial_batch_when_one_node_loses_marker(self):
-        other_id = self.node_id + '-second'
+        other_id = 'logbook:job:' + str(int(self.node_id.rsplit(':', 1)[1]) + 1)
         other = MemoryNode(other_id, ('LogbookJob',), {'project': 'logbook'})
         try:
             apply_batch(self.session, self.batch, [self.node, other], [self.rel])
@@ -138,7 +138,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.assertEqual(row['project'], 'changed')
 
     def test_failed_apply_does_not_leave_partial_batch(self):
-        existing_id = self.node_id + '-existing'
+        existing_id = 'logbook:job:' + str(int(self.node_id.rsplit(':', 1)[1]) + 1)
         other = MemoryNode(existing_id, ('LogbookJob',), {'project': 'logbook'})
         self.session.run('CREATE (:LogbookJob {id:$id})', id=existing_id).consume()
         try:
@@ -151,10 +151,11 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
             self.session.run('MATCH (n {id:$id}) DELETE n', id=existing_id).consume()
 
     def test_rejects_node_without_database_uniqueness_constraint(self):
-        node = MemoryNode(self.node_id, ('FixtureUnconstrained',), {'project': 'logbook'})
+        node = MemoryNode('logbook:topic:fixture-' + self.batch, ('Topic',),
+                          {'project': 'logbook'})
         with self.assertRaises(ValueError):
             apply_batch(self.session, self.batch, [node], [])
-        row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
+        row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=node.id).single()
         self.assertEqual(row['n'], 0)
 
     def test_validation_rejects_unsafe_input(self):
@@ -185,7 +186,8 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.assertEqual(row['n'], 0)
 
     def test_missing_endpoint_rolls_back_creation(self):
-        rel = MemoryRelationship(self.rel_id, self.node_id, 'GENERATED', 'missing', {})
+        rel = MemoryRelationship(f'{self.node_id}:generated:logbook:person:missing', self.node_id,
+                                 'GENERATED', 'logbook:person:missing', {})
         with self.assertRaises(ValueError):
             apply_batch(self.session, self.batch, [self.node], [rel])
         row = self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=self.node_id).single()
@@ -203,7 +205,8 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.assertEqual(row['n'], 1)
 
     def test_supports_existing_relates_to_relationship_type(self):
-        rel = MemoryRelationship(self.rel_id, self.node_id, 'RELATES_TO', self.foreign,
+        rel = MemoryRelationship(f'{self.node_id}:relates-to:{self.foreign}',
+                                 self.node_id, 'RELATES_TO', self.foreign,
                                  {'project': 'logbook'})
         apply_batch(self.session, self.batch, [self.node], [rel])
         rollback_batch(self.session, self.batch)

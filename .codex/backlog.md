@@ -4,10 +4,11 @@
 
 An experimental bounded repair/rollback module has isolated graph tests. It is
 not enabled for live use. It now requires node uniqueness constraints and locks
-relationship endpoints during each transaction; isolated tests reject the observed
-same-label and same-endpoint races. Cross-label identifier collisions, relationship
-IDs with different endpoints, constraint changes, and live rollout remain unverified.
-Resolve these gaps and validate recovery before any repair. Preserve stale data.
+relationship endpoints during each transaction and validates canonical IDs and
+types. Isolated tests cover the observed races, and all current planned nodes and
+relationships match the canonical format. Other writers are not forced to honor
+this format; constraint changes and live rollout remain unverified. Resolve these
+gaps and validate recovery before any repair. Preserve stale data.
 
 ## November 5 audio cleanup protection
 
