@@ -7,6 +7,12 @@ Mac's existing port 18791 and device registry, but uses the production ledger.
 The old user-level API/receiver/queue jobs are disabled to prevent duplicate
 listeners. OpenClaw ownership and runtime are unaffected.
 
+## November 5 retention safeguard
+
+The supervised API uses isolated release `4e3041d53a9cd348766dfa5e9617bcab865ad1b9`, based on the previous `50de0984acf3a389134ef34b108fae77dbb68348` with only the retention guard changed. The old release and prior supervisor plists are retained under `~/VoiceIngest/services/retention-guard-rollback-20261105`. The onsite mount helper remains pinned to its existing release. Scheduled cleanup remains disabled.
+
+A read-only live plan blocked both copies of jobs 226, 246, and 271 pending review; the first two also had missing notes. Verified owner-only copies are under `~/VoiceIngest/protected-audio/unreviewed-20261105`. No cleanup or automatic reclassification was performed. The first restart attempt did not restore the API within a 30-second check and the previous release was restored; after the affected recovery counters were reset using the documented procedure, the release was activated and the API returned healthy. Allow the supervisor recovery interval when evaluating startup.
+
 ## Recovery policy
 
 GPU work must not block the worker's HTTP event loop. A busy worker still needs

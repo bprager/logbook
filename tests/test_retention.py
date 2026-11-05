@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from logbook.config import AppConfig, OdinConfig, RecorderConfig, RetentionConfig
+from logbook.config import AppConfig, ObsidianConfig, OdinConfig, RecorderConfig, RetentionConfig
 from logbook.copying import copy_discovered_recordings
 from logbook.ledger import open_ledger
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
@@ -49,6 +49,49 @@ class RetentionTests(TestCase):
 
             self.assertIsNotNone(planned_job)
             self.assertIsNone(planned_job.cleanup_eligible_at)
+
+    def test_unreviewed_dead_letter_keeps_both_audio_copies(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp), cleanup_mode="delete")
+            job = _route_category_job(app_config)
+            now = datetime.now(timezone.utc)
+            ledger = open_ledger(app_config.sqlite_path, initialize=True)
+            try:
+                ledger.mark_vault_synced(job.checksum_sha256, now.isoformat(timespec="seconds"))
+                ledger.connection.execute(
+                    "UPDATE recording_jobs SET status = 'dead_letter_written', "
+                    "classification = 'dead_letter' WHERE id = ?", (job.id,)
+                )
+                ledger.connection.commit()
+            finally:
+                ledger.close()
+
+            result = execute_audio_cleanup(
+                app_config, include_recorder=True, now=now + timedelta(hours=25)
+            )
+
+            self.assertIn("awaiting_dead_letter_review", result.items[0].blockers)
+            self.assertTrue(Path(job.copied_path or "").is_file())
+            self.assertTrue(Path(job.source_path).is_file())
+
+    def test_missing_final_note_keeps_both_audio_copies(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app_config = _app_config(Path(tmp), cleanup_mode="delete")
+            job = _route_category_job(app_config)
+            now = datetime.now(timezone.utc)
+            ledger = open_ledger(app_config.sqlite_path, initialize=True)
+            try:
+                ledger.mark_vault_synced(job.checksum_sha256, now.isoformat(timespec="seconds"))
+            finally:
+                ledger.close()
+            assert app_config.obsidian is not None and job.obsidian_path is not None
+            (app_config.obsidian.vault_local_path / job.obsidian_path).unlink()
+            result = execute_audio_cleanup(
+                app_config, include_recorder=True, now=now + timedelta(hours=25)
+            )
+            self.assertIn("missing_final_note_file", result.items[0].blockers)
+            self.assertTrue(Path(job.copied_path or "").is_file())
+            self.assertTrue(Path(job.source_path).is_file())
 
     def test_execute_trashes_local_audio_without_recorder_flag(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -176,6 +219,8 @@ def _app_config(root: Path, cleanup_mode: str = "trash_then_delete") -> AppConfi
         ),
         odin=_odin_config(),
         retention=RetentionConfig(hours=24, cleanup_mode=cleanup_mode),
+        obsidian=ObsidianConfig(cli_bin="obsidian", vault_repo_url="",
+                                vault_local_path=root / "VoiceIngest" / "test-vault"),
     )
 
 
