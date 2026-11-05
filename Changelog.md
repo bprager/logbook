@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add fail-closed recovery for a fenced graph maintenance worker, stopping the
+  worker and draining transactions before outside access is restored.
+
 - Require a held local graph writer lock throughout guarded repair and rollback.
 
 - Coordinate Logbook's graph sync and repair commands with a shared local
