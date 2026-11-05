@@ -1,5 +1,13 @@
 # Backlog
 
+## November 5 graph repair safety
+
+An experimental bounded repair/rollback module has isolated graph tests. It is
+not enabled for live use: a real isolated concurrency test demonstrated duplicate
+IDs when two unconstrained writers check and create concurrently. Resolve
+coordination with all graph writers and validate recovery before applying any
+repair. Preserve stale graph data.
+
 ## November 5 audio cleanup protection
 
 Preserve unreviewed recordings until reviewed and block cleanup when the final
