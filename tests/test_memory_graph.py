@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import fcntl
 import json
 import os
 import subprocess
@@ -19,6 +20,7 @@ from logbook.cli import main, _sync_memory_graph_for_jobs
 from logbook.config import (
     ApiConfig,
     AppConfig,
+    ConfigError,
     MemgraphConfig,
     OdinConfig,
     RecorderConfig,
@@ -40,6 +42,43 @@ from logbook.transcription import transcribe_copied_with_fake_odin
 
 
 class MemoryGraphTests(TestCase):
+    def test_graph_writes_refuse_while_another_writer_holds_lock(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            config.processing_root.mkdir(parents=True, exist_ok=True)
+            with (config.processing_root / "graph-write.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                for command in ("memory-graph-sync", "memory-graph-repair"):
+                    with self.subTest(command=command), patch(
+                        "logbook.cli.Neo4jMemgraphClient"
+                    ) as client, redirect_stdout(io.StringIO()):
+                        self.assertNotEqual(main([command, "--env", str(env_path), "--execute"]), 0)
+                        client.assert_not_called()
+
+    def test_graph_write_lock_is_held_during_operation_and_released_after_error(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+
+            def operation(*args, **kwargs):
+                with (config.processing_root / "graph-write.lock").open("a") as contender:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                raise RuntimeError("simulated graph failure")
+
+            with patch("logbook.cli._memory_graph_sync", side_effect=operation):
+                with self.assertRaisesRegex(RuntimeError, "simulated graph failure"):
+                    main(["memory-graph-sync", "--env", str(env_path), "--execute"])
+            with (config.processing_root / "graph-write.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_graph_write_rejects_unavailable_configuration(self) -> None:
+        with patch("logbook.cli.load_app_config", side_effect=ConfigError("unavailable")):
+            self.assertNotEqual(main(["memory-graph-sync", "--execute"]), 0)
+
     def test_mount_pipeline_memory_sync_timeout_is_nonfatal(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

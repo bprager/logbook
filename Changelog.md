@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Coordinate Logbook's graph sync and repair commands with a shared local
+  write lock; an occupied lock returns an error for retry.
+
 - Keep unreviewed recordings and recordings with missing final notes out of
   audio cleanup, even after their retention period has elapsed.
 

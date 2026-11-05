@@ -12,6 +12,8 @@ import sys
 import termios
 import time
 import tty
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from urllib import request
 
@@ -674,13 +676,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "extract-insights":
         return _extract_insights(args.env, args.vault, args.writer, args.job_id)
     if args.command == "memory-graph-sync":
-        return _memory_graph_sync(args.env, args.job_id, execute=args.execute)
+        operation = partial(_memory_graph_sync, args.env, args.job_id, execute=args.execute)
+        return _with_graph_write_lock(args.env, operation) if args.execute else operation()
     if args.command == "memory-graph-query":
         return _memory_graph_query(args.env, args.query, args.job_id)
     if args.command == "memory-graph-health":
         return _memory_graph_health(args.env)
     if args.command == "memory-graph-repair":
-        return _memory_graph_repair(args.env, args.prune_stale, execute=args.execute)
+        operation = partial(_memory_graph_repair, args.env, args.prune_stale, execute=args.execute)
+        return _with_graph_write_lock(args.env, operation) if args.execute else operation()
     if args.command == "memory-action-resolve":
         return _memory_action_resolve(
             args.env,
@@ -1983,6 +1987,23 @@ def _extract_insights(
             f"artifact_path={artifact_path} review_note_path={review_note_path}"
         )
     return 1 if result.failed_count else 0
+
+
+def _with_graph_write_lock(env_path: Path, operation: Callable[[], int]) -> int:
+    try:
+        config = load_app_config(env_path)
+        config.processing_root.mkdir(parents=True, exist_ok=True)
+        lock = (config.processing_root / "graph-write.lock").open("a")
+    except (ConfigError, OSError) as error:
+        print(f"graph_write_lock_error: {error}", file=sys.stderr)
+        return 2
+    with lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("graph_write_busy=yes", file=sys.stderr)
+            return 2
+        return operation()
 
 
 def _memory_graph_sync(env_path: Path, job_id: int | None, execute: bool) -> int:
