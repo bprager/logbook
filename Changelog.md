@@ -64,6 +64,10 @@ production version remains 1.2.3.
 
 ### Changed
 
+- Add an experimental, create-only graph repair batch and conflict-detecting
+  transactional rollback for isolated evaluation. It is not enabled in the CLI
+  or approved for the live graph; concurrent writers can create duplicate IDs.
+
 - Add boot-time, unprivileged supervision for the receiver, API and queue worker,
   with bounded Odin recovery, persistent three-attempt budgets, startup grace,
   recovery history and explicit resets. Keep cleanup disabled and audio retained.
