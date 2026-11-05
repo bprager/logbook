@@ -68,7 +68,8 @@ production version remains 1.2.3.
   transactional rollback for isolated evaluation. It is not enabled in the CLI
   or approved for the live graph; uniqueness and endpoint locking need broader
   concurrent-writer and rollout verification. Validate repair IDs and types
-  against the existing canonical graph plan before allowing batch creation.
+  against the existing canonical graph plan before allowing batch creation. Group
+  graph operations and allow relationship-only batches for efficient repair.
 
 - Add boot-time, unprivileged supervision for the receiver, API and queue worker,
   with bounded Odin recovery, persistent three-attempt budgets, startup grace,

@@ -31,7 +31,7 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.foreign = 'logbook:person:fixture-' + self.batch
         self.node_id = 'logbook:job:' + str(1000000 + uuid.uuid4().int % 1000000000000)
         self.rel_id = f'{self.node_id}:generated:{self.foreign}'
-        self.session.run('CREATE (:FixtureForeign {id: $id})', id=self.foreign).consume()
+        self.session.run('CREATE (:Person {id: $id})', id=self.foreign).consume()
         self.node = MemoryNode(self.node_id, ('LogbookJob',), {'project': 'logbook', 'status': 'test'})
         self.rel = MemoryRelationship(self.rel_id, self.node_id, 'GENERATED', self.foreign,
                                       {'project': 'logbook'})
@@ -45,6 +45,49 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
 
     def apply(self):
         return apply_batch(self.session, self.batch, [self.node], [self.rel])
+
+    def test_relationship_only_batch_can_be_rolled_back(self):
+        self.session.run('CREATE (:LogbookJob {id:$id, project:"logbook"})',
+                         id=self.node_id).consume()
+        apply_batch(self.session, self.batch, [], [self.rel])
+        rollback_batch(self.session, self.batch)
+        row = self.session.run('MATCH ()-[r {id:$id}]->() RETURN count(r) AS n',
+                               id=self.rel_id).single()
+        self.assertEqual(row['n'], 0)
+        row = self.session.run('MATCH (n) WHERE n.id IN $ids RETURN count(n) AS n',
+                               ids=[self.node_id, self.foreign]).single()
+        self.assertEqual(row['n'], 2)
+
+    def test_large_batch_has_bounded_database_round_trips(self):
+        base = int(self.node_id.rsplit(':', 1)[1])
+        nodes = [MemoryNode('logbook:job:' + str(base + i), ('LogbookJob',),
+                            {'project': 'logbook'}) for i in range(25)]
+        ids = [node.id for node in nodes]
+        class CountingSession:
+            def __init__(self, session):
+                self.session = session
+                self.calls = 0
+            def run(self, *args, **kwargs):
+                return self.session.run(*args, **kwargs)
+            def execute_write(self, callback):
+                outer = self
+                class CountingTransaction:
+                    def __init__(self, tx):
+                        self.tx = tx
+                    def run(self, *args, **kwargs):
+                        outer.calls += 1
+                        return self.tx.run(*args, **kwargs)
+                return self.session.execute_write(lambda tx: callback(CountingTransaction(tx)))
+        counted = CountingSession(self.session)
+        try:
+            apply_batch(counted, self.batch, nodes, [])
+            self.assertLessEqual(counted.calls, 12)
+            rollback_batch(self.session, self.batch)
+            row = self.session.run('MATCH (n) WHERE n.id IN $ids RETURN count(n) AS n',
+                                   ids=ids).single()
+            self.assertEqual(row['n'], 0)
+        finally:
+            self.session.run('MATCH (n) WHERE n.id IN $ids DETACH DELETE n', ids=ids).consume()
 
     def test_endpoint_lock_rejects_stale_concurrent_relationship_write(self):
         self.session.run('CREATE (:LogbookJob {id:$id})', id=self.node_id).consume()
