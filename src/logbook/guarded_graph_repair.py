@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from typing import Any
 
-from logbook.memory_graph import MemoryNode, MemoryRelationship, _safe_label, _safe_properties
+from logbook.memory_graph import MemoryNode, MemoryRelationship, _safe_properties
 
 _BATCH = "_logbook_repair_batch"
 _DIGEST = "_logbook_repair_digest"
@@ -29,6 +30,44 @@ def _check_batch(batch: str) -> None:
     if str(uuid.UUID(batch)) != batch:
         raise ValueError("batch ID must be a canonical UUID")
 
+
+
+def _canonical_labels(identifier: str) -> tuple[str, ...] | None:
+    job = r'logbook:job:[0-9]{6,}'
+    patterns = (
+        (job, ('LogbookJob',)),
+        (job + r':note:[a-z0-9-]+:[0-9a-f]{10}', ('GeneratedNote', 'SourceEvidence')),
+        (job + r':segment:[0-9]{4,}', ('TranscriptSegment',)),
+        (job + r':evidence:(?:segment:[0-9]{4,}|insights)', ('SourceEvidence',)),
+        (job + r':action:[0-9]{4,}:[0-9a-f]{10}', ('ActionCandidate',)),
+        (job + r':decision:[0-9]{4,}:[0-9]{4,}:[0-9a-f]{10}', ('Decision',)),
+        (r'logbook:topic:[a-z0-9-]+', ('Topic',)),
+        (r'logbook:person:[a-z0-9-]+', ('Person',)),
+        (r'logbook:project:[a-z0-9-]+', ('Project',)),
+    )
+    return next((labels for pattern, labels in patterns if re.fullmatch(pattern, identifier)), None)
+
+
+
+def _is_canonical_node(node: MemoryNode) -> bool:
+    labels = _canonical_labels(node.id)
+    return labels is not None and sorted(node.labels) == sorted(labels)
+
+
+def _is_canonical_relationship(rel: MemoryRelationship) -> bool:
+    if _canonical_labels(rel.start_id) is None or _canonical_labels(rel.end_id) is None:
+        return False
+    if rel.type == 'HAS_SEGMENT':
+        prefix = f'{rel.start_id}:segment:'
+        if not rel.end_id.startswith(prefix):
+            return False
+        index = rel.end_id[len(prefix):]
+        return bool(index and index.isascii() and index.isdigit()
+                    and rel.id == f'{rel.start_id}:has-segment:{index}')
+    if rel.type in _TYPES:
+        slug = rel.type.lower().replace('_', '-')
+        return rel.id == f'{rel.start_id}:{slug}:{rel.end_id}'
+    return False
 
 
 def _lock_endpoints(tx: Any, endpoint_ids: list[str], batch: str) -> None:
@@ -52,11 +91,12 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
             or any(not value.startswith(_PREFIXES) for value in ids + rel_ids)):
         raise ValueError("invalid or duplicate Logbook identifiers")
     for node in nodes:
-        if (not node.labels or any(_safe_label(label) != label for label in node.labels)
-                or _RESERVED.intersection(node.properties) or 'id' in node.properties):
+        if (not _is_canonical_node(node) or _RESERVED.intersection(node.properties)
+                or 'id' in node.properties):
             raise ValueError("invalid node")
     for rel in relationships:
-        if rel.type not in _TYPES or _RESERVED.intersection(rel.properties) or 'id' in rel.properties:
+        if (not _is_canonical_relationship(rel) or _RESERVED.intersection(rel.properties)
+                or 'id' in rel.properties):
             raise ValueError("invalid relationship")
 
     constraints = {
