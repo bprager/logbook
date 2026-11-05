@@ -71,20 +71,27 @@ def _is_canonical_relationship(rel: MemoryRelationship) -> bool:
 
 
 def _lock_endpoints(tx: Any, endpoint_ids: list[str], batch: str) -> None:
-    """Lock endpoints in stable order without changing their committed properties."""
-    for endpoint in sorted(set(endpoint_ids)):
-        rows = list(tx.run('MATCH (n {id:$id}) RETURN properties(n) AS props', id=endpoint))
-        if len(rows) != 1 or _LOCK in rows[0]['props']:
-            raise ValueError("relationship endpoint missing, ambiguous, or reserved")
-        tx.run('MATCH (n {id:$id}) SET n._logbook_repair_lock=$batch '
-               'REMOVE n._logbook_repair_lock', id=endpoint, batch=batch).consume()
+    """Check all endpoints and lock them without persisting a lock property."""
+    ids = sorted(set(endpoint_ids))
+    if not ids:
+        return
+    rows = list(tx.run('MATCH (n) WHERE n.id IN $ids '
+                       'RETURN n.id AS id, labels(n) AS labels, properties(n) AS props', ids=ids))
+    if len(rows) != len(ids) or {row['id'] for row in rows} != set(ids):
+        raise ValueError("relationship endpoint missing or ambiguous")
+    for row in rows:
+        labels = _canonical_labels(row['id'])
+        if labels is None or not set(labels).issubset(row['labels']) or _LOCK in row['props']:
+            raise ValueError("relationship endpoint has unexpected type or reserved property")
+    tx.run('MATCH (n) WHERE n.id IN $ids SET n._logbook_repair_lock=$batch '
+           'REMOVE n._logbook_repair_lock', ids=ids, batch=batch).consume()
 
 
 def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
                 relationships: list[MemoryRelationship]) -> None:
     _check_batch(batch)
-    if not nodes or len(nodes) + len(relationships) > 500:
-        raise ValueError("batch must contain nodes and at most 500 records")
+    if not (nodes or relationships) or len(nodes) + len(relationships) > 500:
+        raise ValueError("batch must contain records and at most 500 records")
     ids = [node.id for node in nodes]
     rel_ids = [rel.id for rel in relationships]
     if (len(set(ids)) != len(ids) or len(set(rel_ids)) != len(rel_ids)
@@ -112,29 +119,43 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
                      batch=batch).single()
         if row['n']:
             raise ValueError("batch already exists")
+        if ids and tx.run('MATCH (n) WHERE n.id IN $ids RETURN count(n) AS n',
+                          ids=ids).single()['n']:
+            raise ValueError("node identifier already exists")
+        grouped_nodes: dict[tuple[str, ...], list[dict[str, Any]]] = {}
         for node in nodes:
-            if tx.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=node.id).single()['n']:
-                raise ValueError("node identifier already exists")
             props = {'id': node.id, **_safe_properties(node.properties)}
             digest = _digest('node', sorted(node.labels), props)
             props.update({_BATCH: batch, _DIGEST: digest})
-            labels = ':'.join(node.labels)
-            tx.run(f'CREATE (n:{labels}) SET n = $props', props=props).consume()
+            grouped_nodes.setdefault(node.labels, []).append(props)
+        for labels, rows in grouped_nodes.items():
+            safe_labels = ':'.join(labels)
+            tx.run(f'UNWIND $rows AS props CREATE (n:{safe_labels}) SET n = props',
+                   rows=rows).consume()
         _lock_endpoints(tx, [endpoint for rel in relationships
                              for endpoint in (rel.start_id, rel.end_id)], batch)
+        if rel_ids and tx.run('MATCH ()-[r]->() WHERE r.id IN $ids RETURN count(r) AS n',
+                              ids=rel_ids).single()['n']:
+            raise ValueError("relationship identifier already exists")
+        grouped_rels: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
         for rel in relationships:
-            if tx.run('MATCH ()-[r]->() WHERE r.id=$id RETURN count(r) AS n',
-                      id=rel.id).single()['n']:
-                raise ValueError("relationship identifier already exists")
-            for endpoint in (rel.start_id, rel.end_id):
-                if tx.run('MATCH (n {id:$id}) RETURN count(n) AS n', id=endpoint).single()['n'] != 1:
-                    raise ValueError("relationship endpoint missing or ambiguous")
             props = {'id': rel.id, **_safe_properties(rel.properties)}
             digest = _digest('relationship', [rel.type, rel.start_id, rel.end_id], props)
             props.update({_BATCH: batch, _DIGEST: digest})
-            tx.run(f'MATCH (a {{id:$start}}), (b {{id:$end}}) '
-                   f'CREATE (a)-[r:{rel.type}]->(b) SET r=$props',
-                   start=rel.start_id, end=rel.end_id, props=props).consume()
+            start_labels = _canonical_labels(rel.start_id)
+            end_labels = _canonical_labels(rel.end_id)
+            assert start_labels is not None and end_labels is not None
+            signature = (rel.type, start_labels[0], end_labels[0])
+            grouped_rels.setdefault(signature, []).append(
+                {'start': rel.start_id, 'end': rel.end_id, 'props': props}
+            )
+        for (rel_type, start_label, end_label), rows in grouped_rels.items():
+            created = tx.run(f'UNWIND $rows AS row MATCH (a:{start_label} {{id:row.start}}), '
+                             f'(b:{end_label} {{id:row.end}}) '
+                             f'CREATE (a)-[r:{rel_type}]->(b) SET r=row.props '
+                             'RETURN count(r) AS n', rows=rows).single()['n']
+            if created != len(rows):
+                raise ValueError("relationship endpoints changed")
         manifest = {'id': batch, 'nodes': sorted(ids), 'relationships': sorted(rel_ids)}
         manifest['digest'] = _digest('manifest', batch, manifest)
         tx.run('CREATE (m:LogbookRepairBatch) SET m=$manifest', manifest=manifest).consume()
