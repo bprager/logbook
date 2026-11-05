@@ -90,7 +90,7 @@ def execute_audio_cleanup(
     ledger = open_ledger(config.sqlite_path, initialize=True)
     try:
         for item in plan.items:
-            if not item.eligible:
+            if not item.eligible or _blockers(config, item.job):
                 continue
             local_status = None
             recorder_status = None
@@ -113,7 +113,7 @@ def execute_audio_cleanup(
                     local_status = "failed"
                     errors.append(f"local audio cleanup failed: {error}")
 
-            if include_recorder and item.recorder_action == "delete":
+            if include_recorder and item.recorder_action == "delete" and not _blockers(config, item.job):
                 try:
                     source_path = Path(item.job.source_path)
                     if item.job.source_device.startswith("remote:"):
@@ -151,7 +151,7 @@ def execute_audio_cleanup(
 
 
 def _plan_job(config: AppConfig, job: RecordingJob, now: datetime) -> CleanupPlanItem:
-    blockers = list(_blockers(job))
+    blockers = list(_blockers(config, job))
     eligible_at = _cleanup_eligible_at(config, job) if not blockers else None
     if eligible_at is not None and now < datetime.fromisoformat(eligible_at):
         blockers.append("retention_window_open")
@@ -173,12 +173,14 @@ def _plan_job(config: AppConfig, job: RecordingJob, now: datetime) -> CleanupPla
     )
 
 
-def _blockers(job: RecordingJob) -> tuple[str, ...]:
+def _blockers(config: AppConfig, job: RecordingJob) -> tuple[str, ...]:
     blockers: list[str] = []
     if not job.transcript_path:
         blockers.append("missing_transcript")
     elif not Path(job.transcript_path).exists():
         blockers.append("missing_transcript_file")
+    if job.status == "dead_letter_written":
+        blockers.append("awaiting_dead_letter_review")
     if job.status not in FINAL_NOTE_STATUSES:
         blockers.append("not_finalized")
     if job.status == "consolidated":
@@ -188,6 +190,16 @@ def _blockers(job: RecordingJob) -> tuple[str, ...]:
             blockers.append("missing_consolidated_at")
     elif not job.obsidian_path:
         blockers.append("missing_obsidian_path")
+    if job.status in FINAL_NOTE_STATUSES and job.status != "dead_letter_discarded":
+        final_path = job.daily_log_path if job.status == "consolidated" else job.obsidian_path
+        if final_path:
+            if config.obsidian is None:
+                blockers.append("missing_vault_configuration")
+            else:
+                vault_root = config.obsidian.vault_local_path.resolve()
+                note_path = (vault_root / final_path).resolve()
+                if not note_path.is_relative_to(vault_root) or not note_path.is_file():
+                    blockers.append("missing_final_note_file")
     if job.classification == "meeting" or job.status == "meeting_written":
         if not job.diarization_path:
             blockers.append("missing_diarization")
