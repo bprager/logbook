@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Expose guarded retry and confirmed outcome status for fixture repair runs.
+
 - Reject unsafe ancestor directories when installing experimental graph repair bundles.
 
 - Add an experimental single-batch graph repair path that saves a durable

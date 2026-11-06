@@ -235,3 +235,18 @@ next one-minute check. Restarting the supervisor alone preserves the budgets.
 Verify with the full quality gate and the Prometheus rule test file before
 changing the policy. Confirm a real upload, transcription and published vault
 commit separately: an upload receipt proves durable delivery, not publication.
+
+### Experimental fixture repair recovery
+
+The undeployed graph repair prototype records a private state file before
+starting a fixture run. If its protected recovery needs an operator retry, use
+that same file with `python -m logbook.operator_entry retry PRIVATE_STATE`.
+The response `retry-started` only confirms that the retry was launched. Check
+`python -m logbook.operator_entry status PRIVATE_STATE` until it reports a
+confirmed outcome; `pending` means recovery is not confirmed. Failed recovery
+remains fenced and the existing independent lock holder continues checking.
+
+These commands are for disposable fixture containers only. A container name
+check is not a production authorization boundary; do not use the prototype on
+the live graph. The state file, staged files and remote journal must remain
+available for recovery. Trust, host restart and cleanup boundaries remain open.

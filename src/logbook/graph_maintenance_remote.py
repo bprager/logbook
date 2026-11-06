@@ -25,6 +25,10 @@ def main() -> None:
     launcher = DockerLaunch(recovery, Path(request["private_dir"]), Path(request["worker"]),
                             Path(request["recovery_file"]), request["seconds"],
                             Path(request["recovery_worker"]) if request.get("recovery_worker") else None)
+    if request.get('sandbox_only') and sys.argv[1] in {'stage', 'retry'}:
+        name = recovery.run(['docker', 'inspect', '--format', '{{.Name}}', request['container_id']]).strip()
+        if not name.startswith('/logbook-fixture-'):
+            raise ValueError('fixture container required')
     if sys.argv[1] == "outcome":
         if not recovery_confirmed(recovery, launcher.timer):
             print("PENDING")
@@ -46,10 +50,6 @@ def main() -> None:
             raise ValueError("unexpected completion receipt")
         print(outcome)
     elif sys.argv[1] == "stage":
-        if request.get('sandbox_only'):
-            name = recovery.run(['docker', 'inspect', '--format', '{{.Name}}', request['container_id']]).strip()
-            if not name.startswith('/logbook-fixture-'):
-                raise ValueError('fixture container required')
         launcher.verify_target()
         stage_plan(request, Path(__file__).resolve().parent.parent)
         print("STAGED")

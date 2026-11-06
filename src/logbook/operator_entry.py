@@ -51,8 +51,25 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
     return stage_plan_and_run(config, job_id, remote, timeout_seconds=options['seconds']+270)
 
 
+def fixture_recovery(state: Path, action: str) -> str:
+    saved = read_private_json(state)
+    request = saved['request']
+    if not isinstance(request, dict) or request.get('sandbox_only') is not True:
+        raise ValueError('fixture state required')
+    remote = SshMaintenance(saved['host'], Path(saved['identity']), Path(saved['entrypoint']), request)
+    if action == 'retry':
+        remote.retry()
+        return 'retry-started'
+    if action == 'status':
+        return remote.outcome() if remote.recovered() else 'pending'
+    raise ValueError('expected retry or status')
+
+
 if __name__ == '__main__':  # pragma: no cover
-    if len(sys.argv) != 5:
-        raise SystemExit('usage: python -m logbook.operator_entry ENV JOB_ID PRIVATE_OPTIONS PRIVATE_STATE')
-    print(run_fixture(load_app_config(Path(sys.argv[1])), int(sys.argv[2]),
-                      read_private_json(Path(sys.argv[3])), Path(sys.argv[4])))
+    if len(sys.argv) == 3 and sys.argv[1] in {'retry', 'status'}:
+        print(fixture_recovery(Path(sys.argv[2]), sys.argv[1]))
+    elif len(sys.argv) == 5:
+        print(run_fixture(load_app_config(Path(sys.argv[1])), int(sys.argv[2]),
+                          read_private_json(Path(sys.argv[3])), Path(sys.argv[4])))
+    else:
+        raise SystemExit('usage: operator_entry ENV JOB_ID PRIVATE_OPTIONS PRIVATE_STATE | retry|status PRIVATE_STATE')

@@ -34,3 +34,28 @@ class OperatorEntryTests(unittest.TestCase):
         with patch('logbook.operator_entry.build_bundle', return_value=b'fixture') as build:
             self.assertEqual(build_installed_bundle(), b'fixture')
             self.assertEqual(set(build.call_args.args[0]), {'logbook','neo4j','pytz'})
+
+    def test_saved_fixture_can_retry_and_report_confirmed_status(self):
+        from logbook.operator_entry import fixture_recovery
+        with TemporaryDirectory() as tmp:
+            state = Path(tmp)/'state.json'
+            state.write_text(json.dumps({'host':'odin', 'identity':'/key', 'entrypoint':'/entry',
+                                         'request':{'sandbox_only':True}}))
+            state.chmod(0o600)
+            remote = Mock()
+            remote.recovered.side_effect = [False, True]
+            remote.outcome.return_value = 'rolled-back'
+            with patch('logbook.operator_entry.SshMaintenance', return_value=remote):
+                self.assertEqual(fixture_recovery(state, 'retry'), 'retry-started')
+                self.assertEqual(fixture_recovery(state, 'status'), 'pending')
+                self.assertEqual(fixture_recovery(state, 'status'), 'rolled-back')
+                remote.retry.assert_called_once()
+                with self.assertRaisesRegex(ValueError, 'expected'):
+                    fixture_recovery(state, 'other')
+            state.write_text(json.dumps({'host':'odin', 'identity':'/key', 'entrypoint':'/entry',
+                                         'request':{'sandbox_only':False}}))
+            with self.assertRaisesRegex(ValueError, 'fixture'):
+                fixture_recovery(state, 'retry')
+            state.chmod(0o644)
+            with self.assertRaisesRegex(ValueError, 'private'):
+                fixture_recovery(state, 'status')

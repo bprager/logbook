@@ -403,3 +403,15 @@ class RejectedLaunchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'fixture'):
                 main()
             stage.assert_not_called()
+
+    def test_fixture_only_retry_refuses_other_containers(self):
+        request = '{"container_id":"id","pid":1,"port":2,"unit":"unit",' \
+                  '"private_dir":"/private","worker":"/worker",' \
+                  '"recovery_file":"/recovery","seconds":10,"sandbox_only":true}'
+        with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('sys.stdin', io.StringIO(request)), patch('sys.argv', ['remote', 'retry']):
+            recovery.return_value.run.return_value = '/memgraph-service'
+            with self.assertRaisesRegex(ValueError, 'fixture'):
+                main()
+            launcher.return_value.retry_recovery.assert_not_called()
