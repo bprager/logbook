@@ -14,13 +14,18 @@ from logbook.graph_write_lock import GraphWriteLock
 T = TypeVar("T")
 
 
-def with_logbook_locks(config: AppConfig, operation: Callable[[], T]) -> T:
-    """Hold both Mimir locks until the caller's entire operation returns."""
+def with_logbook_lock_descriptors(config: AppConfig, operation: Callable[[int, int], T]) -> T:
+    """Hold both Mimir locks and lend their descriptors to the caller."""
     config.processing_root.mkdir(parents=True, exist_ok=True)
     with (config.processing_root / "pipeline.lock").open("a") as pipeline:
         fcntl.flock(pipeline, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        with GraphWriteLock(config.processing_root):
-            return operation()
+        with GraphWriteLock(config.processing_root) as graph:
+            return operation(pipeline.fileno(), graph.fileno())
+
+
+def with_logbook_locks(config: AppConfig, operation: Callable[[], T]) -> T:
+    """Hold both Mimir locks until the caller's entire operation returns."""
+    return with_logbook_lock_descriptors(config, lambda _pipeline, _graph: operation())
 
 class LaunchOperations(Protocol):
     def verify_target(self) -> None: ...

@@ -7,8 +7,11 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from logbook.graph_maintenance_cross_host import SshMaintenance, coordinate_window, recovery_confirmed
+from logbook.graph_maintenance_cross_host import (
+    SshMaintenance, coordinate_leased_window, coordinate_window, recovery_confirmed,
+)
 from logbook.graph_maintenance_remote import main
+from logbook.graph_maintenance_lease import main as lease_main
 
 
 class CrossHostMaintenanceTests(unittest.TestCase):
@@ -124,3 +127,85 @@ class CrossHostMaintenanceTests(unittest.TestCase):
             self.assertEqual(out.getvalue().strip(), "PENDING")
         with patch("sys.argv", ["remote", "invalid"]), self.assertRaises(ValueError):
             main()
+
+    def test_lease_is_started_before_remote_window_and_survives_timeout(self):
+        with TemporaryDirectory() as tmp:
+            config = SimpleNamespace(processing_root=Path(tmp))
+            remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
+                                    {"unit": "logbook-graph-maintenance-" + "a" * 32 + ".service"})
+            remote.recovered = Mock(return_value=False)
+            remote.launch = Mock()
+            child = Mock()
+            child.stdin = io.StringIO()
+            child.stdout = io.StringIO("READY\n")
+            child.wait.side_effect = subprocess.TimeoutExpired([], 1)
+            with patch("logbook.graph_maintenance_cross_host.subprocess.Popen", return_value=child), \
+                 patch("logbook.graph_maintenance_cross_host.select.select", return_value=([child.stdout], [], [])):
+                with self.assertRaisesRegex(TimeoutError, "independent lease"):
+                    coordinate_leased_window(config, remote, timeout_seconds=1)
+            remote.launch.assert_called_once()
+            child.terminate.assert_not_called()
+
+    def test_lease_refuses_old_or_invalid_window(self):
+        with TemporaryDirectory() as tmp:
+            config = SimpleNamespace(processing_root=Path(tmp))
+            remote = SshMaintenance("odin", Path("/key"), Path("/entry"), {"unit": "old"})
+            with self.assertRaisesRegex(ValueError, "fresh maintenance unit"):
+                coordinate_leased_window(config, remote, timeout_seconds=1)
+
+    def test_lease_requires_ready_and_confirmed_remote_result(self):
+        with TemporaryDirectory() as tmp:
+            config = SimpleNamespace(processing_root=Path(tmp))
+            remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
+                                    {"unit": "logbook-graph-maintenance-" + "b" * 32 + ".service"})
+            remote.recovered = Mock(return_value=True)
+            with self.assertRaisesRegex(ValueError, "already reports recovery"):
+                coordinate_leased_window(config, remote, timeout_seconds=1)
+            remote.recovered = Mock(return_value=False)
+            remote.launch = Mock()
+            child = Mock(stdin=io.StringIO(), stdout=io.StringIO("BAD\n"))
+            with patch("logbook.graph_maintenance_cross_host.subprocess.Popen", return_value=child), \
+                 patch("logbook.graph_maintenance_cross_host.select.select", return_value=([child.stdout], [], [])):
+                with self.assertRaisesRegex(RuntimeError, "lease did not start"):
+                    coordinate_leased_window(config, remote, timeout_seconds=1)
+            child.terminate.assert_called_once()
+            remote.launch.assert_not_called()
+
+    def test_lease_reports_success_failure_and_launch_errors(self):
+        with TemporaryDirectory() as tmp:
+            config = SimpleNamespace(processing_root=Path(tmp))
+            remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
+                                    {"unit": "logbook-graph-maintenance-" + "c" * 32 + ".service"})
+            remote.recovered = Mock(return_value=False)
+            remote.launch = Mock()
+            for status, error in ((0, None), (1, RuntimeError)):
+                child = Mock(stdin=io.StringIO(), stdout=io.StringIO("READY\n"))
+                child.wait.return_value = status
+                with patch("logbook.graph_maintenance_cross_host.subprocess.Popen", return_value=child), \
+                     patch("logbook.graph_maintenance_cross_host.select.select", return_value=([child.stdout], [], [])):
+                    if error:
+                        with self.assertRaises(error):
+                            coordinate_leased_window(config, remote, timeout_seconds=1)
+                    else:
+                        coordinate_leased_window(config, remote, timeout_seconds=1)
+            child = Mock(stdin=io.StringIO(), stdout=io.StringIO("READY\n"))
+            child.wait.return_value = 0
+            remote.launch.side_effect = ConnectionError("disconnected")
+            with patch("logbook.graph_maintenance_cross_host.subprocess.Popen", return_value=child), \
+                 patch("logbook.graph_maintenance_cross_host.select.select", return_value=([child.stdout], [], [])):
+                with self.assertRaisesRegex(ConnectionError, "disconnected"):
+                    coordinate_leased_window(config, remote, timeout_seconds=1)
+
+    def test_lease_waits_through_errors_until_recovery(self):
+        payload = '{"host":"odin","identity":"/key","entrypoint":"/entry","request":{}}\n'
+        with patch("sys.argv", ["lease", "3", "4"]), patch("sys.stdin", io.StringIO(payload)), \
+             patch("sys.stdout", new_callable=io.StringIO) as out, \
+             patch("logbook.graph_maintenance_lease.os.fstat") as fstat, \
+             patch("logbook.graph_maintenance_lease.time.sleep"), \
+             patch("logbook.graph_maintenance_lease.SshMaintenance") as remote:
+            remote.return_value.recovered.side_effect = [ConnectionError(), False, True]
+            lease_main()
+            self.assertEqual(out.getvalue(), "READY\n")
+            self.assertEqual(fstat.call_count, 2)
+        with patch("sys.argv", ["lease"]), self.assertRaises(ValueError):
+            lease_main()
