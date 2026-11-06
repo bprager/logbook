@@ -15,6 +15,10 @@ import time
 from typing import Protocol
 
 
+class TransactionListingUnavailable(RuntimeError):
+    """A transaction listing was incomplete or contained an unusable ID."""
+
+
 class RecoveryOperations(Protocol):
     def verify_target(self) -> None: ...
     def stop_worker(self) -> None: ...
@@ -25,7 +29,11 @@ class RecoveryOperations(Protocol):
 
 def drain_transactions(operations: RecoveryOperations, attempts: int = 20) -> None:
     for _ in range(attempts):
-        active = operations.transactions()
+        try:
+            active = operations.transactions()
+        except TransactionListingUnavailable:
+            time.sleep(0.1)
+            continue
         if not active:
             return
         for transaction_id in active:
@@ -114,10 +122,10 @@ class DockerRecovery:
                 continue
             transaction_id = json.loads(row["transaction_id"])
             if not isinstance(transaction_id, str) or not transaction_id.isdigit():
-                raise RuntimeError("invalid transaction ID; fence remains")
+                raise TransactionListingUnavailable("invalid transaction ID; fence remains")
             result.append(transaction_id)
         if not found_self:
-            raise RuntimeError("transaction listing incomplete; fence remains")
+            raise TransactionListingUnavailable("transaction listing incomplete; fence remains")
         return result
 
     def terminate(self, transaction_id: str) -> None:

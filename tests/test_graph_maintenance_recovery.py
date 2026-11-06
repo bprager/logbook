@@ -102,3 +102,21 @@ class GraphMaintenanceRecoveryTests(unittest.TestCase):
         self.assertIn('iifname != "lo"', rules)
         ops.remove_fence()
         self.assertIn("nft", ops.run.call_args.args[0])
+
+    def test_transient_unusable_listing_is_retried_before_unfencing(self):
+        from logbook.graph_maintenance_recovery import TransactionListingUnavailable
+        operations = Mock()
+        operations.transactions.side_effect = [TransactionListingUnavailable('bad ID'), []]
+        with patch('logbook.graph_maintenance_recovery.time.sleep'):
+            recover(operations, attempts=2)
+        self.assertEqual(operations.transactions.call_count, 2)
+        operations.remove_fence.assert_called_once()
+
+    def test_persistent_unusable_listing_keeps_fence(self):
+        from logbook.graph_maintenance_recovery import TransactionListingUnavailable
+        operations = Mock()
+        operations.transactions.side_effect = TransactionListingUnavailable('bad ID')
+        with patch('logbook.graph_maintenance_recovery.time.sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'did not drain'):
+                recover(operations, attempts=2)
+        operations.remove_fence.assert_not_called()
