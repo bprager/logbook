@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add an experimental fenced graph-maintenance launcher with a gated worker
+  and independent, setup-serialized recovery timer; it is not enabled live.
+
 - Add fail-closed recovery for a fenced graph maintenance worker, stopping the
   worker and draining transactions before outside access is restored.
 
