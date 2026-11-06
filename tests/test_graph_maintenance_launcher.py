@@ -46,7 +46,7 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
             root = Path(tmp)
             recovery = DockerRecovery("a" * 64, 123, 7687,
                                       "logbook-graph-maintenance-test.service")
-            recovery.run = Mock(side_effect=[f'{"a" * 64} 123 true', "", "",
+            recovery.run = Mock(side_effect=[f'{"a" * 64} 123 true', f'{"a" * 64} 123 true', "", "",
                                              "active", "active", "active", "active"])
             recovery.verify_target = Mock()
             recovery.transactions = Mock(return_value=[])
@@ -77,6 +77,10 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
                                                         SimpleNamespace(st_uid=1, st_mode=0o600)]):
                 with self.assertRaisesRegex(ValueError, "root-owned"):
                     launcher.run_window()
+            with patch.object(Path, "stat", return_value=SimpleNamespace(st_uid=0, st_mode=0o700)):
+                with patch.object(Path, "exists", return_value=True):
+                    with self.assertRaisesRegex(ValueError, "directory is not fresh"):
+                        launcher.preflight()
             recovery.run = Mock(side_effect=["wrong target"])
             with self.assertRaisesRegex(RuntimeError, "target container changed"):
                 launcher.verify_target()
