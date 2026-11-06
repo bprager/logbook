@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add experimental cross-host maintenance coordination that checks recovery
+  over a fresh connection while holding both Logbook locks.
+
 - Fence IPv4 and IPv6 together during experimental graph maintenance, drain
   pre-existing transactions, and provide a wrapper for both Logbook locks.
 
