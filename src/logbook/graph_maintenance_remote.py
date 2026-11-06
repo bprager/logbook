@@ -19,7 +19,8 @@ def main() -> None:
     recovery = DockerRecovery(request["container_id"], request["pid"],
                               request["port"], request["unit"])
     launcher = DockerLaunch(recovery, Path(request["private_dir"]), Path(request["worker"]),
-                            Path(request["recovery_file"]), request["seconds"])
+                            Path(request["recovery_file"]), request["seconds"],
+                            Path(request["recovery_worker"]) if request.get("recovery_worker") else None)
     if sys.argv[1] == "preflight":
         launcher.preflight()
         print("PREFLIGHT_OK")
