@@ -46,6 +46,10 @@ def main() -> None:
             raise ValueError("unexpected completion receipt")
         print(outcome)
     elif sys.argv[1] == "stage":
+        if request.get('sandbox_only'):
+            name = recovery.run(['docker', 'inspect', '--format', '{{.Name}}', request['container_id']]).strip()
+            if not name.startswith('/logbook-fixture-'):
+                raise ValueError('fixture container required')
         launcher.verify_target()
         stage_plan(request, Path(__file__).resolve().parent.parent)
         print("STAGED")

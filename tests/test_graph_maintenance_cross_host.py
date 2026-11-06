@@ -390,3 +390,16 @@ class RejectedLaunchTests(unittest.TestCase):
                  patch('sys.stdin', io.StringIO(json.dumps(request))), \
                  patch('sys.argv', ['remote', 'outcome']), self.assertRaisesRegex(ValueError, message):
                 main()
+
+    def test_fixture_only_staging_refuses_other_containers(self):
+        request = '{"container_id":"id","pid":1,"port":2,"unit":"unit",' \
+                  '"private_dir":"/private","worker":"/worker",' \
+                  '"recovery_file":"/recovery","seconds":10,"sandbox_only":true}'
+        with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.stage_plan') as stage, \
+             patch('sys.stdin', io.StringIO(request)), patch('sys.argv', ['remote', 'stage']):
+            recovery.return_value.run.return_value = '/memgraph-service'
+            with self.assertRaisesRegex(ValueError, 'fixture'):
+                main()
+            stage.assert_not_called()
