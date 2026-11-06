@@ -6,7 +6,7 @@ This helper does not establish that window or authorize live writes.
 from pathlib import Path
 from typing import Any
 
-from logbook.bounded_graph_repair import apply_one_batch
+from logbook.bounded_graph_repair import apply_one_batch, rollback_one_batch
 from logbook.graph_write_lock import GraphWriteLock
 from logbook.memory_graph import MemoryGraphPlan, GraphQueryClient, build_memory_graph_repair_plan
 
@@ -17,3 +17,9 @@ def repair_in_window(plan: MemoryGraphPlan, client: GraphQueryClient, session: A
         raise ValueError("held writer lock required")
     repair = build_memory_graph_repair_plan(plan, client)
     return apply_one_batch(session, lock, repair, journal)
+
+
+def recover_in_window(session: Any, lock: GraphWriteLock, journal: Path,
+                      expected_batch: str) -> None:
+    """Recover only the independently identified batch in the protected window."""
+    rollback_one_batch(session, lock, journal, expected_batch)
