@@ -23,7 +23,8 @@ class OperatorEntryTests(unittest.TestCase):
                 self.assertEqual(saved['revision'], options['revision'])
                 self.assertEqual(len(saved['bundle_sha256']), 64)
                 return 'retained'
-            with patch('logbook.operator_entry.build_installed_bundle', return_value=b'archive'), \
+            with patch('logbook.operator_entry.verify_checkout'), \
+                 patch('logbook.operator_entry.build_installed_bundle', return_value=b'archive'), \
                  patch('logbook.operator_entry.provision_bundle') as provision, \
                  patch('logbook.operator_entry.SshMaintenance', return_value=remote), \
                  patch('logbook.operator_entry.stage_plan_and_run', side_effect=run):

@@ -35,6 +35,16 @@ def build_bundle(packages: dict[str, Path]) -> bytes:
     return _bounded(output)
 
 
+def verify_checkout(repo: Path, revision: str) -> None:
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
+        raise ValueError('full commit revision required')
+    diff = subprocess.run(['git', '-C', str(repo), 'diff', '--quiet', revision, '--', 'src/logbook'])
+    untracked = subprocess.run(['git', '-C', str(repo), 'ls-files', '--others', '--exclude-standard',
+                                '--', 'src/logbook'], capture_output=True, check=True).stdout
+    if diff.returncode != 0 or untracked:
+        raise ValueError('checkout does not match selected revision')
+
+
 def build_revision_bundle(repo: Path, revision: str, dependencies: dict[str, Path]) -> bytes:
     if not re.fullmatch(r'[0-9a-f]{40}', revision) or set(dependencies) != {'neo4j', 'pytz'}:
         raise ValueError('full commit revision and expected dependencies required')
@@ -65,7 +75,14 @@ def provision_bundle(host: str, identity: Path, destination: Path, staging: Path
     if not destination.is_absolute() or staging.parent != destination.parent or staging == destination:
         raise ValueError('absolute sibling bundle and staging paths required')
     digest = hashlib.sha256(data).hexdigest()
-    bootstrap = Path(__file__).with_name('operator_bundle_bootstrap.py').read_text()
+    with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
+        member = archive.getmember('logbook/operator_bundle_bootstrap.py')
+        if not member.isfile() or member.size > 100000:
+            raise ValueError('invalid bundle bootstrap')
+        source = archive.extractfile(member)
+        if source is None:
+            raise ValueError('missing bundle bootstrap')
+        bootstrap = source.read().decode('utf-8')
     command = shlex.join(['sudo', '-n', '/usr/bin/python3', '-c', bootstrap,
                           str(destination), str(staging), digest])
     result = subprocess.run(['ssh', '-i', str(identity), '-o', 'BatchMode=yes', '-o',

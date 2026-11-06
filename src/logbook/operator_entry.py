@@ -12,7 +12,7 @@ from logbook.config import AppConfig, load_app_config
 from logbook.graph_maintenance_cross_host import SshMaintenance
 from logbook.graph_maintenance_recovery import DockerRecovery
 from logbook.graph_maintenance_worker import private_directory, read_private_json
-from logbook.operator_bundle import build_revision_bundle, provision_bundle
+from logbook.operator_bundle import build_revision_bundle, provision_bundle, verify_checkout
 from logbook.operator_window import stage_plan_and_run
 
 
@@ -37,6 +37,7 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
                'recovery_worker':str(staging/'restore'), 'seconds':options['seconds'], 'sandbox_only':True}
     entrypoint = bundle/'logbook/graph_maintenance_remote.py'
     revision = options['revision']
+    verify_checkout(Path(__file__).resolve().parents[2], revision)
     payload = build_installed_bundle(revision)
     saved = {'host':options['host'], 'identity':options['identity'], 'entrypoint':str(entrypoint),
              'revision':revision, 'bundle_sha256':hashlib.sha256(payload).hexdigest(), 'request':request}

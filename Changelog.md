@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Check the fixture coordinator checkout and use the selected bundle bootstrap.
+
 - Build experimental repair source from a selected Git commit and record the package digest.
 
 - Expose guarded retry and confirmed outcome status for fixture repair runs.

@@ -104,15 +104,33 @@ class OperatorBundleTests(unittest.TestCase):
         from subprocess import CompletedProcess
         from unittest.mock import patch
         from logbook.operator_bundle import provision_bundle
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode='w:gz') as tar:
+            info = tarfile.TarInfo('logbook/operator_bundle_bootstrap.py')
+            payload = b'example_bootstrap'
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+        data = stream.getvalue()
         with patch('logbook.operator_bundle.subprocess.run') as run:
             run.return_value = CompletedProcess([], 0, b'BUNDLE_INSTALLED\n', b'')
-            digest = provision_bundle('odin', Path('/key'), Path('/private/bundle'), Path('/private/stage'), b'data')
-            self.assertEqual(digest, hashlib.sha256(b'data').hexdigest())
+            digest = provision_bundle('odin', Path('/key'), Path('/private/bundle'), Path('/private/stage'), data)
+            self.assertEqual(digest, hashlib.sha256(data).hexdigest())
+            self.assertIn('example_bootstrap', run.call_args.args[0][-1])
             run.return_value = CompletedProcess([], 0, b'NO', b'')
             with self.assertRaisesRegex(RuntimeError, 'response'):
-                provision_bundle('odin', Path('/key'), Path('/private/bundle'), Path('/private/stage'), b'data')
+                provision_bundle('odin', Path('/key'), Path('/private/bundle'), Path('/private/stage'), data)
         with self.assertRaisesRegex(ValueError, 'sibling'):
             provision_bundle('odin', Path('/key'), Path('/private/bundle'), Path('/other/stage'), b'data')
+        bad = io.BytesIO()
+        with tarfile.open(fileobj=bad, mode='w:gz') as tar:
+            info = tarfile.TarInfo('logbook/operator_bundle_bootstrap.py')
+            info.type = tarfile.DIRTYPE
+            tar.addfile(info)
+        with self.assertRaisesRegex(ValueError, 'bootstrap'):
+            provision_bundle('odin', Path('/key'), Path('/private/bundle'), Path('/private/stage'), bad.getvalue())
+        with patch('tarfile.TarFile.extractfile', return_value=None):
+            with self.assertRaisesRegex(ValueError, 'bootstrap'):
+                provision_bundle('odin', Path('/key'), Path('/private/bundle'), Path('/private/stage'), data)
 
     def test_bundle_builder_excludes_cache_and_rejects_links(self):
         from logbook.operator_bundle import build_bundle
@@ -200,3 +218,29 @@ class RevisionBundleTests(unittest.TestCase):
             unsafe = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
             with self.assertRaisesRegex(ValueError, 'source'):
                 build_revision_bundle(root, unsafe, dependencies)
+
+class CheckoutVerificationTests(unittest.TestCase):
+    def test_rejects_changed_or_untracked_source(self):
+        import subprocess
+        from logbook.operator_bundle import verify_checkout
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            source = root/'src/logbook'
+            source.mkdir(parents=True)
+            file = source/'entry.py'
+            file.write_text('committed')
+            subprocess.run(['git', '-C', str(root), 'add', 'src'], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c',
+                            'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+            revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+            verify_checkout(root, revision)
+            with self.assertRaisesRegex(ValueError, 'revision'):
+                verify_checkout(root, '--help')
+            file.write_text('modified')
+            with self.assertRaisesRegex(ValueError, 'checkout'):
+                verify_checkout(root, revision)
+            file.write_text('committed')
+            (source/'untracked.py').write_text('new')
+            with self.assertRaisesRegex(ValueError, 'checkout'):
+                verify_checkout(root, revision)
