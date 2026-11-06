@@ -3,6 +3,8 @@
 The caller must hold the cross-host maintenance window for the whole operation.
 This helper does not establish that window or authorize live writes.
 """
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,6 @@ def repair_in_window(plan: MemoryGraphPlan, client: GraphQueryClient, session: A
 
 
 def recover_in_window(session: Any, lock: GraphWriteLock, journal: Path,
-                      expected_batch: str) -> None:
+                      expected_batch: str) -> str | None:
     """Recover only the independently identified batch in the protected window."""
-    rollback_one_batch(session, lock, journal, expected_batch)
+    return rollback_one_batch(session, lock, journal, expected_batch, allow_absent=True)
