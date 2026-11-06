@@ -1,6 +1,7 @@
 """Fixture-only operator entry point for the experimental maintenance path."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -11,15 +12,15 @@ from logbook.config import AppConfig, load_app_config
 from logbook.graph_maintenance_cross_host import SshMaintenance
 from logbook.graph_maintenance_recovery import DockerRecovery
 from logbook.graph_maintenance_worker import private_directory, read_private_json
-from logbook.operator_bundle import build_bundle, provision_bundle
+from logbook.operator_bundle import build_revision_bundle, provision_bundle
 from logbook.operator_window import stage_plan_and_run
 
 
-def build_installed_bundle() -> bytes:
+def build_installed_bundle(revision: str) -> bytes:
     import neo4j
     import pytz
-    return build_bundle({'logbook':Path(__file__).parent, 'neo4j':Path(neo4j.__file__).parent,
-                         'pytz':Path(pytz.__file__).parent})
+    return build_revision_bundle(Path(__file__).resolve().parents[2], revision,
+                                 {'neo4j':Path(neo4j.__file__).parent, 'pytz':Path(pytz.__file__).parent})
 
 
 def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> str:
@@ -35,7 +36,10 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
                'worker':str(staging/'worker'), 'recovery_file':str(bundle/'logbook/graph_maintenance_recovery.py'),
                'recovery_worker':str(staging/'restore'), 'seconds':options['seconds'], 'sandbox_only':True}
     entrypoint = bundle/'logbook/graph_maintenance_remote.py'
-    saved = {'host':options['host'], 'identity':options['identity'], 'entrypoint':str(entrypoint), 'request':request}
+    revision = options['revision']
+    payload = build_installed_bundle(revision)
+    saved = {'host':options['host'], 'identity':options['identity'], 'entrypoint':str(entrypoint),
+             'revision':revision, 'bundle_sha256':hashlib.sha256(payload).hexdigest(), 'request':request}
     fd = os.open(state, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as output:
         json.dump(saved, output, sort_keys=True)
@@ -46,7 +50,7 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
         os.fsync(directory)
     finally:
         os.close(directory)
-    provision_bundle(options['host'], Path(options['identity']), bundle, staging, build_installed_bundle())
+    provision_bundle(options['host'], Path(options['identity']), bundle, staging, payload)
     remote = SshMaintenance(options['host'], Path(options['identity']), entrypoint, request)
     return stage_plan_and_run(config, job_id, remote, timeout_seconds=options['seconds']+270)
 

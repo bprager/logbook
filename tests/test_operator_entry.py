@@ -13,13 +13,15 @@ class OperatorEntryTests(unittest.TestCase):
             state = Path(tmp)/'state.json'
             options = {'host':'odin', 'identity':'/key', 'remote_parent':'/private',
                        'journal_dir':'/private/journals', 'container_id':'a'*64, 'pid':123,
-                       'port':7687, 'seconds':15}
+                       'port':7687, 'seconds':15, 'revision':'a'*40}
             remote = Mock()
             def run(config, job_id, candidate, *, timeout_seconds):
                 self.assertTrue(state.exists())
                 saved = json.loads(state.read_text())
                 self.assertEqual(saved['request']['container_id'], options['container_id'])
                 self.assertTrue(saved['request']['sandbox_only'])
+                self.assertEqual(saved['revision'], options['revision'])
+                self.assertEqual(len(saved['bundle_sha256']), 64)
                 return 'retained'
             with patch('logbook.operator_entry.build_installed_bundle', return_value=b'archive'), \
                  patch('logbook.operator_entry.provision_bundle') as provision, \
@@ -31,9 +33,9 @@ class OperatorEntryTests(unittest.TestCase):
 
     def test_bundle_uses_installed_packages(self):
         from logbook.operator_entry import build_installed_bundle
-        with patch('logbook.operator_entry.build_bundle', return_value=b'fixture') as build:
-            self.assertEqual(build_installed_bundle(), b'fixture')
-            self.assertEqual(set(build.call_args.args[0]), {'logbook','neo4j','pytz'})
+        with patch('logbook.operator_entry.build_revision_bundle', return_value=b'fixture') as build:
+            self.assertEqual(build_installed_bundle('a'*40), b'fixture')
+            self.assertEqual(set(build.call_args.args[2]), {'neo4j','pytz'})
 
     def test_saved_fixture_can_retry_and_report_confirmed_status(self):
         from logbook.operator_entry import fixture_recovery

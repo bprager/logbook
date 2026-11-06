@@ -158,3 +158,45 @@ class OperatorBundleTests(unittest.TestCase):
              patch('logbook.operator_bundle.tarfile.open'):
             with self.assertRaisesRegex(ValueError, 'size limit'):
                 build_bundle({name:Path('/unused') for name in ('logbook','neo4j','pytz')})
+
+class RevisionBundleTests(unittest.TestCase):
+    def test_uses_exact_commit_not_mutable_checkout(self):
+        import subprocess
+        from logbook.operator_bundle import build_revision_bundle
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            source = root/'src/logbook'
+            source.mkdir(parents=True)
+            (source/'__init__.py').write_text('reviewed')
+            subprocess.run(['git', '-C', str(root), 'add', 'src'], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c',
+                            'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+            revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+            (source/'__init__.py').write_text('changed')
+            dependencies = {}
+            for name in ('neo4j', 'pytz'):
+                path = root/name
+                path.mkdir()
+                (path/'__init__.py').write_text(name)
+                dependencies[name] = path
+            payload = build_revision_bundle(root, revision, dependencies)
+            with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as tar:
+                self.assertEqual(tar.extractfile('logbook/__init__.py').read(), b'reviewed')
+            from unittest.mock import patch
+            with patch('logbook.operator_bundle_bootstrap.trusted_parent'):
+                install_bundle(payload, root/'installed', hashlib.sha256(payload).hexdigest())
+            self.assertEqual((root/'installed/logbook/__init__.py').read_text(), 'reviewed')
+            with self.assertRaisesRegex(ValueError, 'revision'):
+                build_revision_bundle(root, 'HEAD', dependencies)
+            blob = subprocess.check_output(['git', '-C', str(root), 'hash-object', '-w',
+                                            'src/logbook/__init__.py'], text=True).strip()
+            with self.assertRaisesRegex(ValueError, 'commit'):
+                build_revision_bundle(root, blob, dependencies)
+            (source/'bad').symlink_to('/etc/passwd')
+            subprocess.run(['git', '-C', str(root), 'add', 'src'], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c',
+                            'user.email=test@example.invalid', 'commit', '-qm', 'link'], check=True)
+            unsafe = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+            with self.assertRaisesRegex(ValueError, 'source'):
+                build_revision_bundle(root, unsafe, dependencies)

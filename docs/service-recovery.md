@@ -238,8 +238,11 @@ commit separately: an upload receipt proves durable delivery, not publication.
 
 ### Experimental fixture repair recovery
 
-The undeployed graph repair prototype records a private state file before
-starting a fixture run. If its protected recovery needs an operator retry, use
+The undeployed graph repair prototype requires the full selected Git commit in
+the private options as `revision`. It archives Logbook source from that commit
+and records the revision and bundle digest in the private state file before
+starting a fixture run. Dependencies and the local coordinator still come from
+the installed environment; the commit selection does not certify them. If its protected recovery needs an operator retry, use
 that same file with `python -m logbook.operator_entry retry PRIVATE_STATE`.
 The response `retry-started` only confirms that the retry was launched. Check
 `python -m logbook.operator_entry status PRIVATE_STATE` until it reports a
