@@ -166,16 +166,25 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
     session.execute_write(write)
 
 
-def rollback_batch(session: Any, batch: str, *, lock: GraphWriteLock | None = None) -> None:
+def rollback_batch(session: Any, batch: str, *, lock: GraphWriteLock | None = None,
+                   allow_absent: bool = False) -> str | None:
     _check_batch(batch)
     if not isinstance(lock, GraphWriteLock) or not lock.held:
         raise ValueError("held writer lock required")
 
-    def write(tx: Any) -> None:
+    def write(tx: Any) -> str | None:
         # Taking write locks before checking makes later conflicting writes abort one transaction.
         manifests = list(tx.run('MATCH (m:LogbookRepairBatch {id:$batch}) '
                                 'SET m._logbook_repair_lock=$batch RETURN properties(m) AS props',
                                 batch=batch))
+        if not manifests and allow_absent:
+            nodes = tx.run('MATCH (n) WHERE n._logbook_repair_batch=$batch RETURN count(n) AS n',
+                           batch=batch).single()['n']
+            rels = tx.run('MATCH ()-[r]->() WHERE r._logbook_repair_batch=$batch RETURN count(r) AS n',
+                          batch=batch).single()['n']
+            if nodes or rels:
+                raise ValueError("orphaned batch records without manifest")
+            return "absent"
         if len(manifests) != 1:
             raise ValueError("batch manifest missing or ambiguous")
         manifest = dict(manifests[0]['props'])
@@ -217,4 +226,4 @@ def rollback_batch(session: Any, batch: str, *, lock: GraphWriteLock | None = No
                batch=batch).consume()
         tx.run('MATCH (n) WHERE n._logbook_repair_batch=$batch DELETE n', batch=batch).consume()
         tx.run('MATCH (m:LogbookRepairBatch {id:$batch}) DELETE m', batch=batch).consume()
-    session.execute_write(write)
+    return session.execute_write(write)

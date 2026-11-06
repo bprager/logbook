@@ -20,6 +20,6 @@ def repair_in_window(plan: MemoryGraphPlan, client: GraphQueryClient, session: A
 
 
 def recover_in_window(session: Any, lock: GraphWriteLock, journal: Path,
-                      expected_batch: str) -> None:
+                      expected_batch: str) -> str | None:
     """Recover only the independently identified batch in the protected window."""
-    rollback_one_batch(session, lock, journal, expected_batch)
+    return rollback_one_batch(session, lock, journal, expected_batch, allow_absent=True)

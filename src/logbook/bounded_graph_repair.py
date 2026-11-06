@@ -43,7 +43,7 @@ def apply_one_batch(session: Any, lock: GraphWriteLock, plan: MemoryGraphRepairP
 
 
 def rollback_one_batch(session: Any, lock: GraphWriteLock, journal: Path,
-                       expected_batch: str) -> None:
+                       expected_batch: str, *, allow_absent: bool = False) -> str | None:
     if not isinstance(lock, GraphWriteLock) or not lock.held:
         raise ValueError("held writer lock required")
     fd = os.open(journal, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
@@ -53,4 +53,6 @@ def rollback_one_batch(session: Any, lock: GraphWriteLock, journal: Path,
             or record.get("batch") != expected_batch
             or str(uuid.UUID(expected_batch)) != expected_batch):
         raise ValueError("recovery record does not match expected batch")
-    rollback_batch(session, expected_batch, lock=lock)
+    if allow_absent:
+        return rollback_batch(session, expected_batch, lock=lock, allow_absent=True)
+    return rollback_batch(session, expected_batch, lock=lock)
