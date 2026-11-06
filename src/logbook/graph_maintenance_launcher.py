@@ -102,7 +102,8 @@ class DockerLaunch:
                 "m.recover(m.DockerRecovery(sys.argv[2],int(sys.argv[3]),int(sys.argv[4]),sys.argv[5]))")
         self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
                            "--on-active=" + str(self.seconds) + "s",
-                           "--timer-property=AccuracySec=1ms", "/usr/bin/flock", "-x",
+                           "--timer-property=AccuracySec=1ms", "--property=RemainAfterExit=yes",
+                           "/usr/bin/flock", "-x",
                            str(self.lock_path), "/usr/bin/python3", "-c", code,
                            str(self.recovery_file), self.recovery.container_id,
                            str(self.recovery.pid), str(self.recovery.port), self.recovery.unit])
