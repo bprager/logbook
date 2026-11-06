@@ -3,6 +3,8 @@
 The caller must hold the cross-host maintenance window for the whole operation.
 This helper does not establish that window or authorize live writes.
 """
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
