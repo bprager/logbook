@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from logbook.config import AppConfig
-from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors, with_logbook_locks
+from logbook.graph_maintenance_launcher import StartupRejected, with_logbook_lock_descriptors, with_logbook_locks
 from logbook.graph_maintenance_recovery import DockerRecovery
 
 
@@ -47,7 +47,10 @@ class SshMaintenance:
             raise ConnectionError("remote preflight rejected")
 
     def launch(self) -> None:
-        if self.invoke("launch") != "LAUNCHED":
+        result = self.invoke("launch")
+        if result == "REJECTED":
+            raise StartupRejected("remote startup rejected before any work")
+        if result != "LAUNCHED":
             raise ConnectionError("unexpected remote launch response")
 
     def recovered(self) -> bool:
@@ -145,6 +148,10 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
         failure = None
         try:
             remote.launch()
+        except StartupRejected:
+            lease.terminate()
+            lease.wait(timeout=5)
+            raise
         except Exception as error:
             failure = error
         try:

@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E402
-from logbook.graph_maintenance_launcher import DockerLaunch  # noqa: E402
+from logbook.graph_maintenance_launcher import DockerLaunch, StartupRejected  # noqa: E402
 from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
 
 
@@ -24,8 +24,12 @@ def main() -> None:
         launcher.preflight()
         print("PREFLIGHT_OK")
     elif sys.argv[1] == "launch":
-        launcher.run_window()
-        print("LAUNCHED")
+        try:
+            launcher.run_window()
+        except StartupRejected:
+            print("REJECTED")
+        else:
+            print("LAUNCHED")
     else:
         print("RECOVERED" if recovery_confirmed(recovery, launcher.timer) else "PENDING")
 
