@@ -296,3 +296,23 @@ class RejectedLaunchTests(unittest.TestCase):
                 else:
                     main()
                     self.assertEqual(out.getvalue(), expected)
+
+    def test_retry_response_must_confirm_start(self):
+        remote = SshMaintenance('odin', Path('/key'), Path('/entry'), {})
+        with patch.object(remote, 'invoke', return_value='RETRY_STARTED'):
+            remote.retry()
+        with patch.object(remote, 'invoke', return_value='PENDING'):
+            with self.assertRaises(ConnectionError):
+                remote.retry()
+
+    def test_remote_retry_calls_launcher(self):
+        request = '{"container_id":"id","pid":1,"port":2,"unit":"unit",' \
+                  '"private_dir":"/private","worker":"/worker",' \
+                  '"recovery_file":"/recovery","seconds":10}'
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('sys.stdin', io.StringIO(request)), patch('sys.stdout', new_callable=io.StringIO) as out, \
+             patch('sys.argv', ['remote', 'retry']):
+            main()
+            launcher.return_value.retry_recovery.assert_called_once()
+            self.assertEqual(out.getvalue(), 'RETRY_STARTED\n')

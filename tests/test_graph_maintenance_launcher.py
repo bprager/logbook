@@ -94,3 +94,44 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
             launcher.gate.touch()
             with self.assertRaisesRegex(RuntimeError, "gate already exists"):
                 launcher.prepare_worker()
+
+    def test_operator_retry_requires_stop_proof_and_installed_fence(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recovery = Mock()
+            recovery.unit = 'logbook-graph-maintenance-test.service'
+            recovery._proof_valid.return_value = False
+            launcher = DockerLaunch(recovery, root, root/'worker', root/'recovery', 10)
+            (root/'setup.lock').touch()
+            with self.assertRaisesRegex(RuntimeError, 'stop proof'):
+                launcher.retry_recovery()
+            recovery.verify_target.assert_not_called()
+
+    def test_operator_retry_rejects_active_and_restarts_failed_service(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recovery = Mock(container_id='a'*64, pid=123, port=7687,
+                            unit='logbook-graph-maintenance-test.service')
+            recovery._proof_valid.return_value = True
+            launcher = DockerLaunch(recovery, root, root/'worker', root/'recovery', 10)
+            (root/'setup.lock').touch()
+            info = SimpleNamespace(st_uid=0, st_mode=0o700)
+            with patch.object(Path, 'stat', return_value=info), patch.object(Path, 'is_symlink', return_value=False):
+                recovery.run.return_value = 'active'
+                with self.assertRaisesRegex(RuntimeError, 'still active'):
+                    launcher.retry_recovery()
+                recovery.run.side_effect = ['failed', '', '']
+                launcher.retry_recovery()
+            self.assertTrue(any('reset-failed' in c.args[0] for c in recovery.run.call_args_list))
+            self.assertTrue(any('systemd-run' in c.args[0] for c in recovery.run.call_args_list))
+
+    def test_operator_retry_rejects_untrusted_recovery_file(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recovery = Mock(unit='logbook-graph-maintenance-test.service')
+            recovery._proof_valid.return_value = True
+            launcher = DockerLaunch(recovery, root, root/'worker', root/'recovery', 10)
+            with patch.object(Path, 'stat', return_value=SimpleNamespace(st_uid=1000, st_mode=0o700)), \
+                 patch.object(Path, 'is_symlink', return_value=False):
+                with self.assertRaisesRegex(ValueError, 'root-owned'):
+                    launcher.retry_recovery()
