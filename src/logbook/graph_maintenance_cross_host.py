@@ -27,7 +27,7 @@ class SshMaintenance:
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
     def invoke(self, action: str) -> str:
-        if action not in {"launch", "status", "preflight"}:
+        if action not in {"launch", "status", "preflight", "retry"}:
             raise ValueError("invalid remote action")
         command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
         try:
@@ -45,6 +45,10 @@ class SshMaintenance:
     def preflight(self) -> None:
         if self.invoke("preflight") != "PREFLIGHT_OK":
             raise ConnectionError("remote preflight rejected")
+
+    def retry(self) -> None:
+        if self.invoke("retry") != "RETRY_STARTED":
+            raise ConnectionError("remote retry rejected")
 
     def launch(self) -> None:
         result = self.invoke("launch")

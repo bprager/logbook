@@ -9,6 +9,8 @@ import csv
 import hashlib
 import io
 import json
+import os
+import stat
 import re
 import subprocess
 import time
@@ -70,7 +72,8 @@ def recover(operations: RecoveryOperations, attempts: int = 20, *,
 class DockerRecovery:
     """Recover a specifically identified Linux container and systemd worker."""
 
-    def __init__(self, container_id: str, pid: int, port: int, unit: str):
+    def __init__(self, container_id: str, pid: int, port: int, unit: str,
+                 stop_proof: Path | None = None):
         if not re.fullmatch(r"[a-f0-9]{64}", container_id):
             raise ValueError("full container ID required")
         if pid < 1 or not 1 <= port <= 65535:
@@ -78,6 +81,7 @@ class DockerRecovery:
         if not re.fullmatch(r"logbook-graph-maintenance-[a-z0-9-]+\.service", unit):
             raise ValueError("invalid maintenance unit")
         self.container_id, self.pid, self.port, self.unit = container_id, pid, port, unit
+        self.stop_proof = stop_proof
         self.table = "logbook_" + hashlib.sha256(unit.encode()).hexdigest()[:16]
 
     @staticmethod
@@ -117,11 +121,56 @@ class DockerRecovery:
     def stop_worker(self) -> None:
         state = self.run(["systemctl", "show", self.unit, "--property=LoadState", "--value"]).strip()
         if state != "loaded":
+            if state == "not-found" and self._proof_valid():
+                return
             raise RuntimeError("maintenance worker is not loaded; fence remains")
         self.run(["systemctl", "stop", self.unit])
         state = self.run(["systemctl", "show", self.unit, "--property=ActiveState", "--value"]).strip()
         if state not in {"inactive", "failed"}:
             raise RuntimeError("maintenance worker did not stop; fence remains")
+        if self.stop_proof is not None:
+            self._save_proof()
+
+    def _proof_value(self) -> dict:
+        return {"container": self.container_id, "pid": self.pid,
+                "port": self.port, "unit": self.unit}
+
+    def _proof_valid(self) -> bool:
+        if self.stop_proof is None:
+            return False
+        try:
+            parent = self.stop_proof.parent.stat()
+            if parent.st_uid != os.geteuid() or parent.st_mode & 0o077:
+                return False
+            fd = os.open(self.stop_proof, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "r", encoding="utf-8") as source:
+                info = os.fstat(source.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                    return False
+                return json.load(source) == self._proof_value()
+        except (OSError, ValueError):
+            return False
+
+    def _save_proof(self) -> None:
+        assert self.stop_proof is not None
+        parent = self.stop_proof.parent.stat()
+        if parent.st_uid != os.geteuid() or parent.st_mode & 0o077:
+            raise RuntimeError("stop proof directory is not private; fence remains")
+        try:
+            fd = os.open(self.stop_proof, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            if not self._proof_valid():
+                raise RuntimeError("invalid stop proof; fence remains")
+            return
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(self._proof_value(), output)
+            output.flush()
+            os.fsync(output.fileno())
+        directory = os.open(self.stop_proof.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
     def query(self, query: str) -> list[dict[str, str]]:
         output = self.run(["docker", "exec", "-i", self.container_id, "mgconsole",

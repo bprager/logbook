@@ -179,3 +179,40 @@ class GraphMaintenanceRecoveryTests(unittest.TestCase):
                 recover(operations, recovery_worker='/root/private/restore')
         self.assertEqual(operations.run_recovery_worker.call_count, 3)
         operations.remove_fence.assert_not_called()
+
+    def test_unloaded_worker_requires_matching_stop_proof(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            proof = Path(tmp) / 'stopped.json'
+            ops = DockerRecovery('a' * 64, 123, 7687, 'logbook-graph-maintenance-test.service', proof)
+            ops.run = Mock(return_value='not-found')
+            with self.assertRaisesRegex(RuntimeError, 'not loaded'):
+                ops.stop_worker()
+            ops.run = Mock(side_effect=['loaded', '', 'inactive'])
+            ops.stop_worker()
+            ops.run = Mock(return_value='not-found')
+            ops.stop_worker()
+            other = DockerRecovery('b' * 64, 123, 7687, 'logbook-graph-maintenance-test.service', proof)
+            other.run = Mock(return_value='not-found')
+            with self.assertRaisesRegex(RuntimeError, 'not loaded'):
+                other.stop_worker()
+
+    def test_stop_proof_rejects_unsafe_permissions_and_tampering(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            proof = root / 'proof'
+            ops = DockerRecovery('a'*64, 123, 7687, 'logbook-graph-maintenance-test.service', proof)
+            ops._save_proof()
+            ops._save_proof()
+            proof.chmod(0o644)
+            self.assertFalse(ops._proof_valid())
+            with self.assertRaisesRegex(RuntimeError, 'invalid stop proof'):
+                ops._save_proof()
+            proof.chmod(0o600)
+            root.chmod(0o755)
+            self.assertFalse(ops._proof_valid())
+            with self.assertRaisesRegex(RuntimeError, 'not private'):
+                ops._save_proof()

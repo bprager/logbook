@@ -13,15 +13,18 @@ from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight"}:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry"}:
         raise ValueError("expected launch or status")
     request = json.load(sys.stdin)
     recovery = DockerRecovery(request["container_id"], request["pid"],
-                              request["port"], request["unit"])
+                              request["port"], request["unit"], Path(request["private_dir"]) / "stopped.json")
     launcher = DockerLaunch(recovery, Path(request["private_dir"]), Path(request["worker"]),
                             Path(request["recovery_file"]), request["seconds"],
                             Path(request["recovery_worker"]) if request.get("recovery_worker") else None)
-    if sys.argv[1] == "preflight":
+    if sys.argv[1] == "retry":
+        launcher.retry_recovery()
+        print("RETRY_STARTED")
+    elif sys.argv[1] == "preflight":
         launcher.preflight()
         print("PREFLIGHT_OK")
     elif sys.argv[1] == "launch":

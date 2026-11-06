@@ -116,21 +116,45 @@ class DockerLaunch:
                            "/usr/bin/python3", "-c", code, str(self.gate),
                            str(self.deadline), str(self.worker)])
 
-    def schedule_recovery(self) -> None:
-        code = ("import importlib.util,sys;"
+    def _recovery_command(self) -> list[str]:
+        code = ("import importlib.util,sys;from pathlib import Path;"
                 "s=importlib.util.spec_from_file_location('recovery',sys.argv[1]);"
                 "m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
-                "m.recover(m.DockerRecovery(sys.argv[2],int(sys.argv[3]),int(sys.argv[4]),sys.argv[5]),"
+                "m.recover(m.DockerRecovery(sys.argv[2],int(sys.argv[3]),int(sys.argv[4]),sys.argv[5],Path(sys.argv[7])),"
                 "recovery_worker=sys.argv[6] or None)")
+        return ["/usr/bin/flock", "-x", str(self.lock_path), "/usr/bin/python3", "-c", code,
+                str(self.recovery_file), self.recovery.container_id, str(self.recovery.pid),
+                str(self.recovery.port), self.recovery.unit,
+                str(self.recovery_worker) if self.recovery_worker else "",
+                str(self.private_dir / "stopped.json")]
+
+    def schedule_recovery(self) -> None:
         self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
                            "--on-active=" + str(self.seconds) + "s",
                            "--timer-property=AccuracySec=1ms", "--property=RemainAfterExit=yes",
-                           "--property=TimeoutStartSec=240s",
-                           "/usr/bin/flock", "-x",
-                           str(self.lock_path), "/usr/bin/python3", "-c", code,
-                           str(self.recovery_file), self.recovery.container_id,
-                           str(self.recovery.pid), str(self.recovery.port), self.recovery.unit,
-                           str(self.recovery_worker) if self.recovery_worker else ""])
+                           "--property=TimeoutStartSec=240s", *self._recovery_command()])
+
+    def retry_recovery(self) -> None:
+        """Start a new recovery service only after the original worker was stopped."""
+        if not self.recovery._proof_valid():
+            raise RuntimeError("valid stop proof required; fence remains")
+        for path in (self.recovery_file, *([self.recovery_worker] if self.recovery_worker else [])):
+            info = path.stat()
+            if path.is_symlink() or info.st_uid != 0 or info.st_mode & 0o022:
+                raise ValueError("maintenance files must be trusted and root-owned")
+        with self.lock_path.open("r") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.recovery.verify_target()
+            service = self.timer + ".service"
+            state = self.recovery.run(["systemctl", "show", service,
+                                       "--property=ActiveState", "--value"]).strip()
+            if state not in {"inactive", "failed"}:
+                raise RuntimeError("recovery service is still active")
+            if state == "failed":
+                self.recovery.run(["systemctl", "reset-failed", service])
+            self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
+                               "--property=RemainAfterExit=yes", "--property=TimeoutStartSec=240s",
+                               *self._recovery_command()])
 
     def install_fence(self) -> None:
         self.recovery.install_fence()
