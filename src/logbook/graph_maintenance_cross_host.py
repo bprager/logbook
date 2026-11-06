@@ -27,7 +27,7 @@ class SshMaintenance:
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
     def invoke(self, action: str) -> str:
-        if action not in {"launch", "status"}:
+        if action not in {"launch", "status", "preflight"}:
             raise ValueError("invalid remote action")
         command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
         try:
@@ -41,6 +41,10 @@ class SshMaintenance:
         if result.returncode != 0:
             raise ConnectionError("remote maintenance request failed")
         return result.stdout.strip()
+
+    def preflight(self) -> None:
+        if self.invoke("preflight") != "PREFLIGHT_OK":
+            raise ConnectionError("remote preflight rejected")
 
     def launch(self) -> None:
         if self.invoke("launch") != "LAUNCHED":
@@ -114,6 +118,8 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
         r"logbook-graph-maintenance-[a-f0-9]{32}\.service", unit
     ):
         raise ValueError("fresh maintenance unit required")
+
+    remote.preflight()
 
     def operation(pipeline_fd: int, graph_fd: int) -> None:
         if remote.recovered():

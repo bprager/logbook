@@ -67,7 +67,8 @@ class DockerLaunch:
         self.timer = recovery.unit.removesuffix(".service") + "-recovery"
         self.deadline = 0.0
 
-    def run_window(self) -> None:
+    def preflight(self) -> None:
+        """Check target and trusted files without creating a worker or fence."""
         directory = self.private_dir.stat()
         if directory.st_uid != 0 or directory.st_mode & 0o077:
             raise ValueError("maintenance directory must be root-private")
@@ -75,6 +76,12 @@ class DockerLaunch:
             info = path.stat()
             if info.st_uid != 0 or info.st_mode & 0o022:
                 raise ValueError("maintenance files must be trusted and root-owned")
+        if self.gate.exists() or self.lock_path.exists():
+            raise ValueError("maintenance directory is not fresh")
+        self.verify_target()
+
+    def run_window(self) -> None:
+        self.preflight()
         fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         with os.fdopen(fd, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)

@@ -133,6 +133,7 @@ class CrossHostMaintenanceTests(unittest.TestCase):
             config = SimpleNamespace(processing_root=Path(tmp))
             remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
                                     {"unit": "logbook-graph-maintenance-" + "a" * 32 + ".service"})
+            remote.preflight = Mock()
             remote.recovered = Mock(return_value=False)
             remote.launch = Mock()
             child = Mock()
@@ -158,9 +159,11 @@ class CrossHostMaintenanceTests(unittest.TestCase):
             config = SimpleNamespace(processing_root=Path(tmp))
             remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
                                     {"unit": "logbook-graph-maintenance-" + "b" * 32 + ".service"})
+            remote.preflight = Mock()
             remote.recovered = Mock(return_value=True)
             with self.assertRaisesRegex(ValueError, "already reports recovery"):
                 coordinate_leased_window(config, remote, timeout_seconds=1)
+            remote.preflight = Mock()
             remote.recovered = Mock(return_value=False)
             remote.launch = Mock()
             child = Mock(stdin=io.StringIO(), stdout=io.StringIO("BAD\n"))
@@ -176,6 +179,7 @@ class CrossHostMaintenanceTests(unittest.TestCase):
             config = SimpleNamespace(processing_root=Path(tmp))
             remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
                                     {"unit": "logbook-graph-maintenance-" + "c" * 32 + ".service"})
+            remote.preflight = Mock()
             remote.recovered = Mock(return_value=False)
             remote.launch = Mock()
             for status, error in ((0, None), (1, RuntimeError)):
@@ -209,3 +213,39 @@ class CrossHostMaintenanceTests(unittest.TestCase):
             self.assertEqual(fstat.call_count, 2)
         with patch("sys.argv", ["lease"]), self.assertRaises(ValueError):
             lease_main()
+
+class MaintenancePreflightTests(unittest.TestCase):
+    def test_rejected_preflight_never_starts_lock_lease_or_remote_worker(self):
+        with TemporaryDirectory() as tmp:
+            config = SimpleNamespace(processing_root=Path(tmp))
+            remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
+                                    {"unit": "logbook-graph-maintenance-" + "d" * 32 + ".service"})
+            remote.preflight = Mock(side_effect=ValueError("untrusted worker"))
+            remote.recovered = Mock(return_value=False)
+            remote.launch = Mock()
+            with patch("logbook.graph_maintenance_cross_host.subprocess.Popen") as spawn:
+                with self.assertRaisesRegex(ValueError, "untrusted worker"):
+                    coordinate_leased_window(config, remote, timeout_seconds=1)
+            spawn.assert_not_called()
+            remote.launch.assert_not_called()
+
+    def test_remote_preflight_is_read_only(self):
+        request = '{"container_id":"id","pid":1,"port":2,"unit":"unit",' \
+                  '"private_dir":"/private","worker":"/worker",' \
+                  '"recovery_file":"/recovery","seconds":10}'
+        with patch("logbook.graph_maintenance_remote.DockerRecovery"), \
+             patch("logbook.graph_maintenance_remote.DockerLaunch") as launcher, \
+             patch("sys.stdin", io.StringIO(request)), patch("sys.stdout", new_callable=io.StringIO) as out, \
+             patch("sys.argv", ["remote", "preflight"]):
+            main()
+            launcher.return_value.preflight.assert_called_once()
+            launcher.return_value.run_window.assert_not_called()
+            self.assertEqual(out.getvalue().strip(), "PREFLIGHT_OK")
+
+    def test_preflight_ssh_requires_explicit_success(self):
+        remote = SshMaintenance("odin", Path("/key"), Path("/entry"), {})
+        with patch.object(remote, "invoke", return_value="PREFLIGHT_OK"):
+            remote.preflight()
+        with patch.object(remote, "invoke", return_value="PENDING"):
+            with self.assertRaises(ConnectionError):
+                remote.preflight()
