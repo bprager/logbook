@@ -12,6 +12,7 @@ import json
 import re
 import subprocess
 import time
+from pathlib import Path
 from typing import Protocol
 
 
@@ -25,6 +26,7 @@ class RecoveryOperations(Protocol):
     def transactions(self) -> list[str]: ...
     def terminate(self, transaction_id: str) -> None: ...
     def remove_fence(self) -> None: ...
+    def run_recovery_worker(self, worker: str) -> None: ...
 
 
 def drain_transactions(operations: RecoveryOperations, attempts: int = 20) -> None:
@@ -42,11 +44,16 @@ def drain_transactions(operations: RecoveryOperations, attempts: int = 20) -> No
     raise RuntimeError("transactions did not drain; fence remains")
 
 
-def recover(operations: RecoveryOperations, attempts: int = 20) -> None:
+def recover(operations: RecoveryOperations, attempts: int = 20, *,
+            recovery_worker: str | None = None) -> None:
     operations.verify_target()
     operations.stop_worker()
     drain_transactions(operations, attempts)
     operations.verify_target()
+    if recovery_worker is not None:
+        operations.run_recovery_worker(recovery_worker)
+        drain_transactions(operations, attempts)
+        operations.verify_target()
     operations.remove_fence()
 
 
@@ -132,6 +139,15 @@ class DockerRecovery:
         if not transaction_id.isdigit():
             raise ValueError("invalid transaction ID")
         self.query(f'TERMINATE TRANSACTIONS "{transaction_id}"')
+
+    def run_recovery_worker(self, worker: str) -> None:
+        path = Path(worker)
+        if not path.is_absolute() or path.is_symlink():
+            raise ValueError("absolute trusted recovery worker required")
+        info = path.stat()
+        if info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError("recovery worker must be trusted and root-owned")
+        subprocess.run([worker], check=True, timeout=60, capture_output=True)
 
     def remove_fence(self) -> None:
         self.run(["nsenter", "-t", str(self.pid), "-n", "nft", "delete", "table",

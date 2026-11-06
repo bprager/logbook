@@ -120,3 +120,40 @@ class GraphMaintenanceRecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'did not drain'):
                 recover(operations, attempts=2)
         operations.remove_fence.assert_not_called()
+
+    def test_repair_recovery_runs_inside_fence_before_access_reopens(self):
+        operations = Mock()
+        operations.transactions.return_value = []
+        recover(operations, recovery_worker='/root/private/restore')
+        self.assertEqual(operations.mock_calls, [
+            call.verify_target(), call.stop_worker(), call.transactions(),
+            call.verify_target(), call.run_recovery_worker('/root/private/restore'),
+            call.transactions(), call.verify_target(), call.remove_fence(),
+        ])
+
+    def test_failed_repair_recovery_keeps_fence(self):
+        operations = Mock()
+        operations.transactions.return_value = []
+        operations.run_recovery_worker.side_effect = RuntimeError('recovery failed')
+        with self.assertRaisesRegex(RuntimeError, 'recovery failed'):
+            recover(operations, recovery_worker='/root/private/restore')
+        operations.remove_fence.assert_not_called()
+
+    def test_recovery_worker_requires_absolute_root_owned_file(self):
+        from pathlib import Path
+        from types import SimpleNamespace
+        ops = DockerRecovery('a' * 64, 123, 7687, 'logbook-graph-maintenance-test.service')
+        with self.assertRaisesRegex(ValueError, 'absolute trusted'):
+            ops.run_recovery_worker('relative')
+        with patch.object(Path, 'is_symlink', return_value=True):
+            with self.assertRaisesRegex(ValueError, 'absolute trusted'):
+                ops.run_recovery_worker('/private/worker')
+        with patch.object(Path, 'is_symlink', return_value=False), \
+             patch.object(Path, 'stat', return_value=SimpleNamespace(st_uid=1000, st_mode=0o700)):
+            with self.assertRaisesRegex(ValueError, 'root-owned'):
+                ops.run_recovery_worker('/private/worker')
+        with patch.object(Path, 'is_symlink', return_value=False), \
+             patch.object(Path, 'stat', return_value=SimpleNamespace(st_uid=0, st_mode=0o700)), \
+             patch('logbook.graph_maintenance_recovery.subprocess.run') as run:
+            ops.run_recovery_worker('/private/worker')
+            run.assert_called_once_with(['/private/worker'], check=True, timeout=60, capture_output=True)

@@ -61,11 +61,13 @@ class DockerLaunch:
     """
 
     def __init__(self, recovery: DockerRecovery, private_dir: Path,
-                 worker: Path, recovery_file: Path, seconds: int):
+                 worker: Path, recovery_file: Path, seconds: int,
+                 recovery_worker: Path | None = None):
         if not 10 <= seconds <= 3600:
             raise ValueError("maintenance deadline out of bounds")
         self.recovery, self.private_dir = recovery, private_dir
         self.worker, self.recovery_file, self.seconds = worker, recovery_file, seconds
+        self.recovery_worker = recovery_worker
         self.gate = private_dir / "worker-start"
         self.lock_path = private_dir / "setup.lock"
         self.timer = recovery.unit.removesuffix(".service") + "-recovery"
@@ -76,7 +78,7 @@ class DockerLaunch:
         directory = self.private_dir.stat()
         if directory.st_uid != 0 or directory.st_mode & 0o077:
             raise ValueError("maintenance directory must be root-private")
-        for path in (self.worker, self.recovery_file):
+        for path in (self.worker, self.recovery_file, *([self.recovery_worker] if self.recovery_worker else [])):
             info = path.stat()
             if info.st_uid != 0 or info.st_mode & 0o022:
                 raise ValueError("maintenance files must be trusted and root-owned")
@@ -118,14 +120,16 @@ class DockerLaunch:
         code = ("import importlib.util,sys;"
                 "s=importlib.util.spec_from_file_location('recovery',sys.argv[1]);"
                 "m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
-                "m.recover(m.DockerRecovery(sys.argv[2],int(sys.argv[3]),int(sys.argv[4]),sys.argv[5]))")
+                "m.recover(m.DockerRecovery(sys.argv[2],int(sys.argv[3]),int(sys.argv[4]),sys.argv[5]),"
+                "recovery_worker=sys.argv[6] or None)")
         self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
                            "--on-active=" + str(self.seconds) + "s",
                            "--timer-property=AccuracySec=1ms", "--property=RemainAfterExit=yes",
                            "/usr/bin/flock", "-x",
                            str(self.lock_path), "/usr/bin/python3", "-c", code,
                            str(self.recovery_file), self.recovery.container_id,
-                           str(self.recovery.pid), str(self.recovery.port), self.recovery.unit])
+                           str(self.recovery.pid), str(self.recovery.port), self.recovery.unit,
+                           str(self.recovery_worker) if self.recovery_worker else ""])
 
     def install_fence(self) -> None:
         self.recovery.install_fence()
