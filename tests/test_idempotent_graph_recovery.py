@@ -50,3 +50,25 @@ class RecoveryTests(unittest.TestCase):
                 session.execute_write.side_effect = lambda fn: fn(EmptyBatchTransaction(nodes, relationships))
                 with self.assertRaisesRegex(ValueError, 'orphaned'):
                     recover_in_window(session, lock, journal, BATCH)
+
+    def test_verify_checks_batch_without_deleting_it(self):
+        from logbook.guarded_graph_repair import _digest, rollback_batch
+        manifest = {'id': BATCH, 'nodes': [], 'relationships': []}
+        manifest['digest'] = _digest('manifest', BATCH, manifest)
+        queries = []
+        class Result(FakeResult):
+            def consume(self):
+                return None
+        class Transaction:
+            def run(self, query, **kwargs):
+                queries.append(query)
+                if 'RETURN properties(m)' in query:
+                    return Result([{'props':manifest}])
+                if 'RETURN count(r)' in query:
+                    return Result([{'n':0}])
+                return Result([])
+        session = Mock()
+        session.execute_write.side_effect = lambda fn: fn(Transaction())
+        with TemporaryDirectory() as tmp, GraphWriteLock(Path(tmp)) as lock:
+            self.assertEqual(rollback_batch(session, BATCH, lock=lock, verify_only=True), 'verified')
+        self.assertFalse(any('DELETE ' in query for query in queries))

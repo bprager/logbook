@@ -10,6 +10,7 @@ from pathlib import Path
 from logbook.config import MemgraphConfig
 from logbook.graph_maintenance_recovery import DockerRecovery
 from logbook.graph_write_lock import GraphWriteLock
+from logbook.guarded_graph_repair import rollback_batch
 from logbook.memory_graph import MemoryGraphPlan, MemoryNode, MemoryRelationship, Neo4jMemgraphClient
 from logbook.repair_window_worker import recover_in_window, repair_in_window
 
@@ -40,6 +41,28 @@ def load_plan(path: Path) -> MemoryGraphPlan:
         tuple(MemoryRelationship(**r) for r in raw['relationships']), raw['generated_at'])
 
 
+
+def completion_value(request: dict, batch: str) -> dict:
+    return {key: request[key] for key in ('container_id', 'pid', 'port', 'unit')} | {'batch': batch}
+
+
+def write_completion(journal: Path, request: dict, batch: str) -> None:
+    path = journal.with_name(journal.name + '.complete')
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as output:
+        json.dump(completion_value(request, batch), output, sort_keys=True)
+        output.flush()
+        os.fsync(output.fileno())
+    directory = os.open(journal.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def completion_matches(journal: Path, request: dict, batch: str) -> bool:
+    return read_private_json(journal.with_name(journal.name + '.complete')) == completion_value(request, batch)
+
 def run_worker(action: str, request_file: Path) -> None:
     if os.geteuid() != 0 or action not in {'apply', 'recover'}:
         raise ValueError('root and valid action required')
@@ -53,10 +76,18 @@ def run_worker(action: str, request_file: Path) -> None:
     with GraphDatabase.driver(config.uri, auth=None) as driver, driver.session() as session, GraphWriteLock(request_file.parent) as lock:
         if action == 'apply':
             plan = load_plan(Path(request['plan']))
-            repair_in_window(plan, Neo4jMemgraphClient(config), session, lock, journal)
+            batch = repair_in_window(plan, Neo4jMemgraphClient(config), session, lock, journal)
+            rollback_batch(session, batch, lock=lock, verify_only=True)
+            write_completion(journal, request, batch)
         else:
             record = read_private_json(journal)
-            recover_in_window(session, lock, journal, record['batch'])
+            completion = journal.with_name(journal.name + '.complete')
+            if os.path.lexists(completion):
+                if not completion_matches(journal, request, record['batch']):
+                    raise ValueError('completion receipt does not match batch and target')
+                rollback_batch(session, record['batch'], lock=lock, verify_only=True)
+            else:
+                recover_in_window(session, lock, journal, record['batch'])
 
 
 if __name__ == '__main__':  # pragma: no cover

@@ -43,12 +43,16 @@ class OperatorWorkerTests(unittest.TestCase):
              patch('logbook.graph_maintenance_worker.load_plan'), \
              patch('logbook.graph_maintenance_worker.Neo4jMemgraphClient'), \
              patch('logbook.graph_maintenance_worker.repair_in_window') as apply, \
+             patch('logbook.graph_maintenance_worker.rollback_batch') as verify, \
+             patch('logbook.graph_maintenance_worker.write_completion') as receipt, \
              patch('logbook.graph_maintenance_worker.recover_in_window') as recover, \
              patch('neo4j.GraphDatabase.driver', return_value=driver):
             run_worker('apply', Path('/private/request'))
             run_worker('recover', Path('/private/request'))
             self.assertEqual(target.return_value.verify_target.call_count, 2)
             apply.assert_called_once()
+            verify.assert_called_once()
+            receipt.assert_called_once()
             recover.assert_called_once()
 
     def test_private_input_must_be_object_in_private_directory(self):
@@ -63,3 +67,33 @@ class OperatorWorkerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'directory'):
                 read_private_json(data)
             root.chmod(0o700)
+
+    def test_completion_receipt_is_bound_to_batch_and_target(self):
+        from logbook.graph_maintenance_worker import completion_matches, write_completion
+        request = {'container_id':'a'*64, 'pid':123, 'port':7687, 'unit':'fixture'}
+        with TemporaryDirectory() as tmp:
+            journal = Path(tmp)/'journal'
+            write_completion(journal, request, 'batch')
+            self.assertTrue(completion_matches(journal, request, 'batch'))
+            self.assertFalse(completion_matches(journal, request, 'other'))
+            with self.assertRaises(FileExistsError):
+                write_completion(journal, request, 'batch')
+
+    def test_completion_rechecks_batch_and_rejects_wrong_receipt(self):
+        from unittest.mock import MagicMock, patch
+        from logbook.graph_maintenance_worker import run_worker
+        request = {'journal':'/private/journal', 'container_id':'a'*64, 'pid':123,
+                   'port':7687, 'unit':'logbook-graph-maintenance-test.service'}
+        with patch('logbook.graph_maintenance_worker.os.geteuid', return_value=0), \
+             patch('logbook.graph_maintenance_worker.read_private_json', side_effect=[request, {'batch':'batch'}, request, {'batch':'batch'}]), \
+             patch('logbook.graph_maintenance_worker.private_directory'), \
+             patch('logbook.graph_maintenance_worker.DockerRecovery'), \
+             patch('logbook.graph_maintenance_worker.GraphWriteLock'), \
+             patch('logbook.graph_maintenance_worker.os.path.lexists', return_value=True), \
+             patch('logbook.graph_maintenance_worker.completion_matches', side_effect=[True, False]), \
+             patch('logbook.graph_maintenance_worker.rollback_batch') as verify, \
+             patch('neo4j.GraphDatabase.driver', return_value=MagicMock()):
+            run_worker('recover', Path('/private/request'))
+            with self.assertRaisesRegex(ValueError, 'does not match'):
+                run_worker('recover', Path('/private/request'))
+            verify.assert_called_once()

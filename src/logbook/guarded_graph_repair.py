@@ -167,7 +167,7 @@ def apply_batch(session: Any, batch: str, nodes: list[MemoryNode],
 
 
 def rollback_batch(session: Any, batch: str, *, lock: GraphWriteLock | None = None,
-                   allow_absent: bool = False) -> str | None:
+                   allow_absent: bool = False, verify_only: bool = False) -> str | None:
     _check_batch(batch)
     if not isinstance(lock, GraphWriteLock) or not lock.held:
         raise ValueError("held writer lock required")
@@ -222,6 +222,14 @@ def rollback_batch(session: Any, batch: str, *, lock: GraphWriteLock | None = No
                            batch=batch).single()['n']
         if conflicts:
             raise ValueError("repair node has unrelated relationships")
+        if verify_only:
+            tx.run('MATCH (n) WHERE n._logbook_repair_batch=$batch REMOVE n._logbook_repair_lock',
+                   batch=batch).consume()
+            tx.run('MATCH ()-[r]->() WHERE r._logbook_repair_batch=$batch REMOVE r._logbook_repair_lock',
+                   batch=batch).consume()
+            tx.run('MATCH (m:LogbookRepairBatch {id:$batch}) REMOVE m._logbook_repair_lock',
+                   batch=batch).consume()
+            return "verified"
         tx.run('MATCH ()-[r]->() WHERE r._logbook_repair_batch=$batch DELETE r',
                batch=batch).consume()
         tx.run('MATCH (n) WHERE n._logbook_repair_batch=$batch DELETE n', batch=batch).consume()
