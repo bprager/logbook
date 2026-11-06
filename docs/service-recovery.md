@@ -242,7 +242,7 @@ The undeployed graph repair prototype requires the full selected Git commit in
 the private options as `revision`. It archives Logbook source from that commit
 and records the revision and bundle digest in the private state file before
 starting a fixture run. The bootstrap comes from that bundle, and tracked and
-untracked Logbook source is checked against the selected commit. Dependencies
+non-ignored untracked Logbook source is checked against the selected commit. Dependencies
 still come from the installed environment; the commit selection does not certify
 them or establish human review. If its protected recovery needs an operator retry, use
 that same file with `python -m logbook.operator_entry retry PRIVATE_STATE`.
