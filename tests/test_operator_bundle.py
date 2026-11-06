@@ -17,7 +17,34 @@ def archive(name, contents=b'fixture'):
     return stream.getvalue()
 
 
+class TrustedPathTests(unittest.TestCase):
+    def test_rejects_symlink_writable_and_foreign_ancestors(self):
+        import os
+        import stat
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from logbook.operator_bundle_bootstrap import trusted_parent
+        good = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=os.geteuid())
+        with patch('logbook.operator_bundle_bootstrap.os.lstat', return_value=good) as lookup:
+            trusted_parent(Path('/safe/private/bundle'))
+            self.assertEqual(lookup.call_count, 3)
+            for bad in (SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=os.geteuid()),
+                        SimpleNamespace(st_mode=stat.S_IFDIR | 0o777, st_uid=os.geteuid()),
+                        SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=os.geteuid()+1)):
+                lookup.side_effect = [good, bad]
+                with self.assertRaisesRegex(ValueError, 'trusted'):
+                    trusted_parent(Path('/safe/private/bundle'))
+            with self.assertRaisesRegex(ValueError, 'trusted'):
+                trusted_parent(Path('/private/../bundle'))
+
+
 class OperatorBundleTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        self.trust = patch('logbook.operator_bundle_bootstrap.trusted_parent')
+        self.trust.start()
+        self.addCleanup(self.trust.stop)
+
     def test_installs_private_verified_bundle_once(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

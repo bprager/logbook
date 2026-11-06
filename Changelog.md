@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Reject unsafe ancestor directories when installing experimental graph repair bundles.
+
 - Add an experimental single-batch graph repair path that saves a durable
   recovery identifier before applying a bounded create-only repair.
 

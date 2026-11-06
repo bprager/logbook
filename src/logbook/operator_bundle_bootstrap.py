@@ -11,9 +11,19 @@ import tarfile
 from pathlib import Path, PurePosixPath
 
 
+def trusted_parent(destination: Path) -> None:
+    if not destination.is_absolute() or '..' in destination.parts:
+        raise ValueError('trusted absolute path required')
+    for current in reversed((destination.parent, *destination.parent.parents)):
+        info = os.lstat(current)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
+            raise ValueError('trusted directory ancestry required')
+
+
 def install_bundle(data: bytes, destination: Path, digest: str) -> None:
     if len(data) > 30000000 or hashlib.sha256(data).hexdigest() != digest:
         raise ValueError('bundle digest or size invalid')
+    trusted_parent(destination)
     parent = destination.parent.lstat()
     if not destination.is_absolute() or not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.geteuid() or parent.st_mode & 0o077:
         raise ValueError('private bundle parent required')
