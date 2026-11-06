@@ -4,12 +4,14 @@ from unittest.mock import Mock
 from pathlib import Path
 from types import SimpleNamespace
 import fcntl
+import subprocess
+import sys
 from uuid import uuid4
 
 from logbook.graph_write_lock import GraphWriteLock
 from logbook.guarded_graph_repair import apply_batch, rollback_batch
 from logbook.memory_graph import MemoryNode
-from logbook.graph_maintenance_launcher import with_logbook_locks
+from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors, with_logbook_locks
 
 
 class GraphWriterGuardTests(TestCase):
@@ -28,6 +30,8 @@ class GraphWriterGuardTests(TestCase):
             self.assertFalse(lock.held)
             with self.assertRaisesRegex(ValueError, 'writer lock'):
                 rollback_batch(None, str(uuid4()), lock=lock)
+            with self.assertRaisesRegex(ValueError, 'not held'):
+                lock.fileno()
 
     def test_both_live_processing_and_graph_locks_are_held(self):
         with TemporaryDirectory() as tmp:
@@ -56,3 +60,20 @@ class GraphWriterGuardTests(TestCase):
                 with self.assertRaises(BlockingIOError):
                     with_logbook_locks(SimpleNamespace(processing_root=root), operation)
             operation.assert_not_called()
+
+    def test_inherited_descriptors_keep_locks_after_parent_closes(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def start_child(pipeline_fd, graph_fd):
+                return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                        pass_fds=(pipeline_fd, graph_fd))
+
+            child = with_logbook_lock_descriptors(SimpleNamespace(processing_root=root), start_child)
+            try:
+                with self.assertRaises(BlockingIOError):
+                    with_logbook_locks(SimpleNamespace(processing_root=root), lambda: None)
+            finally:
+                child.terminate()
+                child.wait(timeout=5)
+            self.assertIsNone(with_logbook_locks(SimpleNamespace(processing_root=root), lambda: None))

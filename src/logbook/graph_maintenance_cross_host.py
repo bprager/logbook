@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import json
 import re
+import select
 import shlex
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable
 
 from logbook.config import AppConfig
-from logbook.graph_maintenance_launcher import with_logbook_locks
+from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors, with_logbook_locks
 from logbook.graph_maintenance_recovery import DockerRecovery
 
 
@@ -102,3 +104,50 @@ def coordinate_window(config: AppConfig, launch: Callable[[], None],
         raise RuntimeError("remote recovery was not confirmed") from failure
 
     with_logbook_locks(config, operation)
+
+
+def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
+                             timeout_seconds: float) -> None:
+    """Keep inherited locks in an independent process until remote recovery."""
+    unit = remote.request.get("unit", "")
+    if not isinstance(unit, str) or not re.fullmatch(
+        r"logbook-graph-maintenance-[a-f0-9]{32}\.service", unit
+    ):
+        raise ValueError("fresh maintenance unit required")
+
+    def operation(pipeline_fd: int, graph_fd: int) -> None:
+        if remote.recovered():
+            raise ValueError("maintenance unit already reports recovery")
+        lease = subprocess.Popen(
+            [sys.executable, "-m", "logbook.graph_maintenance_lease", str(pipeline_fd), str(graph_fd)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, pass_fds=(pipeline_fd, graph_fd), start_new_session=True,
+        )
+        assert lease.stdin is not None and lease.stdout is not None
+        try:
+            lease.stdin.write(json.dumps({"host": remote.host, "identity": str(remote.identity),
+                                          "entrypoint": str(remote.entrypoint),
+                                          "request": remote.request}) + "\n")
+            lease.stdin.close()
+            ready, _, _ = select.select([lease.stdout], [], [], 5)
+            if not ready or lease.stdout.readline().strip() != "READY":
+                raise RuntimeError("independent lease did not start")
+        except Exception:
+            lease.terminate()
+            lease.wait(timeout=5)
+            raise
+        failure = None
+        try:
+            remote.launch()
+        except Exception as error:
+            failure = error
+        try:
+            result = lease.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            raise TimeoutError(f"recovery unconfirmed; independent lease pid {lease.pid}") from error
+        if result != 0:
+            raise RuntimeError("independent lease stopped before confirmed recovery")
+        if failure is not None:
+            raise failure
+
+    with_logbook_lock_descriptors(config, operation)

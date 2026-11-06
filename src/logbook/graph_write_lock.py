@@ -13,6 +13,11 @@ class GraphWriteLock:
     def held(self) -> bool:
         return self._file is not None and not self._file.closed
 
+    def fileno(self) -> int:
+        if not self.held:
+            raise ValueError("writer lock is not held")
+        return self._file.fileno()
+
     def __enter__(self):
         if self.held:
             raise ValueError("writer lock is already held")

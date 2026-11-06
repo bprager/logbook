@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add an experimental independent lock holder that outlives the graph
+  maintenance coordinator until remote recovery is confirmed.
+
 - Add experimental cross-host maintenance coordination that checks recovery
   over a fresh connection while holding both Logbook locks.
 
