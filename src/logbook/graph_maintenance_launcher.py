@@ -125,6 +125,7 @@ class DockerLaunch:
         self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
                            "--on-active=" + str(self.seconds) + "s",
                            "--timer-property=AccuracySec=1ms", "--property=RemainAfterExit=yes",
+                           "--property=TimeoutStartSec=240s",
                            "/usr/bin/flock", "-x",
                            str(self.lock_path), "/usr/bin/python3", "-c", code,
                            str(self.recovery_file), self.recovery.container_id,

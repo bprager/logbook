@@ -51,7 +51,17 @@ def recover(operations: RecoveryOperations, attempts: int = 20, *,
     drain_transactions(operations, attempts)
     operations.verify_target()
     if recovery_worker is not None:
-        operations.run_recovery_worker(recovery_worker)
+        for retry in range(3):
+            try:
+                operations.run_recovery_worker(recovery_worker)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                drain_transactions(operations, attempts)
+                operations.verify_target()
+                if retry == 2:
+                    raise
+                time.sleep(0.5)
+            else:
+                break
         drain_transactions(operations, attempts)
         operations.verify_target()
     operations.remove_fence()

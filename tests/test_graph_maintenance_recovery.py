@@ -157,3 +157,25 @@ class GraphMaintenanceRecoveryTests(unittest.TestCase):
              patch('logbook.graph_maintenance_recovery.subprocess.run') as run:
             ops.run_recovery_worker('/private/worker')
             run.assert_called_once_with(['/private/worker'], check=True, timeout=60, capture_output=True)
+
+    def test_failed_recovery_worker_retries_without_stopping_worker_again(self):
+        from subprocess import CalledProcessError
+        operations = Mock()
+        operations.transactions.return_value = []
+        operations.run_recovery_worker.side_effect = [CalledProcessError(1, 'worker'), None]
+        with patch('logbook.graph_maintenance_recovery.time.sleep'):
+            recover(operations, recovery_worker='/root/private/restore')
+        self.assertEqual(operations.run_recovery_worker.call_count, 2)
+        operations.stop_worker.assert_called_once()
+        operations.remove_fence.assert_called_once()
+
+    def test_persistently_failed_recovery_worker_never_opens_fence(self):
+        from subprocess import CalledProcessError
+        operations = Mock()
+        operations.transactions.return_value = []
+        operations.run_recovery_worker.side_effect = CalledProcessError(1, 'worker')
+        with patch('logbook.graph_maintenance_recovery.time.sleep'):
+            with self.assertRaises(CalledProcessError):
+                recover(operations, recovery_worker='/root/private/restore')
+        self.assertEqual(operations.run_recovery_worker.call_count, 3)
+        operations.remove_fence.assert_not_called()

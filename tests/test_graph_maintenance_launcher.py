@@ -59,6 +59,7 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
             self.assertTrue((root / "setup.lock").exists())
             calls = recovery.run.call_args_list
             self.assertTrue(any("--timer-property=AccuracySec=1ms" in c.args[0] for c in calls))
+            self.assertTrue(any("--property=TimeoutStartSec=240s" in c.args[0] for c in calls))
             recovery.install_fence.assert_called_once()
             self.assertEqual(recovery.verify_target.call_count, 2)
 
