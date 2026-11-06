@@ -249,3 +249,50 @@ class MaintenancePreflightTests(unittest.TestCase):
         with patch.object(remote, "invoke", return_value="PENDING"):
             with self.assertRaises(ConnectionError):
                 remote.preflight()
+
+class RejectedLaunchTests(unittest.TestCase):
+    def test_explicit_prestart_rejection_stops_lease_and_releases_locks(self):
+        from logbook.graph_maintenance_cross_host import StartupRejected
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
+                                    {"unit": "logbook-graph-maintenance-" + "e" * 32 + ".service"})
+            remote.preflight = Mock()
+            remote.recovered = Mock(return_value=False)
+            remote.launch = Mock(side_effect=StartupRejected("rejected"))
+            child = Mock(stdin=io.StringIO(), stdout=io.StringIO("READY\n"))
+            child.wait.return_value = -15
+            with patch("logbook.graph_maintenance_cross_host.subprocess.Popen", return_value=child), \
+                 patch("logbook.graph_maintenance_cross_host.select.select", return_value=([child.stdout], [], [])):
+                with self.assertRaises(StartupRejected):
+                    coordinate_leased_window(SimpleNamespace(processing_root=root), remote, timeout_seconds=1)
+            child.terminate.assert_called_once()
+            with (root / "pipeline.lock").open("a") as contender:
+                fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_remote_prestart_rejection_is_distinct_from_connection_failure(self):
+        from logbook.graph_maintenance_cross_host import StartupRejected
+        remote = SshMaintenance("odin", Path("/key"), Path("/entry"), {})
+        with patch.object(remote, "invoke", return_value="REJECTED"):
+            with self.assertRaises(StartupRejected):
+                remote.launch()
+
+    def test_remote_reports_only_prestart_rejection_as_safe(self):
+        from logbook.graph_maintenance_cross_host import StartupRejected
+        request = '{"container_id":"id","pid":1,"port":2,"unit":"unit",' \
+                  '"private_dir":"/private","worker":"/worker",' \
+                  '"recovery_file":"/recovery","seconds":10}'
+        for error, expected in ((StartupRejected("before"), "REJECTED\n"),
+                                (RuntimeError("after"), None)):
+            with patch("logbook.graph_maintenance_remote.DockerRecovery"), \
+                 patch("logbook.graph_maintenance_remote.DockerLaunch") as launcher, \
+                 patch("sys.stdin", io.StringIO(request)), patch("sys.stdout", new_callable=io.StringIO) as out, \
+                 patch("sys.argv", ["remote", "launch"]):
+                launcher.return_value.run_window.side_effect = error
+                if expected is None:
+                    with self.assertRaisesRegex(RuntimeError, "after"):
+                        main()
+                    self.assertEqual(out.getvalue(), "")
+                else:
+                    main()
+                    self.assertEqual(out.getvalue(), expected)

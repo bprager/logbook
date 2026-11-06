@@ -14,6 +14,10 @@ from logbook.graph_write_lock import GraphWriteLock
 T = TypeVar("T")
 
 
+class StartupRejected(ValueError):
+    """Validation rejected startup before any remote state was changed."""
+
+
 def with_logbook_lock_descriptors(config: AppConfig, operation: Callable[[int, int], T]) -> T:
     """Hold both Mimir locks and lend their descriptors to the caller."""
     config.processing_root.mkdir(parents=True, exist_ok=True)
@@ -81,7 +85,10 @@ class DockerLaunch:
         self.verify_target()
 
     def run_window(self) -> None:
-        self.preflight()
+        try:
+            self.preflight()
+        except Exception as error:
+            raise StartupRejected(str(error)) from error
         fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         with os.fdopen(fd, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
