@@ -63,6 +63,29 @@ def write_completion(journal: Path, request: dict, batch: str) -> None:
 def completion_matches(journal: Path, request: dict, batch: str) -> bool:
     return read_private_json(journal.with_name(journal.name + '.complete')) == completion_value(request, batch)
 
+
+def write_outcome(journal: Path, request: dict, batch: str, outcome: str) -> None:
+    if outcome not in {'retained', 'rolled-back', 'not-retained'}:
+        raise ValueError('invalid outcome')
+    path = journal.with_name(journal.name + '.outcome')
+    value = {**completion_value(request, batch), 'outcome': outcome}
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        previous = read_private_json(path)
+        if previous != value and not (outcome == 'not-retained' and previous == {**value, 'outcome': 'rolled-back'}):
+            raise ValueError('outcome conflicts with prior result')
+        return
+    with os.fdopen(fd, 'w', encoding='utf-8') as output:
+        json.dump(value, output, sort_keys=True)
+        output.flush()
+        os.fsync(output.fileno())
+    directory = os.open(journal.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
 def run_worker(action: str, request_file: Path) -> None:
     if os.geteuid() != 0 or action not in {'apply', 'recover'}:
         raise ValueError('root and valid action required')
@@ -86,8 +109,11 @@ def run_worker(action: str, request_file: Path) -> None:
                 if not completion_matches(journal, request, record['batch']):
                     raise ValueError('completion receipt does not match batch and target')
                 rollback_batch(session, record['batch'], lock=lock, verify_only=True)
+                write_outcome(journal, request, record['batch'], 'retained')
             else:
-                recover_in_window(session, lock, journal, record['batch'])
+                result = recover_in_window(session, lock, journal, record['batch'])
+                write_outcome(journal, request, record['batch'],
+                              'not-retained' if result == 'absent' else 'rolled-back')
 
 
 if __name__ == '__main__':  # pragma: no cover

@@ -27,7 +27,7 @@ class SshMaintenance:
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
     def invoke(self, action: str, payload: dict | None = None) -> str:
-        if action not in {"launch", "status", "preflight", "retry", "stage"}:
+        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome"}:
             raise ValueError("invalid remote action")
         command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
         try:
@@ -41,6 +41,12 @@ class SshMaintenance:
         if result.returncode != 0:
             raise ConnectionError("remote maintenance request failed")
         return result.stdout.strip()
+
+    def outcome(self) -> str:
+        result = self.invoke("outcome")
+        if result not in {"retained", "rolled-back", "not-retained"}:
+            raise RuntimeError("repair outcome is not confirmed")
+        return result
 
     def stage(self, plan: dict) -> None:
         if self.invoke("stage", {**self.request, "plan_data": plan}) != "STAGED":

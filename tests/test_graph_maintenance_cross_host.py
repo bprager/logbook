@@ -1,5 +1,6 @@
 import fcntl
 import io
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -337,3 +338,55 @@ class RejectedLaunchTests(unittest.TestCase):
             launcher.return_value.verify_target.assert_called_once()
             stage.assert_called_once()
             self.assertEqual(out.getvalue(), 'STAGED\n')
+
+    def test_outcome_requires_successful_watchdog_and_matching_records(self):
+        request = {'container_id':'a'*64, 'pid':1, 'port':7687,
+                   'unit':'logbook-graph-maintenance-test.service', 'private_dir':'/private',
+                   'worker':'/worker', 'recovery_file':'/recovery', 'seconds':10, 'journal':'/private/journal'}
+        batch = '00000000-0000-0000-0000-000000000001'
+        record = {'schema':1, 'batch':batch}
+        outcome = {key:request[key] for key in ('container_id','pid','port','unit')}
+        outcome.update({'batch':batch, 'outcome':'retained'})
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed', side_effect=[False, True, True]), \
+             patch('logbook.graph_maintenance_remote.read_private_json', side_effect=[record, outcome, record, {**outcome, 'batch':'other'}]), \
+             patch('logbook.graph_maintenance_remote.completion_matches', return_value=True), \
+             patch('sys.stdout', new_callable=io.StringIO) as out, \
+             patch('sys.argv', ['remote', 'outcome']):
+            with patch('sys.stdin', io.StringIO(json.dumps(request))):
+                main()
+            with patch('sys.stdin', io.StringIO(json.dumps(request))):
+                main()
+            with patch('sys.stdin', io.StringIO(json.dumps(request))), self.assertRaisesRegex(ValueError, 'outcome'):
+                main()
+            self.assertEqual(out.getvalue(), 'PENDING\nretained\n')
+
+    def test_ssh_outcome_refuses_unconfirmed_result(self):
+        remote = SshMaintenance('odin', Path('/key'), Path('/entry'), {})
+        with patch.object(remote, 'invoke', return_value='not-retained'):
+            self.assertEqual(remote.outcome(), 'not-retained')
+        with patch.object(remote, 'invoke', return_value='PENDING'):
+            with self.assertRaisesRegex(RuntimeError, 'not confirmed'):
+                remote.outcome()
+
+    def test_outcome_rejects_invalid_journal_and_conflicting_completion(self):
+        request = {'container_id':'a'*64, 'pid':1, 'port':7687, 'unit':'unit',
+                   'private_dir':'/private', 'worker':'/worker', 'recovery_file':'/recovery',
+                   'seconds':10, 'journal':'/private/journal'}
+        batch = '00000000-0000-0000-0000-000000000001'
+        base = {key:request[key] for key in ('container_id','pid','port','unit')}
+        base['batch'] = batch
+        cases = [([{'schema':0,'batch':batch}], False, False, 'journal'),
+                 ([{'schema':1,'batch':batch}, {**base,'outcome':'retained'}], False, False, 'completion'),
+                 ([{'schema':1,'batch':batch}, {**base,'outcome':'rolled-back'}], False, True, 'receipt')]
+        for values, matches, exists, message in cases:
+            with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+                 patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+                 patch('logbook.graph_maintenance_remote.recovery_confirmed', return_value=True), \
+                 patch('logbook.graph_maintenance_remote.read_private_json', side_effect=values), \
+                 patch('logbook.graph_maintenance_remote.completion_matches', return_value=matches), \
+                 patch('logbook.graph_maintenance_remote.os.path.lexists', return_value=exists), \
+                 patch('sys.stdin', io.StringIO(json.dumps(request))), \
+                 patch('sys.argv', ['remote', 'outcome']), self.assertRaisesRegex(ValueError, message):
+                main()

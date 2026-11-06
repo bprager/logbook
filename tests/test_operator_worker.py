@@ -38,6 +38,7 @@ class OperatorWorkerTests(unittest.TestCase):
         with patch('logbook.graph_maintenance_worker.os.geteuid', return_value=0), \
              patch('logbook.graph_maintenance_worker.read_private_json', side_effect=[request, request, {'batch':'batch'}]), \
              patch('logbook.graph_maintenance_worker.private_directory'), \
+             patch('logbook.graph_maintenance_worker.write_outcome'), \
              patch('logbook.graph_maintenance_worker.DockerRecovery') as target, \
              patch('logbook.graph_maintenance_worker.GraphWriteLock'), \
              patch('logbook.graph_maintenance_worker.load_plan'), \
@@ -87,6 +88,7 @@ class OperatorWorkerTests(unittest.TestCase):
         with patch('logbook.graph_maintenance_worker.os.geteuid', return_value=0), \
              patch('logbook.graph_maintenance_worker.read_private_json', side_effect=[request, {'batch':'batch'}, request, {'batch':'batch'}]), \
              patch('logbook.graph_maintenance_worker.private_directory'), \
+             patch('logbook.graph_maintenance_worker.write_outcome'), \
              patch('logbook.graph_maintenance_worker.DockerRecovery'), \
              patch('logbook.graph_maintenance_worker.GraphWriteLock'), \
              patch('logbook.graph_maintenance_worker.os.path.lexists', return_value=True), \
@@ -97,3 +99,21 @@ class OperatorWorkerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'does not match'):
                 run_worker('recover', Path('/private/request'))
             verify.assert_called_once()
+
+    def test_outcome_is_durable_and_retry_preserves_known_rollback(self):
+        from logbook.graph_maintenance_worker import write_outcome
+        request = {'container_id':'a'*64, 'pid':123, 'port':7687, 'unit':'fixture'}
+        with TemporaryDirectory() as tmp:
+            journal = Path(tmp)/'journal'
+            write_outcome(journal, request, 'batch', 'rolled-back')
+            write_outcome(journal, request, 'batch', 'not-retained')
+            result = read_private_json(Path(str(journal)+'.outcome'))
+            self.assertEqual(result['outcome'], 'rolled-back')
+            with self.assertRaisesRegex(ValueError, 'outcome'):
+                write_outcome(journal, request, 'other', 'retained')
+
+    def test_unknown_outcome_is_rejected(self):
+        from logbook.graph_maintenance_worker import write_outcome
+        with TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, 'invalid outcome'):
+                write_outcome(Path(tmp)/'journal', {}, 'batch', 'unknown')

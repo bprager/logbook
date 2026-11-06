@@ -78,3 +78,11 @@ class OperatorWindowTests(unittest.TestCase):
             request['plan_data'] = {'payload':'x'*5000001}
             with self.assertRaisesRegex(ValueError, 'bounded'):
                 stage_plan(request, bundle)
+
+    def test_operator_returns_confirmed_batch_outcome(self):
+        with patch('logbook.operator_window.prepare_job_plan'), \
+             patch('logbook.operator_window.read_private_json', return_value={}), \
+             patch('logbook.operator_window.coordinate_leased_window'):
+            remote = Mock()
+            remote.outcome.return_value = 'rolled-back'
+            self.assertEqual(stage_plan_and_run(Mock(), 123, remote, timeout_seconds=30), 'rolled-back')
