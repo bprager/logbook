@@ -1,4 +1,5 @@
 import unittest
+import json
 from subprocess import CompletedProcess
 from unittest.mock import Mock, call, patch
 
@@ -33,12 +34,23 @@ class GraphMaintenanceRecoveryTests(unittest.TestCase):
 
     def test_docker_target_and_worker_must_match(self):
         ops = DockerRecovery("a" * 64, 123, 7687, "logbook-graph-maintenance-test.service")
-        ops.run = Mock(side_effect=[f'{"a" * 64} 123 true', "", "loaded", "", "inactive"])
+        fence = json.dumps({"nftables": [
+            {"chain": {"name": "input", "hook": "input", "prio": -300, "policy": "accept"}},
+            {"rule": {"expr": [
+                {"match": {"op": "!=", "left": {"meta": {"key": "iifname"}}, "right": "lo"}},
+                {"match": {"op": "==", "left": {"payload": {"protocol": "tcp", "field": "dport"}}, "right": 7687}},
+                {"reject": {"type": "tcp reset"}},
+            ]}},
+        ]})
+        ops.run = Mock(side_effect=[f'{"a" * 64} 123 true', fence, "loaded", "", "inactive"])
         ops.verify_target()
         ops.stop_worker()
         ops.run.assert_any_call(["systemctl", "stop", ops.unit])
         ops.run = Mock(return_value="different 123 true")
         with self.assertRaisesRegex(RuntimeError, "target container changed"):
+            ops.verify_target()
+        ops.run = Mock(side_effect=[f'{"a" * 64} 123 true', '{"nftables": []}'])
+        with self.assertRaisesRegex(RuntimeError, "fence changed"):
             ops.verify_target()
         ops.run = Mock(return_value="not-found")
         with self.assertRaisesRegex(RuntimeError, "not loaded"):
@@ -78,3 +90,15 @@ class GraphMaintenanceRecoveryTests(unittest.TestCase):
             self.assertEqual(ops.query("RETURN 1 AS n"), [{"n": "1"}])
             ops.remove_fence()
             self.assertEqual(run.call_count, 2)
+
+    def test_fence_uses_one_atomic_ipv4_and_ipv6_table(self):
+        ops = DockerRecovery("a" * 64, 123, 7687, "logbook-graph-maintenance-test.service")
+        ops.run = Mock()
+        ops.install_fence()
+        self.assertEqual(ops.run.call_count, 1)
+        args, rules = ops.run.call_args.args
+        self.assertIn("nft", args)
+        self.assertIn("add table inet", rules)
+        self.assertIn('iifname != "lo"', rules)
+        ops.remove_fence()
+        self.assertIn("nft", ops.run.call_args.args[0])

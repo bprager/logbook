@@ -14,7 +14,8 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
         launch(operations)
         self.assertEqual(operations.mock_calls, [
             call.verify_target(), call.prepare_worker(), call.schedule_recovery(),
-            call.install_fence(), call.verify_fence(), call.start_worker(),
+            call.install_fence(), call.verify_fence(), call.drain_existing(), call.verify_fence(),
+            call.start_worker(),
         ])
 
     def test_no_worker_if_fence_install_fails(self):
@@ -33,14 +34,23 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
         operations.install_fence.assert_not_called()
         operations.start_worker.assert_not_called()
 
+    def test_no_worker_if_existing_transactions_do_not_drain(self):
+        operations = Mock()
+        operations.drain_existing.side_effect = RuntimeError("not drained")
+        with self.assertRaises(RuntimeError):
+            launch(operations)
+        operations.start_worker.assert_not_called()
+
     def test_real_adapter_builds_worker_timer_and_fence_commands(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             recovery = DockerRecovery("a" * 64, 123, 7687,
                                       "logbook-graph-maintenance-test.service")
-            recovery.run = Mock(side_effect=[f'{"a" * 64} 123 true', "", "", "", "",
-                                             "active", "active"])
+            recovery.run = Mock(side_effect=[f'{"a" * 64} 123 true', "", "",
+                                             "active", "active", "active", "active"])
             recovery.verify_target = Mock()
+            recovery.transactions = Mock(return_value=[])
+            recovery.install_fence = Mock()
             launcher = DockerLaunch(recovery, root, root / "worker", root / "recovery.py", 10)
             with patch.object(Path, "stat", return_value=SimpleNamespace(st_uid=0, st_mode=0o700)):
                 with patch.object(Path, "exists", return_value=False):
@@ -49,10 +59,10 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
             self.assertTrue((root / "setup.lock").exists())
             calls = recovery.run.call_args_list
             self.assertTrue(any("--timer-property=AccuracySec=1ms" in c.args[0] for c in calls))
-            self.assertTrue(any("iptables" in c.args[0] for c in calls))
-            recovery.verify_target.assert_called_once()
+            recovery.install_fence.assert_called_once()
+            self.assertEqual(recovery.verify_target.call_count, 2)
 
-    def test_rejects_unsafe_setup_and_uncovered_ipv6(self):
+    def test_rejects_unsafe_setup_and_changed_target(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             recovery = DockerRecovery("a" * 64, 123, 7687,
@@ -69,9 +79,6 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
                     launcher.run_window()
             recovery.run = Mock(side_effect=["wrong target"])
             with self.assertRaisesRegex(RuntimeError, "target container changed"):
-                launcher.verify_target()
-            recovery.run = Mock(side_effect=[f'{"a" * 64} 123 true', "LISTEN IPv6"])
-            with self.assertRaisesRegex(RuntimeError, "IPv6 listener"):
                 launcher.verify_target()
             recovery.verify_target = Mock()
             recovery.run = Mock(return_value="inactive")

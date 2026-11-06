@@ -6,6 +6,7 @@ independently schedule recovery before starting the worker or applying a fence.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import re
@@ -22,19 +23,23 @@ class RecoveryOperations(Protocol):
     def remove_fence(self) -> None: ...
 
 
-def recover(operations: RecoveryOperations, attempts: int = 20) -> None:
-    operations.verify_target()
-    operations.stop_worker()
+def drain_transactions(operations: RecoveryOperations, attempts: int = 20) -> None:
     for _ in range(attempts):
         active = operations.transactions()
         if not active:
-            operations.verify_target()
-            operations.remove_fence()
             return
         for transaction_id in active:
             operations.terminate(transaction_id)
         time.sleep(0.1)
     raise RuntimeError("transactions did not drain; fence remains")
+
+
+def recover(operations: RecoveryOperations, attempts: int = 20) -> None:
+    operations.verify_target()
+    operations.stop_worker()
+    drain_transactions(operations, attempts)
+    operations.verify_target()
+    operations.remove_fence()
 
 
 class DockerRecovery:
@@ -48,8 +53,7 @@ class DockerRecovery:
         if not re.fullmatch(r"logbook-graph-maintenance-[a-z0-9-]+\.service", unit):
             raise ValueError("invalid maintenance unit")
         self.container_id, self.pid, self.port, self.unit = container_id, pid, port, unit
-        self.rule = ["-p", "tcp", "--dport", str(port), "!", "-s", "127.0.0.0/8",
-                     "-j", "REJECT", "--reject-with", "tcp-reset"]
+        self.table = "logbook_" + hashlib.sha256(unit.encode()).hexdigest()[:16]
 
     @staticmethod
     def run(args: list[str], text: str | None = None) -> str:
@@ -57,15 +61,33 @@ class DockerRecovery:
                                 check=True, timeout=10)
         return result.stdout
 
-    def firewall(self, action: str) -> None:
-        self.run(["nsenter", "-t", str(self.pid), "-n", "iptables", action, "INPUT", *self.rule])
+    def install_fence(self) -> None:
+        rules = (f"add table inet {self.table}\n"
+                 f"add chain inet {self.table} input {{ type filter hook input priority -300; policy accept; }}\n"
+                 f'add rule inet {self.table} input iifname != "lo" '
+                 f"tcp dport {self.port} reject with tcp reset\n")
+        self.run(["nsenter", "-t", str(self.pid), "-n", "nft", "-f", "-"], rules)
 
     def verify_target(self) -> None:
         result = self.run(["docker", "inspect", "--format", "{{.Id}} {{.State.Pid}} {{.State.Running}}",
                            self.container_id]).strip()
         if result != f"{self.container_id} {self.pid} true":
             raise RuntimeError("target container changed; fence remains")
-        self.firewall("-C")
+        output = self.run(["nsenter", "-t", str(self.pid), "-n", "nft", "-j", "list",
+                           "table", "inet", self.table])
+        entries = json.loads(output)["nftables"]
+        chains = [e["chain"] for e in entries if "chain" in e]
+        rules = [e["rule"] for e in entries if "rule" in e]
+        expected = [
+            {"match": {"op": "!=", "left": {"meta": {"key": "iifname"}}, "right": "lo"}},
+            {"match": {"op": "==", "left": {"payload": {"protocol": "tcp", "field": "dport"}},
+                       "right": self.port}},
+            {"reject": {"type": "tcp reset"}},
+        ]
+        if (len(chains) != 1 or len(rules) != 1 or chains[0].get("name") != "input"
+                or chains[0].get("hook") != "input" or chains[0].get("prio") != -300
+                or chains[0].get("policy") != "accept" or rules[0].get("expr") != expected):
+            raise RuntimeError("maintenance fence changed; access remains blocked")
 
     def stop_worker(self) -> None:
         state = self.run(["systemctl", "show", self.unit, "--property=LoadState", "--value"]).strip()
@@ -104,4 +126,5 @@ class DockerRecovery:
         self.query(f'TERMINATE TRANSACTIONS "{transaction_id}"')
 
     def remove_fence(self) -> None:
-        self.firewall("-D")
+        self.run(["nsenter", "-t", str(self.pid), "-n", "nft", "delete", "table",
+                  "inet", self.table])
