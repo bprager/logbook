@@ -10,10 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E402
 from logbook.graph_maintenance_launcher import DockerLaunch, StartupRejected  # noqa: E402
 from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
+from logbook.graph_maintenance_stage import stage_plan  # noqa: E402
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry"}:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage"}:
         raise ValueError("expected launch or status")
     request = json.load(sys.stdin)
     recovery = DockerRecovery(request["container_id"], request["pid"],
@@ -21,7 +22,11 @@ def main() -> None:
     launcher = DockerLaunch(recovery, Path(request["private_dir"]), Path(request["worker"]),
                             Path(request["recovery_file"]), request["seconds"],
                             Path(request["recovery_worker"]) if request.get("recovery_worker") else None)
-    if sys.argv[1] == "retry":
+    if sys.argv[1] == "stage":
+        launcher.verify_target()
+        stage_plan(request, Path(__file__).resolve().parent.parent)
+        print("STAGED")
+    elif sys.argv[1] == "retry":
         launcher.retry_recovery()
         print("RETRY_STARTED")
     elif sys.argv[1] == "preflight":

@@ -316,3 +316,24 @@ class RejectedLaunchTests(unittest.TestCase):
             main()
             launcher.return_value.retry_recovery.assert_called_once()
             self.assertEqual(out.getvalue(), 'RETRY_STARTED\n')
+
+    def test_remote_staging_response_and_target_validation(self):
+        remote = SshMaintenance('odin', Path('/key'), Path('/entry'), {'unit':'fixture'})
+        with patch.object(remote, 'invoke', return_value='STAGED') as invoke:
+            remote.stage({'nodes':[]})
+            self.assertEqual(invoke.call_args.args[1]['plan_data'], {'nodes':[]})
+        with patch.object(remote, 'invoke', return_value='NO'):
+            with self.assertRaises(ConnectionError):
+                remote.stage({})
+        request = '{"container_id":"id","pid":1,"port":2,"unit":"unit",' \
+                  '"private_dir":"/private","worker":"/worker",' \
+                  '"recovery_file":"/recovery","seconds":10}'
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('logbook.graph_maintenance_remote.stage_plan') as stage, \
+             patch('sys.stdin', io.StringIO(request)), patch('sys.stdout', new_callable=io.StringIO) as out, \
+             patch('sys.argv', ['remote', 'stage']):
+            main()
+            launcher.return_value.verify_target.assert_called_once()
+            stage.assert_called_once()
+            self.assertEqual(out.getvalue(), 'STAGED\n')

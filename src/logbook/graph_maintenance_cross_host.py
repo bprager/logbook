@@ -26,21 +26,25 @@ class SshMaintenance:
             raise ValueError("absolute paths required")
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
-    def invoke(self, action: str) -> str:
-        if action not in {"launch", "status", "preflight", "retry"}:
+    def invoke(self, action: str, payload: dict | None = None) -> str:
+        if action not in {"launch", "status", "preflight", "retry", "stage"}:
             raise ValueError("invalid remote action")
         command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
         try:
             result = subprocess.run(
                 ["ssh", "-i", str(self.identity), "-o", "BatchMode=yes", "-o",
                  "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", self.host, command],
-                input=json.dumps(self.request), capture_output=True, text=True, timeout=15,
+                input=json.dumps(self.request if payload is None else payload), capture_output=True, text=True, timeout=15,
             )
         except subprocess.TimeoutExpired as error:
             raise TimeoutError("remote maintenance request timed out") from error
         if result.returncode != 0:
             raise ConnectionError("remote maintenance request failed")
         return result.stdout.strip()
+
+    def stage(self, plan: dict) -> None:
+        if self.invoke("stage", {**self.request, "plan_data": plan}) != "STAGED":
+            raise ConnectionError("remote staging rejected")
 
     def preflight(self) -> None:
         if self.invoke("preflight") != "PREFLIGHT_OK":
