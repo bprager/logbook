@@ -16,11 +16,8 @@ from logbook.operator_bundle import build_revision_bundle, provision_bundle, ver
 from logbook.operator_window import stage_plan_and_run
 
 
-def build_installed_bundle(revision: str) -> bytes:
-    import neo4j
-    import pytz
-    return build_revision_bundle(Path(__file__).resolve().parents[2], revision,
-                                 {'neo4j':Path(neo4j.__file__).parent, 'pytz':Path(pytz.__file__).parent})
+def build_release_bundle(revision: str, wheel_dir: Path) -> bytes:
+    return build_revision_bundle(Path(__file__).resolve().parents[2], revision, wheel_dir)
 
 
 def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> str:
@@ -38,7 +35,7 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
     entrypoint = bundle/'logbook/graph_maintenance_remote.py'
     revision = options['revision']
     verify_checkout(Path(__file__).resolve().parents[2], revision)
-    payload = build_installed_bundle(revision)
+    payload = build_release_bundle(revision, Path(options['wheel_dir']))
     saved = {'host':options['host'], 'identity':options['identity'], 'entrypoint':str(entrypoint),
              'revision':revision, 'bundle_sha256':hashlib.sha256(payload).hexdigest(), 'request':request}
     fd = os.open(state, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

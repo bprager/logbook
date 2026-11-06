@@ -7,7 +7,32 @@ import re
 import shlex
 import subprocess
 import tarfile
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
+
+
+PINNED_WHEELS = {
+    'neo4j': ('neo4j-5.28.4-py3-none-any.whl', 'ba87c423fd2a1fbe6a116c47ac96cfbe7d8c419d24d2f5611e5674283dddf7b9'),
+    'pytz': ('pytz-2026.2-py2.py3-none-any.whl', '04156e608bee23d3792fd45c94ae47fae1036688e75032eea2e3bf0323d1f126'),
+}
+
+
+def add_pinned_wheels(archive: tarfile.TarFile, wheel_dir: Path) -> None:
+    for package, (filename, expected) in PINNED_WHEELS.items():
+        payload = (wheel_dir/filename).read_bytes()
+        if hashlib.sha256(payload).hexdigest() != expected:
+            raise ValueError('dependency wheel checksum mismatch')
+        with zipfile.ZipFile(io.BytesIO(payload)) as wheel:
+            for member in wheel.infolist():
+                path = PurePosixPath(member.filename)
+                if not path.parts or path.parts[0] != package or member.is_dir():
+                    continue
+                if '..' in path.parts or member.file_size > 60000000:
+                    raise ValueError('invalid wheel member')
+                data = wheel.read(member)
+                info = tarfile.TarInfo(str(path))
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
 
 
 def _include(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
@@ -45,8 +70,8 @@ def verify_checkout(repo: Path, revision: str) -> None:
         raise ValueError('checkout does not match selected revision')
 
 
-def build_revision_bundle(repo: Path, revision: str, dependencies: dict[str, Path]) -> bytes:
-    if not re.fullmatch(r'[0-9a-f]{40}', revision) or set(dependencies) != {'neo4j', 'pytz'}:
+def build_revision_bundle(repo: Path, revision: str, wheel_dir: Path) -> bytes:
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
         raise ValueError('full commit revision and expected dependencies required')
     kind = subprocess.run(['git', '-C', str(repo), 'cat-file', '-t', revision],
                           capture_output=True, check=True).stdout.strip()
@@ -64,8 +89,7 @@ def build_revision_bundle(repo: Path, revision: str, dependencies: dict[str, Pat
                 raise ValueError('source contains unsupported file type')
             item.name = item.name.removeprefix('src/')
             bundle.addfile(item, original.extractfile(item) if item.isfile() else None)
-        for name, path in dependencies.items():
-            bundle.add(path, arcname=name, filter=_include)
+        add_pinned_wheels(bundle, wheel_dir)
     return _bounded(output)
 
 

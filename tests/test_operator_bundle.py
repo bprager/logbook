@@ -180,6 +180,8 @@ class OperatorBundleTests(unittest.TestCase):
 class RevisionBundleTests(unittest.TestCase):
     def test_uses_exact_commit_not_mutable_checkout(self):
         import subprocess
+        import zipfile
+        from unittest.mock import patch
         from logbook.operator_bundle import build_revision_bundle
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -192,13 +194,16 @@ class RevisionBundleTests(unittest.TestCase):
                             'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], check=True)
             revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
             (source/'__init__.py').write_text('changed')
-            dependencies = {}
+            pins = {}
             for name in ('neo4j', 'pytz'):
-                path = root/name
-                path.mkdir()
-                (path/'__init__.py').write_text(name)
-                dependencies[name] = path
-            payload = build_revision_bundle(root, revision, dependencies)
+                path = root/(name+'.whl')
+                with zipfile.ZipFile(path, 'w') as wheel:
+                    wheel.writestr(name+'/__init__.py', name)
+                pins[name] = (path.name, hashlib.sha256(path.read_bytes()).hexdigest())
+            pin_patch = patch('logbook.operator_bundle.PINNED_WHEELS', pins)
+            pin_patch.start()
+            self.addCleanup(pin_patch.stop)
+            payload = build_revision_bundle(root, revision, root)
             with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as tar:
                 self.assertEqual(tar.extractfile('logbook/__init__.py').read(), b'reviewed')
             from unittest.mock import patch
@@ -206,18 +211,18 @@ class RevisionBundleTests(unittest.TestCase):
                 install_bundle(payload, root/'installed', hashlib.sha256(payload).hexdigest())
             self.assertEqual((root/'installed/logbook/__init__.py').read_text(), 'reviewed')
             with self.assertRaisesRegex(ValueError, 'revision'):
-                build_revision_bundle(root, 'HEAD', dependencies)
+                build_revision_bundle(root, 'HEAD', root)
             blob = subprocess.check_output(['git', '-C', str(root), 'hash-object', '-w',
                                             'src/logbook/__init__.py'], text=True).strip()
             with self.assertRaisesRegex(ValueError, 'commit'):
-                build_revision_bundle(root, blob, dependencies)
+                build_revision_bundle(root, blob, root)
             (source/'bad').symlink_to('/etc/passwd')
             subprocess.run(['git', '-C', str(root), 'add', 'src'], check=True)
             subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c',
                             'user.email=test@example.invalid', 'commit', '-qm', 'link'], check=True)
             unsafe = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
             with self.assertRaisesRegex(ValueError, 'source'):
-                build_revision_bundle(root, unsafe, dependencies)
+                build_revision_bundle(root, unsafe, root)
 
 class CheckoutVerificationTests(unittest.TestCase):
     def test_rejects_changed_or_untracked_source(self):
@@ -244,3 +249,34 @@ class CheckoutVerificationTests(unittest.TestCase):
             (source/'untracked.py').write_text('new')
             with self.assertRaisesRegex(ValueError, 'checkout'):
                 verify_checkout(root, revision)
+
+class PinnedWheelTests(unittest.TestCase):
+    def test_rejects_wheel_changed_after_pin(self):
+        import zipfile
+        from unittest.mock import patch
+        from logbook.operator_bundle import add_pinned_wheels
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wheel = root/'fixture.whl'
+            with zipfile.ZipFile(wheel, 'w') as archive:
+                archive.writestr('neo4j/', '')
+                archive.writestr('neo4j-0.dist-info/METADATA', 'metadata')
+                archive.writestr('neo4j/__init__.py', 'trusted')
+            pins = {'neo4j':('fixture.whl', hashlib.sha256(wheel.read_bytes()).hexdigest())}
+            output = io.BytesIO()
+            with patch('logbook.operator_bundle.PINNED_WHEELS', pins):
+                with tarfile.open(fileobj=output, mode='w') as tar:
+                    add_pinned_wheels(tar, root)
+                with tarfile.open(fileobj=io.BytesIO(output.getvalue()), mode='r') as tar:
+                    self.assertEqual(tar.extractfile('neo4j/__init__.py').read(), b'trusted')
+                wheel.write_bytes(b'changed')
+                with tarfile.open(fileobj=io.BytesIO(), mode='w') as tar:
+                    with self.assertRaisesRegex(ValueError, 'checksum'):
+                        add_pinned_wheels(tar, root)
+            with zipfile.ZipFile(wheel, 'w') as archive:
+                archive.writestr('neo4j/../escape.py', 'unsafe')
+            pins['neo4j'] = ('fixture.whl', hashlib.sha256(wheel.read_bytes()).hexdigest())
+            with patch('logbook.operator_bundle.PINNED_WHEELS', pins):
+                with tarfile.open(fileobj=io.BytesIO(), mode='w') as tar:
+                    with self.assertRaisesRegex(ValueError, 'member'):
+                        add_pinned_wheels(tar, root)

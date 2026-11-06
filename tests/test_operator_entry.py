@@ -13,7 +13,7 @@ class OperatorEntryTests(unittest.TestCase):
             state = Path(tmp)/'state.json'
             options = {'host':'odin', 'identity':'/key', 'remote_parent':'/private',
                        'journal_dir':'/private/journals', 'container_id':'a'*64, 'pid':123,
-                       'port':7687, 'seconds':15, 'revision':'a'*40}
+                       'port':7687, 'seconds':15, 'revision':'a'*40, 'wheel_dir':'/wheels'}
             remote = Mock()
             def run(config, job_id, candidate, *, timeout_seconds):
                 self.assertTrue(state.exists())
@@ -24,7 +24,7 @@ class OperatorEntryTests(unittest.TestCase):
                 self.assertEqual(len(saved['bundle_sha256']), 64)
                 return 'retained'
             with patch('logbook.operator_entry.verify_checkout'), \
-                 patch('logbook.operator_entry.build_installed_bundle', return_value=b'archive'), \
+                 patch('logbook.operator_entry.build_release_bundle', return_value=b'archive'), \
                  patch('logbook.operator_entry.provision_bundle') as provision, \
                  patch('logbook.operator_entry.SshMaintenance', return_value=remote), \
                  patch('logbook.operator_entry.stage_plan_and_run', side_effect=run):
@@ -33,10 +33,10 @@ class OperatorEntryTests(unittest.TestCase):
             self.assertEqual(state.stat().st_mode & 0o777, 0o600)
 
     def test_bundle_uses_installed_packages(self):
-        from logbook.operator_entry import build_installed_bundle
+        from logbook.operator_entry import build_release_bundle
         with patch('logbook.operator_entry.build_revision_bundle', return_value=b'fixture') as build:
-            self.assertEqual(build_installed_bundle('a'*40), b'fixture')
-            self.assertEqual(set(build.call_args.args[2]), {'neo4j','pytz'})
+            self.assertEqual(build_release_bundle('a'*40, Path('/wheels')), b'fixture')
+            self.assertEqual(build.call_args.args[2], Path('/wheels'))
 
     def test_saved_fixture_can_retry_and_report_confirmed_status(self):
         from logbook.operator_entry import fixture_recovery
