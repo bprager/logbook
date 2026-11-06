@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add an experimental single-batch graph repair path that saves a durable
+  recovery identifier before applying a bounded create-only repair.
+
 - Add an experimental independent lock holder that outlives the graph
   maintenance coordinator until remote recovery is confirmed.
 

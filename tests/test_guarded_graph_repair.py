@@ -15,6 +15,8 @@ from logbook.graph_write_lock import GraphWriteLock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from logbook.memory_graph import MemoryNode, MemoryRelationship
+from logbook.memory_graph import MemoryGraphPlan, MemoryGraphRepairPlan
+from logbook.bounded_graph_repair import apply_one_batch, rollback_one_batch
 
 
 @unittest.skipUnless(
@@ -59,6 +61,20 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
 
     def apply(self):
         return self.apply_batch(self.session, self.batch, [self.node], [self.rel])
+
+    def test_bounded_batch_records_recovery_and_preserves_other_data(self):
+        plan = MemoryGraphPlan((self.node,), (self.rel,), "fixture")
+        repair = MemoryGraphRepairPlan(plan, (self.foreign,), (),
+                                       (self.node,), (self.rel,), (), ())
+        journal = Path(self.tmp.name) / "recovery.json"
+        batch = apply_one_batch(self.session, self.lock, repair, journal)
+        self.assertEqual(self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n',
+                                          id=self.node_id).single()['n'], 1)
+        rollback_one_batch(self.session, self.lock, journal, batch)
+        self.assertEqual(self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n',
+                                          id=self.node_id).single()['n'], 0)
+        self.assertEqual(self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n',
+                                          id=self.foreign).single()['n'], 1)
 
     def test_relationship_only_batch_can_be_rolled_back(self):
         self.session.run('CREATE (:LogbookJob {id:$id, project:"logbook"})',
