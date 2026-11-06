@@ -24,3 +24,17 @@ class RepairWindowWorkerTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(ValueError, 'held writer lock'):
                 repair_in_window(Mock(), Mock(), Mock(), GraphWriteLock(Path(tmp)), Path(tmp) / 'journal')
+
+    def test_recovery_requires_matching_durable_record(self):
+        import json
+        from logbook.repair_window_worker import recover_in_window
+        batch = '00000000-0000-0000-0000-000000000001'
+        with TemporaryDirectory() as tmp, GraphWriteLock(Path(tmp)) as lock:
+            journal = Path(tmp) / 'journal'
+            journal.write_text(json.dumps({'schema': 1, 'batch': batch}))
+            with patch('logbook.bounded_graph_repair.rollback_batch') as rollback:
+                with self.assertRaisesRegex(ValueError, 'does not match'):
+                    recover_in_window(Mock(), lock, journal, '00000000-0000-0000-0000-000000000002')
+                rollback.assert_not_called()
+                recover_in_window(Mock(), lock, journal, batch)
+                self.assertEqual(rollback.call_count, 1)
