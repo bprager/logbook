@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Fence IPv4 and IPv6 together during experimental graph maintenance, drain
+  pre-existing transactions, and provide a wrapper for both Logbook locks.
+
 - Add an experimental fenced graph-maintenance launcher with a gated worker
   and independent, setup-serialized recovery timer; it is not enabled live.
 

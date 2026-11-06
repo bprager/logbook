@@ -1,13 +1,26 @@
-"""Experimental IPv4 graph maintenance launcher; not authorized for live use."""
+"""Experimental graph maintenance launcher; not authorized for live use."""
 from __future__ import annotations
 
 import fcntl
 import os
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol, TypeVar
 
-from logbook.graph_maintenance_recovery import DockerRecovery
+from logbook.config import AppConfig
+from logbook.graph_maintenance_recovery import DockerRecovery, drain_transactions
+from logbook.graph_write_lock import GraphWriteLock
+
+T = TypeVar("T")
+
+
+def with_logbook_locks(config: AppConfig, operation: Callable[[], T]) -> T:
+    """Hold both Mimir locks until the caller's entire operation returns."""
+    config.processing_root.mkdir(parents=True, exist_ok=True)
+    with (config.processing_root / "pipeline.lock").open("a") as pipeline:
+        fcntl.flock(pipeline, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with GraphWriteLock(config.processing_root):
+            return operation()
 
 class LaunchOperations(Protocol):
     def verify_target(self) -> None: ...
@@ -15,6 +28,7 @@ class LaunchOperations(Protocol):
     def schedule_recovery(self) -> None: ...
     def install_fence(self) -> None: ...
     def verify_fence(self) -> None: ...
+    def drain_existing(self) -> None: ...
     def start_worker(self) -> None: ...
 
 
@@ -24,6 +38,8 @@ def launch(operations: LaunchOperations) -> None:
     operations.schedule_recovery()
     operations.install_fence()
     operations.verify_fence()
+    operations.drain_existing()
+    operations.verify_fence()
     operations.start_worker()
 
 
@@ -31,7 +47,7 @@ class DockerLaunch:
     """Launch a gated worker and independent, lock-serialized recovery timer.
 
     A caller must supply a fresh root-private directory and trusted root-owned
-    worker and recovery files. IPv6, local privileged writers and remote
+    worker and recovery files. Local privileged writers and remote
     Logbook lock coordination are not covered by this prototype.
     """
 
@@ -66,10 +82,6 @@ class DockerLaunch:
                                     self.recovery.container_id]).strip()
         if result != f"{self.recovery.container_id} {self.recovery.pid} true":
             raise RuntimeError("target container changed")
-        ipv6 = self.recovery.run(["nsenter", "-t", str(self.recovery.pid), "-n", "ss",
-                                  "-H", "-6", "-ltn", f"sport = :{self.recovery.port}"])
-        if ipv6.strip():
-            raise RuntimeError("IPv6 listener is not covered")
 
     def prepare_worker(self) -> None:
         if self.gate.exists():
@@ -96,8 +108,7 @@ class DockerLaunch:
                            str(self.recovery.pid), str(self.recovery.port), self.recovery.unit])
 
     def install_fence(self) -> None:
-        self.recovery.run(["nsenter", "-t", str(self.recovery.pid), "-n", "iptables",
-                           "-I", "INPUT", "1", *self.recovery.rule])
+        self.recovery.install_fence()
 
     def verify_fence(self) -> None:
         self.recovery.verify_target()
@@ -112,3 +123,6 @@ class DockerLaunch:
             raise RuntimeError("maintenance deadline elapsed before worker start")
         fd = os.open(self.gate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(fd)
+
+    def drain_existing(self) -> None:
+        drain_transactions(self.recovery)
