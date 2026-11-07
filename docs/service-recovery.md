@@ -71,6 +71,16 @@ Those conditions require their underlying problem to be corrected.
 
 ## Installation and maintenance
 
+### Candidate processing guard
+
+This branch adds checks for the experimental `graph-maintenance.pending`
+marker to queued processing and the manual graph sync and repair commands.
+Graph writers also share `graph-write.lock` with the fixture maintenance
+coordinator. The coordinator and recovery commands are separate from this
+small processing-release change. This candidate has not been deployed or
+authorized for live graph repair. Other clients and privileged filesystem
+changes are outside this guard. The processing root must survive restart.
+
 ### Onsite Sony mount helper
 
 The existing `LogbookMountRunner.app` must use the same project Python environment

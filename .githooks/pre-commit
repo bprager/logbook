@@ -2,4 +2,6 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
+# Nested Git commands in tests must operate on their own temporary repositories.
+while IFS= read -r git_var; do unset "$git_var"; done < <(git rev-parse --local-env-vars)
 exec "$repo_root/scripts/quality-gate"

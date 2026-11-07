@@ -23,6 +23,10 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Block processing and cooperating graph writes during unresolved fixture maintenance.
+
+### Fixed
+
 - Keep recorder and recovery commands usable without loading the supervisor's
   HTTP client. Repair Mimir's legacy onsite mount helper to use the project
   environment, and document recovery without changing remote ingestion.
