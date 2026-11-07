@@ -9,19 +9,39 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from logbook.fixture_boot_guard import FixtureBootGuard, verify_fixture_binding  # noqa: E402
-from logbook.fixture_offline_recovery import record_fixture_storage, recover_offline, recover_named_graph_offline  # noqa: E402
+from logbook.fixture_boot_guard import FixtureBootGuard, MemgraphBootGuard, verify_fixture_binding, verify_memgraph_binding  # noqa: E402
+from logbook.fixture_offline_recovery import record_fixture_storage, record_named_graph_storage, recover_offline, recover_named_graph_offline  # noqa: E402
 from logbook.fixture_recovery_release import (authorize_fixture_restart, fixture_restarted, verify_offline_receipt,
                                               authorize_named_graph_restart, verify_named_graph_receipt, _validate_named)  # noqa: E402
 from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E402
 from logbook.graph_maintenance_launcher import DockerLaunch, StartupRejected  # noqa: E402
 from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
 from logbook.graph_maintenance_stage import stage_plan  # noqa: E402
+from logbook.named_graph_approval import consume_named_approval, validate_consumed_approval, verify_bundle_marker  # noqa: E402
 from logbook.graph_maintenance_worker import completion_matches, completion_value, read_private_json  # noqa: E402
 
 
+def confirmed_normal_outcome(request: dict) -> str:
+    journal = Path(request['journal'])
+    record = read_private_json(journal)
+    batch = record['batch']
+    if record.get('schema') != 1 or str(uuid.UUID(batch)) != batch:
+        raise ValueError("invalid recovery journal")
+    result = read_private_json(journal.with_name(journal.name + '.outcome'))
+    outcome = result.get('outcome')
+    if result != {**completion_value(request, batch), 'outcome': outcome} or outcome not in {'retained', 'rolled-back', 'not-retained'}:
+        raise ValueError("unconfirmed repair outcome")
+    completion = journal.with_name(journal.name + '.complete')
+    if outcome == 'retained':
+        if not completion_matches(journal, request, batch):
+            raise ValueError("unconfirmed completion")
+    elif os.path.lexists(completion):
+        raise ValueError("unexpected completion receipt")
+    return outcome
+
+
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome"}:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-stage", "named-preflight", "named-launch"}:
         raise ValueError("expected launch or status")
     request = json.load(sys.stdin)
     recovery = DockerRecovery(request["container_id"], request["pid"],
@@ -33,20 +53,55 @@ def main() -> None:
         if request.get('profile') != 'named-graph' or request.get('sandbox_only') is True:
             raise ValueError('named graph recovery state required')
         _validate_named(request)
-        if sys.argv[1] == 'named-offline':
+        action = sys.argv[1]
+        if action == 'named-stage':
+            launcher.verify_target()
+            verify_bundle_marker(request, Path(__file__).resolve().parent.parent)
+            consume_named_approval(request, request['plan_data'], Path(request['boot_guard_dir']), Path(request['private_dir']))
+            record_named_graph_storage(request, recovery)
+            MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).disarm()
+            stage_plan(request, Path(__file__).resolve().parent.parent)
+            print('STAGED')
+        elif action in {'named-preflight', 'named-launch'}:
+            verify_bundle_marker(request, Path(__file__).resolve().parent.parent)
+            validate_consumed_approval(request, Path(request['private_dir']))
+            if action == 'named-preflight':
+                launcher.preflight()
+                print('PREFLIGHT_OK')
+            else:
+                try:
+                    launcher.run_window()
+                except StartupRejected:
+                    print('REJECTED')
+                else:
+                    print('LAUNCHED')
+        elif action == 'named-offline':
             print(recover_named_graph_offline(request, recovery))
-        elif sys.argv[1] == 'named-authorize':
+        elif action == 'named-authorize':
             authorize_named_graph_restart(request, recovery)
             print('STARTED')
         else:
             try:
-                confirmed = fixture_restarted(request, recovery, _named=True)
+                normal = recovery_confirmed(recovery, launcher.timer)
             except Exception:
-                confirmed = False
-            if sys.argv[1] == 'named-status':
-                print('RECOVERED' if confirmed else 'PENDING')
+                normal = False
+            if normal:
+                if action == 'named-status':
+                    print('RECOVERED')
+                else:
+                    outcome = confirmed_normal_outcome(request)
+                    verify_memgraph_binding(recovery)
+                    MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).allow()
+                    print(outcome)
             else:
-                print(verify_named_graph_receipt(request)['outcome'] if confirmed else 'PENDING')
+                try:
+                    confirmed = fixture_restarted(request, recovery, _named=True)
+                except Exception:
+                    confirmed = False
+                if action == 'named-status':
+                    print('RECOVERED' if confirmed else 'PENDING')
+                else:
+                    print(verify_named_graph_receipt(request)['outcome'] if confirmed else 'PENDING')
         return
     if request.get('sandbox_only') and sys.argv[1] in {'stage', 'retry'}:
         name = recovery.run(['docker', 'inspect', '--format', '{{.Name}}', request['container_id']]).strip()
@@ -75,21 +130,7 @@ def main() -> None:
                 pass
             print("PENDING")
             return
-        journal = Path(request['journal'])
-        record = read_private_json(journal)
-        batch = record['batch']
-        if record.get('schema') != 1 or str(uuid.UUID(batch)) != batch:
-            raise ValueError("invalid recovery journal")
-        result = read_private_json(journal.with_name(journal.name + '.outcome'))
-        outcome = result.get('outcome')
-        if result != {**completion_value(request, batch), 'outcome': outcome} or outcome not in {'retained', 'rolled-back', 'not-retained'}:
-            raise ValueError("unconfirmed repair outcome")
-        completion = journal.with_name(journal.name + '.complete')
-        if outcome == 'retained':
-            if not completion_matches(journal, request, batch):
-                raise ValueError("unconfirmed completion")
-        elif os.path.lexists(completion):
-            raise ValueError("unexpected completion receipt")
+        outcome = confirmed_normal_outcome(request)
         if request.get('sandbox_only'):
             verify_fixture_binding(recovery, request['boot_guard_service'])
             FixtureBootGuard(Path(request['boot_guard_dir']), request['boot_guard_service'], recovery.run).allow()
