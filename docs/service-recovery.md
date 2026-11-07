@@ -308,6 +308,8 @@ The repository contains a candidate positive-start condition for the named
 `memgraph.service` and its `memgraph-service` container. It is not installed
 or connected to production maintenance and does not authorize live graph
 repair. The checked directory and marker must be root-private and persistent.
-The marker must be removed before maintenance begins and restored only after a
-verified outcome; a service condition by itself does not perform recovery or
-exclude direct Docker starts and privileged writers.
+The named recovery helpers reuse the fixture outcome and offline recovery checks
+and require the exact named service, marker directory, port and recorded volume.
+They are not exposed by the operator command or installed in production. The
+marker must be removed before maintenance begins and restored only after a
+verified outcome; this does not exclude direct Docker starts or privileged writers.
