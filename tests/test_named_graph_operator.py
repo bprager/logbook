@@ -292,3 +292,33 @@ class NamedGraphOperatorTests(TestCase):
                 with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))):
                     remote_main()
             self.assertEqual(out.getvalue(),'REJECTED\nRECOVERED\nPENDING\n')
+
+    def test_prepares_reviewable_unsigned_owner_approval(self):
+        from logbook.operator_entry import prepare_owner_approval
+        from logbook.named_graph_approval import FIELDS, plan_digest
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            state=root/'state.json'
+            plan={'nodes':[]}
+            request={'profile':'named-graph','boot_guard_service':'memgraph.service',
+                     'boot_guard_dir':'/var/lib/logbook-graph-guard','port':7697,
+                     'container_id':'a'*64,'pid':12,'unit':'logbook-graph-maintenance-'+'c'*32+'.service',
+                     'job_id':1,'revision':'b'*40,'bundle_sha256':'d'*64,'plan_sha256':plan_digest(plan)}
+            state.write_text(json.dumps({'host':'graph','identity':'/key','entrypoint':'/entry','request':request,'plan':plan}))
+            state.chmod(0o600)
+            approval=root/'approval.json'
+            with patch('logbook.operator_entry.time.time',return_value=1000):
+                self.assertEqual(prepare_owner_approval(state,approval),'approval-prepared')
+            result=json.loads(approval.read_text())
+            self.assertEqual(set(result),{'schema','approved_at','expires_at',*FIELDS})
+            self.assertEqual(result['approved_at'],1000)
+            self.assertEqual(result['expires_at'],1300)
+            self.assertFalse((root/'approval.json.sig').exists())
+            with self.assertRaises(FileExistsError):
+                prepare_owner_approval(state,approval)
+            saved=json.loads(state.read_text())
+            saved['plan']={'nodes':['changed']}
+            state.write_text(json.dumps(saved))
+            state.chmod(0o600)
+            with self.assertRaisesRegex(ValueError,'plan mismatch'):
+                prepare_owner_approval(state,root/'other.json')

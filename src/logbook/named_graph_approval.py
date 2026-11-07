@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import time
 from pathlib import Path
 
@@ -49,6 +50,30 @@ def _sync(directory: Path) -> None:
         os.close(fd)
 
 
+def _private_bytes(path: Path) -> bytes:
+    private_directory(path.parent)
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                or info.st_mode & 0o077 or info.st_size > 100000):
+            raise ValueError('private approval file required')
+        return source.read()
+
+
+def verify_owner_signature(approval: Path, signature: Path, guard: Path) -> None:
+    """Verify exact approval bytes against a separately installed owner public key."""
+    allowed = guard/'approval.allowed_signers'
+    _private_bytes(allowed)
+    _private_bytes(signature)
+    content = _private_bytes(approval)
+    result = subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'verify', '-f', str(allowed),
+                             '-I', 'owner', '-n', 'logbook-graph-repair', '-s', str(signature)],
+                            input=content, capture_output=True, timeout=10)
+    if result.returncode != 0:
+        raise ValueError('owner approval signature invalid')
+
+
 def consume_named_approval(request: dict, plan: dict, guard: Path, stage: Path, *, now: int | None = None) -> None:
     private_directory(guard)
     private_directory(stage)
@@ -57,13 +82,21 @@ def consume_named_approval(request: dict, plan: dict, guard: Path, stage: Path, 
     source, pending, consumed = guard/'approval.json', guard/'approval.consuming', stage/'approval.consumed'
     approval = read_private_json(source)
     _check(request, approval, int(time.time()) if now is None else now)
+    if Path(request.get('boot_guard_dir', '')) != guard:
+        raise ValueError('approval guard mismatch')
+    signature, pending_signature = guard/'approval.json.sig', guard/'approval.consuming.sig'
+    verify_owner_signature(source, signature, guard)
     os.link(source, pending, follow_symlinks=False)
+    os.link(signature, pending_signature, follow_symlinks=False)
     _sync(guard)
     source.unlink()
+    signature.unlink()
     _sync(guard)
     os.link(pending, consumed, follow_symlinks=False)
+    os.link(pending_signature, stage/'approval.consumed.sig', follow_symlinks=False)
     _sync(stage)
     pending.unlink()
+    pending_signature.unlink()
     _sync(guard)
 
 
@@ -71,6 +104,8 @@ def validate_consumed_approval(request: dict, stage: Path, *, now: int | None = 
     _check(request, read_private_json(stage/'approval.consumed'), int(time.time()) if now is None else now)
     if plan_digest(read_private_json(stage/'plan.json')) != request.get('plan_sha256'):
         raise ValueError('approved plan mismatch')
+    verify_owner_signature(stage/'approval.consumed', stage/'approval.consumed.sig',
+                           Path(request['boot_guard_dir']))
 
 
 def verify_bundle_marker(request: dict, bundle: Path) -> None:
