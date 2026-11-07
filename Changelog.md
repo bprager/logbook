@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Connect named graph startup checks to the existing target-bound offline recovery code, without exposing a live operator entry.
+
 - Prepare a persistent startup guard for the named Memgraph service; not activated.
 
 - Add an experimental durable processing stop marker for fixture repair recovery.

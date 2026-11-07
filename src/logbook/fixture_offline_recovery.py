@@ -8,8 +8,23 @@ import re
 import uuid
 from pathlib import Path
 
-from logbook.fixture_boot_guard import FixtureBootGuard
+from logbook.fixture_boot_guard import FixtureBootGuard, MemgraphBootGuard, verify_memgraph_binding
 from logbook.graph_maintenance_worker import completion_matches, private_directory, read_private_json
+
+
+NAMED_GUARD_DIR = Path('/var/lib/logbook-graph-guard')
+NAMED_VOLUME = 'memgraph-data-v313-20261011'
+
+
+def _validate_named(request: dict) -> None:
+    if (request.get('boot_guard_service') != 'memgraph.service'
+            or Path(request.get('boot_guard_dir', '')) != NAMED_GUARD_DIR
+            or request.get('port') != 7697):
+        raise ValueError('named graph target mismatch')
+
+
+def _volume_valid(volume: str, named: bool) -> bool:
+    return volume == NAMED_VOLUME if named else bool(re.fullmatch(r'logbook-fixture-[a-z0-9-]+', volume))
 
 
 def boot_id() -> str:
@@ -29,13 +44,16 @@ def _save(path: Path, value: dict) -> None:
         os.close(directory)
 
 
-def record_fixture_storage(request: dict, recovery) -> None:
+def record_fixture_storage(request: dict, recovery, *, _named: bool = False) -> None:
+    if _named:
+        _validate_named(request)
+        verify_memgraph_binding(recovery)
     directory = Path(request['private_dir'])
     private_directory(directory)
     mounts = json.loads(recovery.run(['docker', 'inspect', '--format', '{{json .Mounts}}', recovery.container_id]))
     candidates = [m for m in mounts if m.get('Destination') == '/var/lib/memgraph']
     if (len(candidates) != 1 or candidates[0].get('Type') != 'volume' or not candidates[0].get('RW')
-            or not re.fullmatch(r'logbook-fixture-[a-z0-9-]+', candidates[0].get('Name', ''))):
+            or not _volume_valid(candidates[0].get('Name', ''), _named)):
         raise ValueError('dedicated fixture volume required')
     image = recovery.run(['docker', 'inspect', '--format', '{{.Image}}', recovery.container_id]).strip()
     if not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
@@ -47,7 +65,9 @@ def record_fixture_storage(request: dict, recovery) -> None:
     })
 
 
-def recover_offline(request: dict, recovery) -> str:
+def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
+    if _named:
+        _validate_named(request)
     directory = Path(request['private_dir'])
     record = read_private_json(directory/'boot-target.json')
     expected = {'container':request['container_id'], 'pid':request['pid'], 'unit':request['unit'],
@@ -57,7 +77,8 @@ def recover_offline(request: dict, recovery) -> str:
         raise ValueError('fixture recovery target mismatch')
     if record.get('boot_id') == boot_id() or not record.get('boot_id'):
         raise ValueError('host restart required')
-    guard = FixtureBootGuard(Path(request['boot_guard_dir']), request['boot_guard_service'], recovery.run)
+    guard = (MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run) if _named
+             else FixtureBootGuard(Path(request['boot_guard_dir']), request['boot_guard_service'], recovery.run))
     if os.path.lexists(guard.marker):
         raise ValueError('fixture startup guard must be closed')
     guard.verify('inactive')
@@ -73,7 +94,7 @@ def recover_offline(request: dict, recovery) -> str:
     if os.path.lexists(directory/'offline-outcome.json'):
         raise ValueError('fixture offline outcome already recorded')
     volume, image = record.get('volume', ''), record.get('image', '')
-    if not re.fullmatch(r'logbook-fixture-[a-z0-9-]+', volume) or not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
+    if not _volume_valid(volume, _named) or not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
         raise ValueError('invalid recorded fixture storage')
     with (directory/'offline-recovery.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -106,3 +127,13 @@ def recover_offline(request: dict, recovery) -> str:
             raise ValueError('fixture volume remains in use')
         _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(), 'outcome':result, 'batch':batch})
         return result
+
+
+def record_named_graph_storage(request: dict, recovery) -> None:
+    """Record the exact named graph target; not exposed by the operator."""
+    record_fixture_storage(request, recovery, _named=True)
+
+
+def recover_named_graph_offline(request: dict, recovery) -> str:
+    """Recover that target offline; not exposed by the operator."""
+    return recover_offline(request, recovery, _named=True)
