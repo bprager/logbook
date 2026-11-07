@@ -28,7 +28,7 @@ class SshMaintenance:
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
     def invoke(self, action: str, payload: dict | None = None) -> str:
-        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize"}:
+        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome"}:
             raise ValueError("invalid remote action")
         command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
         try:
@@ -36,7 +36,7 @@ class SshMaintenance:
                 ["ssh", "-i", str(self.identity), "-o", "BatchMode=yes", "-o",
                  "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", self.host, command],
                 input=json.dumps(self.request if payload is None else payload), capture_output=True, text=True,
-                timeout=240 if action in {"offline", "authorize"} else 15,
+                timeout=240 if action in {"offline", "authorize", "named-offline", "named-authorize"} else 15,
             )
         except subprocess.TimeoutExpired as error:
             raise TimeoutError("remote maintenance request timed out") from error
@@ -71,6 +71,19 @@ class SshMaintenance:
 
     def recovered(self) -> bool:
         return self.invoke("status") == "RECOVERED"
+
+
+class NamedGraphMaintenance(SshMaintenance):
+    """Recovery-only commands for an already staged named graph window."""
+
+    def recovered(self) -> bool:
+        return self.invoke("named-status") == "RECOVERED"
+
+    def outcome(self) -> str:
+        result = self.invoke("named-outcome")
+        if result not in {"retained", "rolled-back", "not-retained"}:
+            raise RuntimeError("repair outcome is not confirmed")
+        return result
 
 
 def recovery_confirmed(operations: DockerRecovery, timer: str) -> bool:

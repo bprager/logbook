@@ -1,4 +1,4 @@
-"""Fixture-only operator entry point for the experimental maintenance path."""
+"""Fixture operator and bounded recovery of an already staged named graph window."""
 from __future__ import annotations
 
 import hashlib
@@ -9,9 +9,10 @@ import uuid
 from pathlib import Path
 
 from logbook.config import AppConfig, load_app_config
-from logbook.graph_maintenance_cross_host import SshMaintenance
+from logbook.graph_maintenance_cross_host import NamedGraphMaintenance, SshMaintenance
 from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors
 from logbook.processing_restart_guard import clear_guard
+from logbook.fixture_recovery_release import _validate_named
 from logbook.graph_maintenance_recovery import DockerRecovery
 from logbook.graph_maintenance_worker import private_directory, read_private_json
 from logbook.operator_bundle import build_revision_bundle, provision_bundle, verify_checkout
@@ -81,6 +82,49 @@ def release_fixture_guard(config: AppConfig, state: Path) -> str:
     return 'released'
 
 
+def _named_remote(state: Path) -> NamedGraphMaintenance:
+    saved = read_private_json(state)
+    request = saved['request']
+    if not isinstance(request, dict) or request.get('profile') != 'named-graph' or request.get('sandbox_only') is True:
+        raise ValueError('named graph recovery state required')
+    _validate_named(request)
+    return NamedGraphMaintenance(saved['host'], Path(saved['identity']), Path(saved['entrypoint']), request)
+
+
+def named_graph_recovery(state: Path, action: str) -> str:
+    remote = _named_remote(state)
+    if action == 'offline':
+        result = remote.invoke('named-offline')
+        if result not in {'rolled-back', 'not-retained', 'retained'}:
+            raise RuntimeError('offline recovery outcome unconfirmed')
+        return result
+    if action == 'authorize':
+        if remote.invoke('named-authorize') != 'STARTED':
+            raise RuntimeError('named graph restart unconfirmed')
+        return 'started'
+    if action == 'status':
+        return remote.outcome() if remote.recovered() else 'pending'
+    raise ValueError('expected offline, authorize or status')
+
+
+def release_named_processing_guard(config: AppConfig, remote: NamedGraphMaintenance) -> None:
+    request = remote.request
+    if request.get('profile') != 'named-graph' or request.get('sandbox_only') is True:
+        raise ValueError('named graph recovery state required')
+    _validate_named(request)
+    unit = request.get('unit')
+    if not isinstance(unit, str):
+        raise ValueError('maintenance unit required')
+
+    def release(_pipeline: int, _graph: int) -> None:
+        if not remote.recovered():
+            raise RuntimeError('named graph recovery unconfirmed')
+        remote.outcome()
+        clear_guard(config.processing_root, unit)
+
+    with_logbook_lock_descriptors(config, release, allow_pending=True)
+
+
 def fixture_recovery(state: Path, action: str) -> str:
     saved = read_private_json(state)
     request = saved['request']
@@ -105,7 +149,12 @@ def fixture_recovery(state: Path, action: str) -> str:
 
 
 if __name__ == '__main__':  # pragma: no cover
-    if len(sys.argv) == 4 and sys.argv[1] == 'release':
+    if len(sys.argv) == 4 and sys.argv[1] == 'named-release':
+        release_named_processing_guard(load_app_config(Path(sys.argv[2])), _named_remote(Path(sys.argv[3])))
+        print('released')
+    elif len(sys.argv) == 3 and sys.argv[1] in {'named-offline', 'named-authorize', 'named-status'}:
+        print(named_graph_recovery(Path(sys.argv[2]), sys.argv[1].removeprefix('named-')))
+    elif len(sys.argv) == 4 and sys.argv[1] == 'release':
         print(release_fixture_guard(load_app_config(Path(sys.argv[2])), Path(sys.argv[3])))
     elif len(sys.argv) == 3 and sys.argv[1] in {'retry', 'status', 'offline', 'authorize'}:
         print(fixture_recovery(Path(sys.argv[2]), sys.argv[1]))
@@ -113,4 +162,4 @@ if __name__ == '__main__':  # pragma: no cover
         print(run_fixture(load_app_config(Path(sys.argv[1])), int(sys.argv[2]),
                           read_private_json(Path(sys.argv[3])), Path(sys.argv[4])))
     else:
-        raise SystemExit('usage: operator_entry ENV JOB_ID PRIVATE_OPTIONS PRIVATE_STATE | retry|status|offline|authorize PRIVATE_STATE')
+        raise SystemExit('usage: operator_entry ENV JOB_ID PRIVATE_OPTIONS PRIVATE_STATE | retry|status|offline|authorize PRIVATE_STATE | named-offline|named-authorize|named-status PRIVATE_STATE | named-release ENV PRIVATE_STATE')
