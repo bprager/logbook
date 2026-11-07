@@ -65,6 +65,59 @@ class NamedGraphRecoveryTests(TestCase):
                 with self.assertRaises(FileNotFoundError):
                     authorize_named_graph_restart(request,Mock())
 
+    def test_second_restart_rechecks_stale_offline_outcome(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            request={'private_dir':str(root),'boot_guard_service':'memgraph.service',
+                     'boot_guard_dir':str(root),'journal':str(root/'journal'),'unit':'unit',
+                     'container_id':'a'*64,'pid':12,'port':7697,'recovery_file':'/bundle/logbook/recovery.py'}
+            expected={'container':request['container_id'],'pid':12,'unit':'unit','service':'memgraph.service',
+                      'guard_dir':str(root),'journal':request['journal'],'port':7697,'recovery_file':request['recovery_file']}
+            volume='memgraph-data-v313-20261011'
+            batch='00000000-0000-0000-0000-000000000001'
+            for name,value in [('boot-target.json',{**expected,'volume':volume,'image':'sha256:'+'b'*64,'boot_id':'first'}),
+                               ('offline-outcome.json',{**expected,'volume':volume,'boot_id':'second','outcome':'rolled-back','batch':batch}),
+                               ('journal',{'schema':1,'batch':batch})]:
+                path=root/name
+                path.write_text(json.dumps(value))
+                path.chmod(0o600)
+            recovery=Mock()
+            recovery.run.side_effect=['','container-id','321 true none',json.dumps([{
+                'Destination':'/var/lib/memgraph','Type':'volume','Name':volume,'RW':True}]),
+                'not-retained','','']
+            with patch('logbook.fixture_offline_recovery.NAMED_GUARD_DIR',root), \
+                 patch('logbook.fixture_offline_recovery.boot_id',return_value='third'), \
+                 patch('logbook.fixture_offline_recovery.MemgraphBootGuard') as guard:
+                guard.return_value.marker=root/'start-allowed'
+                self.assertEqual(recover_named_graph_offline(request,recovery),'not-retained')
+            with patch('logbook.fixture_recovery_release.NAMED_GUARD_DIR',root), \
+                 patch('logbook.fixture_recovery_release.boot_id',return_value='third'):
+                self.assertEqual(verify_named_graph_receipt(request)['outcome'],'not-retained')
+
+    def test_stale_receipt_is_only_discarded_when_valid_and_from_an_intermediate_boot(self):
+        from logbook.fixture_offline_recovery import _discard_stale_named_receipt
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            path=root/'offline-outcome.json'
+            expected={'container':'one'}
+            receipt={**expected,'volume':'vol','boot_id':'second','outcome':'not-retained',
+                     'batch':None,'phase':'before-journal'}
+            def write(value):
+                path.write_text(json.dumps(value))
+                path.chmod(0o600)
+            with patch('logbook.fixture_offline_recovery.boot_id',return_value='third'):
+                for invalid in ({**receipt,'boot_id':'third'}, {**receipt,'boot_id':'first'},
+                                {**receipt,'boot_id':''}, {**receipt,'container':'other'},
+                                {**receipt,'outcome':'retained'}):
+                    write(invalid)
+                    with self.assertRaises(ValueError):
+                        _discard_stale_named_receipt(root,expected,'vol','first',None,False)
+                    self.assertTrue(path.exists())
+                write(receipt)
+                _discard_stale_named_receipt(root,expected,'vol','first',None,False)
+                self.assertFalse(path.exists())
+                _discard_stale_named_receipt(root,expected,'vol','first',None,False)
+
     def test_named_restart_verifies_binding_image_volume_and_health(self):
         from logbook.fixture_recovery_release import fixture_restarted
         with TemporaryDirectory() as tmp:

@@ -44,6 +44,33 @@ def _save(path: Path, value: dict) -> None:
         os.close(directory)
 
 
+def _discard_stale_named_receipt(directory: Path, expected: dict, volume: str,
+                                 original_boot: str, batch: str | None, completed: bool) -> None:
+    path = directory/'offline-outcome.json'
+    if not os.path.lexists(path):
+        return
+    receipt = read_private_json(path)
+    receipt_boot = receipt.get('boot_id')
+    outcome = receipt.get('outcome')
+    if (not isinstance(receipt_boot, str) or not receipt_boot
+            or receipt_boot in {original_boot, boot_id()}):
+        raise ValueError('fixture offline outcome already recorded')
+    valid = {**expected, 'volume':volume, 'boot_id':receipt_boot, 'outcome':outcome, 'batch':batch}
+    if batch is None:
+        valid['phase'] = 'before-journal'
+        valid_outcome = outcome == 'not-retained'
+    else:
+        valid_outcome = outcome in ({'retained'} if completed else {'rolled-back', 'not-retained'})
+    if not valid_outcome or receipt != valid:
+        raise ValueError('invalid stale offline recovery receipt')
+    path.unlink()
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def record_fixture_storage(request: dict, recovery, *, _named: bool = False) -> None:
     if _named:
         _validate_named(request)
@@ -98,6 +125,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
                 raise ValueError('fixture volume is in use')
+            _discard_stale_named_receipt(directory, expected, volume, record['boot_id'], None, False)
             if os.path.lexists(journal) or os.path.lexists(journal.with_name(journal.name+'.complete')):
                 raise ValueError('journal appeared during recovery')
             _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(),
@@ -111,7 +139,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
     if completed and not completion_matches(journal, request, batch):
         raise ValueError('fixture completion does not match target')
     mode = 'retain' if completed else 'rollback'
-    if os.path.lexists(directory/'offline-outcome.json'):
+    if not _named and os.path.lexists(directory/'offline-outcome.json'):
         raise ValueError('fixture offline outcome already recorded')
     volume, image = record.get('volume', ''), record.get('image', '')
     if not _volume_valid(volume, _named) or not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
@@ -120,6 +148,8 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
             raise ValueError('fixture volume is in use')
+        if _named:
+            _discard_stale_named_receipt(directory, expected, volume, record['boot_id'], batch, completed)
         name = 'logbook-fixture-recovery-'+uuid.uuid4().hex
         try:
             recovery.run(['docker', 'run', '-d', '--rm', '--name', name, '--network=none',
