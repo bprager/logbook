@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Prepare a persistent startup guard for the named Memgraph service; not activated.
+
 - Add an experimental durable processing stop marker for fixture repair recovery.
 
 - Preserve verified completed fixture repair batches across a graph-host restart.
