@@ -27,7 +27,7 @@ class SshMaintenance:
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
     def invoke(self, action: str, payload: dict | None = None) -> str:
-        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline"}:
+        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize"}:
             raise ValueError("invalid remote action")
         command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
         try:
@@ -35,7 +35,7 @@ class SshMaintenance:
                 ["ssh", "-i", str(self.identity), "-o", "BatchMode=yes", "-o",
                  "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", self.host, command],
                 input=json.dumps(self.request if payload is None else payload), capture_output=True, text=True,
-                timeout=240 if action == "offline" else 15,
+                timeout=240 if action in {"offline", "authorize"} else 15,
             )
         except subprocess.TimeoutExpired as error:
             raise TimeoutError("remote maintenance request timed out") from error

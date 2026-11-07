@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Reopen a recovered fixture graph and release its lease after target and health checks.
+
 - Add a fixture-only isolated rollback operation after a graph host restart.
 
 - Check that a guarded fixture service supervises its selected graph container.

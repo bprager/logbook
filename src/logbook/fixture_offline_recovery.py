@@ -102,5 +102,5 @@ def recover_offline(request: dict, recovery) -> str:
             recovery.run(['docker', 'stop', '--time', '30', name], timeout=45)
         if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
             raise ValueError('fixture volume remains in use')
-        _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(), 'outcome':result})
+        _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(), 'outcome':result, 'batch':batch})
         return result

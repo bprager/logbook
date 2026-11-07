@@ -74,8 +74,8 @@ class FixtureBootGuard:
         self.marker.unlink()
         self._sync()
 
-    def allow(self) -> None:
-        self.verify()
+    def allow(self, expected_state: str = 'active') -> None:
+        self.verify(expected_state)
         try:
             fd = os.open(self.marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:

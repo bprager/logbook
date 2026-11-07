@@ -474,3 +474,41 @@ class RejectedLaunchTests(unittest.TestCase):
             request['sandbox_only'] = False
             with patch('sys.stdin', io.StringIO(json.dumps(request))), self.assertRaisesRegex(ValueError, 'fixture'):
                 main()
+
+    def test_offline_recovery_status_fails_closed_until_fixture_restarts(self):
+        request = {'container_id':'id','pid':1,'port':2,'unit':'unit','private_dir':'/private',
+                   'worker':'/worker','recovery_file':'/recovery','seconds':10,'sandbox_only':True}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed', side_effect=RuntimeError('old target gone')), \
+             patch('logbook.graph_maintenance_remote.fixture_restarted', side_effect=[ValueError('not ready'),True]), \
+             patch('sys.stdout', new_callable=io.StringIO) as out, patch('sys.argv', ['remote', 'status']):
+            for _ in range(2):
+                with patch('sys.stdin', io.StringIO(json.dumps(request))):
+                    main()
+            self.assertEqual(out.getvalue(), 'PENDING\nRECOVERED\n')
+
+    def test_authorize_and_offline_outcome_reject_unverified_fixture(self):
+        request = {'container_id':'id','pid':1,'port':2,'unit':'unit','private_dir':'/private',
+                   'worker':'/worker','recovery_file':'/recovery','seconds':10,'sandbox_only':True}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.authorize_fixture_restart') as authorize, \
+             patch('sys.stdout', new_callable=io.StringIO) as out, patch('sys.argv', ['remote', 'authorize']):
+            with patch('sys.stdin', io.StringIO(json.dumps(request))):
+                main()
+            authorize.assert_called_once()
+            self.assertEqual(out.getvalue(), 'STARTED\n')
+            request['sandbox_only'] = False
+            with patch('sys.stdin', io.StringIO(json.dumps(request))), self.assertRaisesRegex(ValueError, 'fixture'):
+                main()
+        request['sandbox_only'] = True
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed', side_effect=RuntimeError('old target gone')), \
+             patch('logbook.graph_maintenance_remote.fixture_restarted', return_value=True), \
+             patch('logbook.graph_maintenance_remote.verify_offline_receipt', return_value={'outcome':'rolled-back'}), \
+             patch('sys.stdout', new_callable=io.StringIO) as out, patch('sys.argv', ['remote', 'outcome']), \
+             patch('sys.stdin', io.StringIO(json.dumps(request))):
+            main()
+            self.assertEqual(out.getvalue(), 'rolled-back\n')

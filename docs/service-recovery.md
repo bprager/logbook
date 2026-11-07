@@ -276,6 +276,11 @@ incomplete journaled batch. It refuses a running service, open startup guard,
 active volume user, changed target, completed batch or unconfirmed rollback.
 The recovery container is stopped before the outcome is recorded.
 
-This operation deliberately leaves startup permission absent and the processing
-lease held. It does not yet reopen the service or release the lease; those steps
-need separate verified handling. It remains experimental and fixture-only.
+Offline recovery leaves startup permission absent and the processing lease held.
+After a recorded successful offline rollback, `python -m logbook.operator_entry
+authorize PRIVATE_STATE` checks the record and unused volume, restores fixture
+startup permission and starts the service. The lease holder releases its locks
+only after it independently confirms the restarted fixture service, container,
+volume, image and graph response. If confirmation fails, the lease remains held.
+This is experimental and fixture-only; it does not restore a lease lost when the
+processing host itself restarts.
