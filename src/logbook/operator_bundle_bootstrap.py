@@ -20,6 +20,14 @@ def trusted_parent(destination: Path) -> None:
             raise ValueError('trusted directory ancestry required')
 
 
+def sync_directory(directory: Path) -> None:
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def install_bundle(data: bytes, destination: Path, digest: str) -> None:
     if len(data) > 30000000 or hashlib.sha256(data).hexdigest() != digest:
         raise ValueError('bundle digest or size invalid')
@@ -51,7 +59,17 @@ def install_bundle(data: bytes, destination: Path, digest: str) -> None:
                     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                     with os.fdopen(fd, 'wb') as output:
                         shutil.copyfileobj(source, output)
-            (destination/'.bundle-ready').write_text(digest+'\n')
+                        output.flush()
+                        os.fsync(output.fileno())
+            for current, _, _ in os.walk(destination, topdown=False):
+                sync_directory(Path(current))
+            fd = os.open(destination/'.bundle-ready', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as marker:
+                marker.write(digest+'\n')
+                marker.flush()
+                os.fsync(marker.fileno())
+            sync_directory(destination)
+            sync_directory(destination.parent)
         except Exception:
             shutil.rmtree(destination)
             raise
@@ -65,4 +83,5 @@ if __name__ == '__main__':  # pragma: no cover
         raise SystemExit('bundle and staging must be distinct siblings')
     install_bundle(sys.stdin.buffer.read(30000001), destination, sys.argv[3])
     staging.mkdir(mode=0o700)
+    sync_directory(staging.parent)
     print('BUNDLE_INSTALLED')
