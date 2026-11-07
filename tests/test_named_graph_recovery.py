@@ -53,6 +53,11 @@ class NamedGraphRecoveryTests(TestCase):
                     'Destination':'/var/lib/memgraph','Type':'volume','Name':'memgraph-data-v313-20261011','RW':True}]),
                     'rolled-back','','']
                 self.assertEqual(recover_named_graph_offline(request,recovery),'rolled-back')
+                command = recovery.run.call_args_list[1].args[0]
+                self.assertIn('--storage-wal-enabled=true',command)
+                self.assertIn('--storage-wal-file-flush-every-n-tx=1',command)
+                self.assertIn('--storage-snapshot-interval-sec=300',command)
+                self.assertIn('--storage-snapshot-on-exit=false',command)
             with patch('logbook.fixture_recovery_release.NAMED_GUARD_DIR',root), \
                  patch('logbook.fixture_recovery_release.boot_id',return_value='new'):
                 self.assertEqual(verify_named_graph_receipt(request)['outcome'],'rolled-back')
