@@ -103,3 +103,68 @@ class NamedGraphRecoveryTests(TestCase):
                 authorize_named_graph_restart(request,recovery)
                 guard.return_value.allow.assert_called_once_with('inactive')
                 restarted.assert_called_once_with(request,recovery,_named=True)
+
+    def test_reboot_before_journal_records_truthful_prestart_outcome(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            request = {'private_dir':str(root),'boot_guard_service':'memgraph.service',
+                       'boot_guard_dir':str(root),'journal':str(root/'journal'),'unit':'unit',
+                       'container_id':'a'*64,'pid':12,'port':7697,'recovery_file':'/bundle/logbook/recovery.py'}
+            expected = {'container':request['container_id'],'pid':12,'unit':'unit','service':'memgraph.service',
+                        'guard_dir':str(root),'journal':request['journal'],'port':7697,'recovery_file':request['recovery_file']}
+            target = root/'boot-target.json'
+            target.write_text(json.dumps({**expected,'volume':'memgraph-data-v313-20261011',
+                                          'image':'sha256:'+'b'*64,'boot_id':'old'}))
+            target.chmod(0o600)
+            recovery = Mock()
+            recovery.run.return_value = ''
+            with patch('logbook.fixture_offline_recovery.NAMED_GUARD_DIR',root), \
+                 patch('logbook.fixture_offline_recovery.boot_id',return_value='new'), \
+                 patch('logbook.fixture_offline_recovery.MemgraphBootGuard') as guard:
+                guard.return_value.marker=root/'start-allowed'
+                self.assertEqual(recover_named_graph_offline(request,recovery),'not-retained')
+                self.assertFalse((root/'journal').exists())
+                receipt=json.loads((root/'offline-outcome.json').read_text())
+                self.assertEqual(receipt['phase'],'before-journal')
+                self.assertIsNone(receipt['batch'])
+            with patch('logbook.fixture_recovery_release.NAMED_GUARD_DIR',root), \
+                 patch('logbook.fixture_recovery_release.boot_id',return_value='new'):
+                self.assertEqual(verify_named_graph_receipt(request)['outcome'],'not-retained')
+                (root/'journal').touch()
+                with self.assertRaises(ValueError):
+                    verify_named_graph_receipt(request)
+
+    def test_prejournal_recovery_refuses_completion_or_busy_volume(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            request={'private_dir':str(root),'boot_guard_service':'memgraph.service',
+                     'boot_guard_dir':str(root),'journal':str(root/'journal'),'unit':'unit',
+                     'container_id':'a'*64,'pid':12,'port':7697,'recovery_file':'/bundle/logbook/recovery.py'}
+            record={'container':request['container_id'],'pid':12,'unit':'unit','service':'memgraph.service',
+                    'guard_dir':str(root),'journal':request['journal'],'port':7697,'recovery_file':request['recovery_file'],
+                    'volume':'memgraph-data-v313-20261011','image':'sha256:'+'b'*64,'boot_id':'old'}
+            (root/'boot-target.json').write_text(json.dumps(record))
+            (root/'boot-target.json').chmod(0o600)
+            with patch('logbook.fixture_offline_recovery.NAMED_GUARD_DIR',root), \
+                 patch('logbook.fixture_offline_recovery.boot_id',return_value='new'), \
+                 patch('logbook.fixture_offline_recovery.MemgraphBootGuard') as guard:
+                guard.return_value.marker=root/'start-allowed'
+                (root/'journal.complete').touch()
+                with self.assertRaises(ValueError):
+                    recover_named_graph_offline(request,Mock())
+                (root/'journal.complete').unlink()
+                recovery=Mock()
+                recovery.run.return_value='busy'
+                with self.assertRaisesRegex(ValueError,'in use'):
+                    recover_named_graph_offline(request,recovery)
+                (root/'boot-target.json').write_text(json.dumps({**record, 'volume':'wrong'}))
+                with self.assertRaisesRegex(ValueError,'storage'):
+                    recover_named_graph_offline(request,Mock())
+                (root/'boot-target.json').write_text(json.dumps(record))
+                def changed_during_check(_command):
+                    (root/'journal').touch()
+                    return ''
+                recovery.run.side_effect=changed_during_check
+                with self.assertRaisesRegex(ValueError,'appeared'):
+                    recover_named_graph_offline(request,recovery)
+            self.assertFalse((root/'offline-outcome.json').exists())

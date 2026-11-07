@@ -39,16 +39,26 @@ def verify_offline_receipt(request: dict, *, _named: bool = False) -> dict:
     record = read_private_json(directory/'boot-target.json')
     result = read_private_json(directory/'offline-outcome.json')
     journal = Path(request['journal'])
-    batch_record = read_private_json(journal)
-    batch = batch_record.get('batch', '')
     expected = {'container':request['container_id'], 'pid':request['pid'], 'unit':request['unit'],
                 'service':request['boot_guard_service'], 'guard_dir':request['boot_guard_dir'],
                 'journal':request['journal'], 'port':request['port'], 'recovery_file':request['recovery_file']}
     volume, image = record.get('volume', ''), record.get('image', '')
     if (any(record.get(k) != v for k, v in expected.items()) or not record.get('boot_id')
             or record['boot_id'] == boot_id() or not _volume_valid(volume, _named)
-            or not re.fullmatch(r'sha256:[a-f0-9]{64}', image) or batch_record.get('schema') != 1
-            or str(uuid.UUID(batch)) != batch):
+            or not re.fullmatch(r'sha256:[a-f0-9]{64}', image)):
+        raise ValueError('invalid offline recovery target')
+    if _named and result.get('phase') == 'before-journal':
+        from logbook.graph_maintenance_worker import private_directory
+        private_directory(journal.parent)
+        if (os.path.lexists(journal) or os.path.lexists(journal.with_name(journal.name+'.complete'))
+                or os.path.lexists(journal.with_name(journal.name+'.outcome'))
+                or result != {**expected, 'volume':volume, 'boot_id':boot_id(),
+                              'outcome':'not-retained', 'batch':None, 'phase':'before-journal'}):
+            raise ValueError('invalid pre-journal receipt')
+        return {'volume':volume, 'image':image, 'outcome':'not-retained'}
+    batch_record = read_private_json(journal)
+    batch = batch_record.get('batch', '')
+    if batch_record.get('schema') != 1 or str(uuid.UUID(batch)) != batch:
         raise ValueError('invalid offline recovery target')
     outcome = result.get('outcome')
     completed = os.path.lexists(journal.with_name(journal.name+'.complete'))
