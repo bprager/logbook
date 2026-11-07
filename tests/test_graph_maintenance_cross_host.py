@@ -424,6 +424,7 @@ class RejectedLaunchTests(unittest.TestCase):
         events = []
         with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
              patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.verify_fixture_binding'), \
              patch('logbook.graph_maintenance_remote.FixtureBootGuard') as guard, \
              patch('logbook.graph_maintenance_remote.stage_plan', side_effect=lambda *_:events.append('stage')), \
              patch('sys.stdin', io.StringIO(json.dumps(request))), \
@@ -444,6 +445,7 @@ class RejectedLaunchTests(unittest.TestCase):
         outcome.update({'batch':batch, 'outcome':'retained'})
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.verify_fixture_binding'), \
              patch('logbook.graph_maintenance_remote.FixtureBootGuard') as guard, \
              patch('logbook.graph_maintenance_remote.recovery_confirmed', side_effect=[False,True]), \
              patch('logbook.graph_maintenance_remote.read_private_json', side_effect=[record,outcome]), \

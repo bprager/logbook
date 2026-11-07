@@ -9,6 +9,27 @@ from pathlib import Path
 from typing import Callable
 
 
+def verify_fixture_binding(recovery, service: str) -> None:
+    if not re.fullmatch(r'logbook-fixture-[a-z0-9-]+\.service', service):
+        raise ValueError('fixture binding requires fixture service')
+    name = service.removesuffix('.service')
+    pid = recovery.run(['systemctl', 'show', service, '-p', 'MainPID', '--value']).strip()
+    if not pid.isdigit() or int(pid) < 1:
+        raise ValueError('fixture service binding invalid')
+    executable = recovery.run(['readlink', '-f', '/proc/'+pid+'/exe']).strip()
+    arguments = recovery.run(['cat', '/proc/'+pid+'/cmdline']).split('\0')
+    if (executable != '/usr/bin/docker' or arguments[:4] != ['/usr/bin/docker', 'run', '--name', name]
+            or arguments.count('--name') != 1 or any(arg.startswith('--name=') for arg in arguments)):
+        raise ValueError('fixture service binding invalid')
+    target = recovery.run(['docker', 'inspect', '--format',
+                           '{{.Id}} {{.Name}} {{.State.Pid}} {{.State.Running}}',
+                           recovery.container_id]).strip()
+    if target != f'{recovery.container_id} /{name} {recovery.pid} true':
+        raise ValueError('fixture container binding invalid')
+    if recovery.run(['systemctl', 'show', service, '-p', 'MainPID', '--value']).strip() != pid:
+        raise ValueError('fixture service binding changed')
+
+
 class FixtureBootGuard:
     def __init__(self, directory: Path, service: str, run: Callable[[list[str]], str]):
         if not re.fullmatch(r'logbook-fixture-[a-z0-9-]+\.service', service):

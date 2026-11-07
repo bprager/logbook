@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Check that a guarded fixture service supervises its selected graph container.
+
 - Add an experimental fixture startup guard for interrupted graph maintenance.
 
 - Package fixture repair dependencies from checksum-pinned distribution wheels.

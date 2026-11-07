@@ -265,5 +265,5 @@ its private options. The service must be an active `logbook-fixture-*.service`
 with a positive `ConditionPathExists` pointing to `start-allowed` in the private
 guard directory. Staging removes that file; a confirmed outcome restores it.
 A restart during a run keeps that fixture service stopped. Recovery after a host
-restart remains manual and unimplemented, and the service-to-container link is
-not established by this check. This is not a guard for the production graph.
+restart remains manual and unimplemented, and the fixture service must supervise a Docker run process whose name, container ID and
+process ID match the target. Direct Docker starts and privileged changes remain outside this check. This is not a guard for the production graph.

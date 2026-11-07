@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from logbook.fixture_boot_guard import FixtureBootGuard  # noqa: E402
+from logbook.fixture_boot_guard import FixtureBootGuard, verify_fixture_binding  # noqa: E402
 from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E402
 from logbook.graph_maintenance_launcher import DockerLaunch, StartupRejected  # noqa: E402
 from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
@@ -50,11 +50,13 @@ def main() -> None:
         elif os.path.lexists(completion):
             raise ValueError("unexpected completion receipt")
         if request.get('sandbox_only'):
+            verify_fixture_binding(recovery, request['boot_guard_service'])
             FixtureBootGuard(Path(request['boot_guard_dir']), request['boot_guard_service'], recovery.run).allow()
         print(outcome)
     elif sys.argv[1] == "stage":
         launcher.verify_target()
         if request.get('sandbox_only'):
+            verify_fixture_binding(recovery, request['boot_guard_service'])
             FixtureBootGuard(Path(request['boot_guard_dir']), request['boot_guard_service'], recovery.run).disarm()
         stage_plan(request, Path(__file__).resolve().parent.parent)
         print("STAGED")
