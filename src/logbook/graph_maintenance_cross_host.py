@@ -14,6 +14,7 @@ from typing import Callable
 from logbook.config import AppConfig
 from logbook.graph_maintenance_launcher import StartupRejected, with_logbook_lock_descriptors, with_logbook_locks
 from logbook.graph_maintenance_recovery import DockerRecovery
+from logbook.processing_restart_guard import arm_guard, clear_guard
 
 
 class SshMaintenance:
@@ -142,6 +143,7 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
     def operation(pipeline_fd: int, graph_fd: int) -> None:
         if remote.recovered():
             raise ValueError("maintenance unit already reports recovery")
+        arm_guard(config.processing_root, unit)
         lease = subprocess.Popen(
             [sys.executable, "-m", "logbook.graph_maintenance_lease", str(pipeline_fd), str(graph_fd)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -151,14 +153,16 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
         try:
             lease.stdin.write(json.dumps({"host": remote.host, "identity": str(remote.identity),
                                           "entrypoint": str(remote.entrypoint),
-                                          "request": remote.request}) + "\n")
-            lease.stdin.close()
+                                          "request": remote.request, "processing_root": str(config.processing_root),
+                                          "window": unit}) + "\n")
+            lease.stdin.flush()
             ready, _, _ = select.select([lease.stdout], [], [], 5)
             if not ready or lease.stdout.readline().strip() != "READY":
                 raise RuntimeError("independent lease did not start")
         except Exception:
             lease.terminate()
             lease.wait(timeout=5)
+            clear_guard(config.processing_root, unit)
             raise
         failure = None
         try:
@@ -166,9 +170,12 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
         except StartupRejected:
             lease.terminate()
             lease.wait(timeout=5)
+            clear_guard(config.processing_root, unit)
             raise
         except Exception as error:
             failure = error
+        lease.stdin.write("CHECK\n")
+        lease.stdin.close()
         try:
             result = lease.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as error:

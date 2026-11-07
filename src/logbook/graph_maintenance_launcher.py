@@ -18,12 +18,14 @@ class StartupRejected(ValueError):
     """Validation rejected startup before any remote state was changed."""
 
 
-def with_logbook_lock_descriptors(config: AppConfig, operation: Callable[[int, int], T]) -> T:
+def with_logbook_lock_descriptors(
+    config: AppConfig, operation: Callable[[int, int], T], *, allow_pending: bool = False
+) -> T:
     """Hold both Mimir locks and lend their descriptors to the caller."""
     config.processing_root.mkdir(parents=True, exist_ok=True)
     with (config.processing_root / "pipeline.lock").open("a") as pipeline:
         fcntl.flock(pipeline, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        with GraphWriteLock(config.processing_root) as graph:
+        with GraphWriteLock(config.processing_root, allow_pending=allow_pending) as graph:
             return operation(pipeline.fileno(), graph.fileno())
 
 

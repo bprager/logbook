@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add an experimental durable processing stop marker for fixture repair recovery.
+
 - Preserve verified completed fixture repair batches across a graph-host restart.
 
 - Reopen a recovered fixture graph and release its lease after target and health checks.

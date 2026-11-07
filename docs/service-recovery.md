@@ -264,9 +264,8 @@ The fixture operator also requires `boot_guard_dir` and `boot_guard_service` in
 its private options. The service must be an active `logbook-fixture-*.service`
 with a positive `ConditionPathExists` pointing to `start-allowed` in the private
 guard directory. Staging removes that file; a confirmed outcome restores it.
-A restart during a run keeps that fixture service stopped. Recovery after a host
-restart remains manual and unimplemented, and the fixture service must supervise a Docker run process whose name, container ID and
-process ID match the target. Direct Docker starts and privileged changes remain outside this check. This is not a guard for the production graph.
+A restart during a run keeps that fixture service stopped. The fixture service must
+supervise a Docker run process whose name, container ID and process ID match the target. Direct Docker starts and privileged changes remain outside this check. This is not a guard for the production graph.
 
 For fixture runs staged with this version, the private staging directory records
 the original named fixture volume, image, boot and target before writes. After a
@@ -284,5 +283,21 @@ authorize PRIVATE_STATE` checks the record and unused volume, restores fixture
 startup permission and starts the service. The lease holder releases its locks
 only after it independently confirms the restarted fixture service, container,
 volume, image and graph response. If confirmation fails, the lease remains held.
-This is experimental and fixture-only; it does not restore a lease lost when the
-processing host itself restarts.
+For the experimental fixture path, the processing host also writes a durable
+`graph-maintenance.pending` marker under its processing root while both processing
+locks are held and before launching remote work. Updated processing and cooperating
+graph writers refuse work while it exists. The independent lease holder clears it
+only after confirmed recovery and a validated outcome. If the processing host or
+lease holder restarts, the marker remains: after the fixture is confirmed recovered,
+run `python -m logbook.operator_entry release ENV PRIVATE_STATE` on the processing
+host to recheck the same fixture and clear the matching marker while holding both
+locks. Unconfirmed recovery stays blocked. A failure before launch may also leave a
+marker requiring operator investigation.
+
+The processing root must be on storage that survives restart; temporary directories
+may be cleared at boot and do not provide this protection.
+
+The marker protects only updated cooperating code using the same processing root;
+older deployments, other graph clients, direct filesystem changes and privileged
+operators can bypass it. It does not restore the process lease or authorize
+production use. Install and verify the updated processing code before relying on it.

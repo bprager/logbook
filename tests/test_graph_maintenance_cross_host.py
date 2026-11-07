@@ -13,6 +13,7 @@ from logbook.graph_maintenance_cross_host import (
 )
 from logbook.graph_maintenance_remote import main
 from logbook.graph_maintenance_lease import main as lease_main
+from logbook.processing_restart_guard import arm_guard, clear_guard, require_clear_guard
 
 
 class CrossHostMaintenanceTests(unittest.TestCase):
@@ -193,6 +194,7 @@ class CrossHostMaintenanceTests(unittest.TestCase):
                             coordinate_leased_window(config, remote, timeout_seconds=1)
                     else:
                         coordinate_leased_window(config, remote, timeout_seconds=1)
+                clear_guard(config.processing_root, remote.request["unit"])
             child = Mock(stdin=io.StringIO(), stdout=io.StringIO("READY\n"))
             child.wait.return_value = 0
             remote.launch.side_effect = ConnectionError("disconnected")
@@ -201,17 +203,38 @@ class CrossHostMaintenanceTests(unittest.TestCase):
                 with self.assertRaisesRegex(ConnectionError, "disconnected"):
                     coordinate_leased_window(config, remote, timeout_seconds=1)
 
+    def test_lease_keeps_guard_when_parent_does_not_start_checking(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            arm_guard(root, 'window')
+            payload = json.dumps({'host':'odin', 'identity':'/key', 'entrypoint':'/entry',
+                                  'request':{}, 'processing_root':str(root), 'window':'window'}) + "\n"
+            with patch("sys.argv", ["lease", "3", "4"]), patch("sys.stdin", io.StringIO(payload)), \
+                 patch("sys.stdout", new_callable=io.StringIO), \
+                 patch("logbook.graph_maintenance_lease.os.fstat"), \
+                 patch("logbook.graph_maintenance_lease.SshMaintenance") as remote:
+                lease_main()
+                remote.return_value.recovered.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError, 'unresolved'):
+                require_clear_guard(root)
+
     def test_lease_waits_through_errors_until_recovery(self):
-        payload = '{"host":"odin","identity":"/key","entrypoint":"/entry","request":{}}\n'
-        with patch("sys.argv", ["lease", "3", "4"]), patch("sys.stdin", io.StringIO(payload)), \
-             patch("sys.stdout", new_callable=io.StringIO) as out, \
-             patch("logbook.graph_maintenance_lease.os.fstat") as fstat, \
-             patch("logbook.graph_maintenance_lease.time.sleep"), \
-             patch("logbook.graph_maintenance_lease.SshMaintenance") as remote:
-            remote.return_value.recovered.side_effect = [ConnectionError(), False, True]
-            lease_main()
-            self.assertEqual(out.getvalue(), "READY\n")
-            self.assertEqual(fstat.call_count, 2)
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            arm_guard(root, "window")
+            payload = json.dumps({"host":"odin", "identity":"/key", "entrypoint":"/entry",
+                                  "request":{}, "processing_root":str(root), "window":"window"}) + "\nCHECK\n"
+            with patch("sys.argv", ["lease", "3", "4"]), patch("sys.stdin", io.StringIO(payload)), \
+                 patch("sys.stdout", new_callable=io.StringIO) as out, \
+                 patch("logbook.graph_maintenance_lease.os.fstat") as fstat, \
+                 patch("logbook.graph_maintenance_lease.time.sleep"), \
+                 patch("logbook.graph_maintenance_lease.SshMaintenance") as remote:
+                remote.return_value.recovered.side_effect = [ConnectionError(), False, True]
+                lease_main()
+                self.assertEqual(out.getvalue(), "READY\n")
+                self.assertEqual(fstat.call_count, 2)
+                remote.return_value.outcome.assert_called_once()
+                require_clear_guard(root)
         with patch("sys.argv", ["lease"]), self.assertRaises(ValueError):
             lease_main()
 

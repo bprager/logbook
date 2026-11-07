@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from logbook.graph_maintenance_cross_host import SshMaintenance
+from logbook.processing_restart_guard import clear_guard
 
 
 def main() -> None:
@@ -19,9 +20,13 @@ def main() -> None:
     remote = SshMaintenance(payload["host"], Path(payload["identity"]),
                             Path(payload["entrypoint"]), payload["request"])
     print("READY", flush=True)
+    if sys.stdin.readline().strip() != "CHECK":
+        return
     while True:
         try:
             if remote.recovered():
+                remote.outcome()
+                clear_guard(Path(payload["processing_root"]), payload["window"])
                 return
         except Exception:
             pass

@@ -10,6 +10,8 @@ from pathlib import Path
 
 from logbook.config import AppConfig, load_app_config
 from logbook.graph_maintenance_cross_host import SshMaintenance
+from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors
+from logbook.processing_restart_guard import clear_guard
 from logbook.graph_maintenance_recovery import DockerRecovery
 from logbook.graph_maintenance_worker import private_directory, read_private_json
 from logbook.operator_bundle import build_revision_bundle, provision_bundle, verify_checkout
@@ -54,6 +56,31 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
     return stage_plan_and_run(config, job_id, remote, timeout_seconds=options['seconds']+270)
 
 
+def release_processing_guard(config: AppConfig, remote: SshMaintenance) -> None:
+    """Clear a matching fixture guard only under both locks and after confirmation."""
+    request = remote.request
+    if request.get('sandbox_only') is not True:
+        raise ValueError('fixture state required')
+    unit = request.get('unit')
+    if not isinstance(unit, str):
+        raise ValueError('maintenance unit required')
+
+    def release(_pipeline: int, _graph: int) -> None:
+        if not remote.recovered():
+            raise RuntimeError('fixture recovery unconfirmed')
+        remote.outcome()
+        clear_guard(config.processing_root, unit)
+
+    with_logbook_lock_descriptors(config, release, allow_pending=True)
+
+
+def release_fixture_guard(config: AppConfig, state: Path) -> str:
+    saved = read_private_json(state)
+    remote = SshMaintenance(saved['host'], Path(saved['identity']), Path(saved['entrypoint']), saved['request'])
+    release_processing_guard(config, remote)
+    return 'released'
+
+
 def fixture_recovery(state: Path, action: str) -> str:
     saved = read_private_json(state)
     request = saved['request']
@@ -78,7 +105,9 @@ def fixture_recovery(state: Path, action: str) -> str:
 
 
 if __name__ == '__main__':  # pragma: no cover
-    if len(sys.argv) == 3 and sys.argv[1] in {'retry', 'status', 'offline', 'authorize'}:
+    if len(sys.argv) == 4 and sys.argv[1] == 'release':
+        print(release_fixture_guard(load_app_config(Path(sys.argv[2])), Path(sys.argv[3])))
+    elif len(sys.argv) == 3 and sys.argv[1] in {'retry', 'status', 'offline', 'authorize'}:
         print(fixture_recovery(Path(sys.argv[2]), sys.argv[1]))
     elif len(sys.argv) == 5:
         print(run_fixture(load_app_config(Path(sys.argv[1])), int(sys.argv[2]),

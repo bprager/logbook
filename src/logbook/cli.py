@@ -30,6 +30,7 @@ from logbook.dead_letters import (
 from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
 from logbook.entity_linker import link_daily_log_entities
 from logbook.graph_write_lock import GraphWriteLock
+from logbook.processing_restart_guard import require_clear_guard
 from logbook.insights import extract_insights
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
@@ -885,6 +886,11 @@ def _process_mounted_recorder(env_path: Path, *, copy_recorder: bool = True) -> 
         except BlockingIOError:
             print("pipeline_busy=yes")
             return 0
+        try:
+            require_clear_guard(config.processing_root)
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            return 2
         result = _process_ingestion_pipeline(config, env_path, copy_recorder=copy_recorder)
         pending_graph = pending_remote_graph_jobs(config)
         if pending_graph:
@@ -1998,7 +2004,7 @@ def _with_graph_write_lock(env_path: Path, operation: Callable[[], int]) -> int:
     except BlockingIOError:
         print("graph_write_busy=yes", file=sys.stderr)
         return 2
-    except (ConfigError, OSError) as error:
+    except (ConfigError, OSError, RuntimeError) as error:
         print(f"graph_write_lock_error: {error}", file=sys.stderr)
         return 2
     try:
