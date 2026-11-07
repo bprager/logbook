@@ -125,7 +125,10 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
             recovery.run(['docker', 'run', '-d', '--rm', '--name', name, '--network=none',
                           '--cpus=1', '--memory=1g', '--memory-swap=1g',
                           '--mount', 'type=volume,src='+volume+',dst=/var/lib/memgraph',
-                          image, '--bolt-port='+str(request['port'])])
+                          image, '--bolt-port='+str(request['port']),
+                          *(['--storage-wal-enabled=true', '--storage-wal-file-flush-every-n-tx=1',
+                             '--storage-snapshot-interval-sec=300', '--storage-snapshot-on-exit=false']
+                            if _named else [])])
             details = recovery.run(['docker', 'inspect', '--format',
                                     '{{.State.Pid}} {{.State.Running}} {{.HostConfig.NetworkMode}}', name]).split()
             if len(details) != 3 or not details[0].isdigit() or details[1:] != ['true', 'none']:
