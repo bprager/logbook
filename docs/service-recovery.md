@@ -273,7 +273,9 @@ the original named fixture volume, image, boot and target before writes. After a
 host restart, `python -m logbook.operator_entry offline PRIVATE_STATE` can use
 a temporary network-isolated container on that recorded volume to roll back an
 incomplete journaled batch. It refuses a running service, open startup guard,
-active volume user, changed target, completed batch or unconfirmed rollback.
+active volume user, changed target, invalid completion receipt or unconfirmed outcome.
+A completed batch is retained only after its target-bound receipt and graph records
+are verified; an incomplete batch is rolled back.
 The recovery container is stopped before the outcome is recorded.
 
 Offline recovery leaves startup permission absent and the processing lease held.

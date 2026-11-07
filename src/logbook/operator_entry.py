@@ -69,7 +69,7 @@ def fixture_recovery(state: Path, action: str) -> str:
         return 'started'
     if action == 'offline':
         result = remote.invoke('offline')
-        if result not in {'rolled-back', 'not-retained'}:
+        if result not in {'rolled-back', 'not-retained', 'retained'}:
             raise RuntimeError('offline recovery outcome unconfirmed')
         return result
     if action == 'status':

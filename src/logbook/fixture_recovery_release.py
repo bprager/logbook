@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from logbook.fixture_boot_guard import FixtureBootGuard, verify_fixture_binding
 from logbook.fixture_offline_recovery import boot_id
-from logbook.graph_maintenance_worker import read_private_json
+from logbook.graph_maintenance_worker import completion_matches, read_private_json
 
 
 def verify_offline_receipt(request: dict) -> dict:
@@ -30,10 +30,14 @@ def verify_offline_receipt(request: dict) -> dict:
     if (any(record.get(k) != v for k, v in expected.items()) or not record.get('boot_id')
             or record['boot_id'] == boot_id() or not re.fullmatch(r'logbook-fixture-[a-z0-9-]+', volume)
             or not re.fullmatch(r'sha256:[a-f0-9]{64}', image) or batch_record.get('schema') != 1
-            or str(uuid.UUID(batch)) != batch or os.path.lexists(journal.with_name(journal.name+'.complete'))):
+            or str(uuid.UUID(batch)) != batch):
         raise ValueError('invalid offline recovery target')
     outcome = result.get('outcome')
-    if (outcome not in {'rolled-back', 'not-retained'} or result != {
+    completed = os.path.lexists(journal.with_name(journal.name+'.complete'))
+    if (completed != (outcome == 'retained')
+            or (completed and not completion_matches(journal, request, batch))):
+        raise ValueError('invalid offline completion')
+    if (outcome not in {'rolled-back', 'not-retained', 'retained'} or result != {
             **expected, 'volume':volume, 'boot_id':boot_id(), 'outcome':outcome, 'batch':batch}):
         raise ValueError('invalid offline recovery receipt')
     return {'volume':volume, 'image':image, 'outcome':outcome}

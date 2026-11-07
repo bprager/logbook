@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from logbook.fixture_boot_guard import FixtureBootGuard
-from logbook.graph_maintenance_worker import private_directory, read_private_json
+from logbook.graph_maintenance_worker import completion_matches, private_directory, read_private_json
 
 
 def boot_id() -> str:
@@ -62,12 +62,14 @@ def recover_offline(request: dict, recovery) -> str:
         raise ValueError('fixture startup guard must be closed')
     guard.verify('inactive')
     journal = Path(request['journal'])
-    if os.path.lexists(journal.with_name(journal.name+'.complete')):
-        raise ValueError('completed fixture requires separate verification')
+    completed = os.path.lexists(journal.with_name(journal.name+'.complete'))
     journal_record = read_private_json(journal)
     batch = journal_record.get('batch', '')
     if journal_record.get('schema') != 1 or str(uuid.UUID(batch)) != batch:
         raise ValueError('invalid fixture recovery journal')
+    if completed and not completion_matches(journal, request, batch):
+        raise ValueError('fixture completion does not match target')
+    mode = 'retain' if completed else 'rollback'
     if os.path.lexists(directory/'offline-outcome.json'):
         raise ValueError('fixture offline outcome already recorded')
     volume, image = record.get('volume', ''), record.get('image', '')
@@ -95,8 +97,8 @@ def recover_offline(request: dict, recovery) -> str:
             bundle = Path(request['recovery_file']).parent.parent
             result = recovery.run(['nsenter', '-t', details[0], '-n', '/usr/bin/env', 'PYTHONPATH='+str(bundle),
                                    '/usr/bin/python3', '-m', 'logbook.fixture_offline_worker',
-                                   request['journal'], str(directory), str(request['port'])], timeout=120).strip()
-            if result not in {'rolled-back', 'not-retained'}:
+                                   request['journal'], str(directory), str(request['port']), mode], timeout=120).strip()
+            if result not in ({'retained'} if completed else {'rolled-back', 'not-retained'}):
                 raise ValueError('fixture rollback outcome unconfirmed')
         finally:
             recovery.run(['docker', 'stop', '--time', '30', name], timeout=45)

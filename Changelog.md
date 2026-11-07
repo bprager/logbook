@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Preserve verified completed fixture repair batches across a graph-host restart.
+
 - Reopen a recovered fixture graph and release its lease after target and health checks.
 
 - Add a fixture-only isolated rollback operation after a graph host restart.

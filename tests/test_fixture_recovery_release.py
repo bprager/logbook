@@ -131,3 +131,24 @@ class FixtureRecoveryReleaseTests(unittest.TestCase):
                  patch('logbook.fixture_recovery_release.fixture_restarted',side_effect=ValueError('not ready')):
                 with self.assertRaisesRegex(ValueError,'not ready'):
                     authorize_fixture_restart(request,recovery)
+
+    def test_retained_outcome_requires_original_completion_receipt(self):
+        from logbook.graph_maintenance_worker import completion_value
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            request=self.state(root)
+            batch='00000000-0000-0000-0000-000000000001'
+            receipt=root/'offline-outcome.json'
+            data=json.loads(receipt.read_text())
+            data['outcome']='retained'
+            receipt.write_text(json.dumps(data))
+            with patch('logbook.fixture_recovery_release.boot_id',return_value='new'):
+                with self.assertRaisesRegex(ValueError,'completion'):
+                    verify_offline_receipt(request)
+                completion=root/'journal.complete'
+                completion.write_text(json.dumps(completion_value(request,batch)))
+                completion.chmod(0o600)
+                self.assertEqual(verify_offline_receipt(request)['outcome'],'retained')
+                completion.write_text(json.dumps({**completion_value(request,batch),'pid':999}))
+                with self.assertRaisesRegex(ValueError,'completion'):
+                    verify_offline_receipt(request)

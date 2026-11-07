@@ -172,3 +172,30 @@ class FixtureOfflineTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         recover_offline(request, recovery)
                 self.assertFalse((root/'offline-outcome.json').exists())
+
+    def test_completed_fixture_requires_matching_receipt_and_retained_result(self):
+        from logbook.graph_maintenance_worker import completion_value
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            request = self.make_state(root)
+            batch = '00000000-0000-0000-0000-000000000001'
+            completion = root/'journal.complete'
+            completion.write_text(json.dumps(completion_value(request,batch)))
+            completion.chmod(0o600)
+            mount = json.dumps([{'Destination':'/var/lib/memgraph','Type':'volume',
+                                 'Name':'logbook-fixture-data','RW':True}])
+            recovery = Mock()
+            recovery.run.side_effect = ['', 'id', '321 true none', mount, 'retained', '', '']
+            with patch('logbook.fixture_offline_recovery.boot_id', return_value='boot-two'), \
+                 patch('logbook.fixture_offline_recovery.FixtureBootGuard') as guard:
+                guard.return_value.marker = root/'start-allowed'
+                self.assertEqual(recover_offline(request, recovery), 'retained')
+            self.assertEqual(recovery.run.call_args_list[4].args[0][-1], 'retain')
+            self.assertEqual(json.loads((root/'offline-outcome.json').read_text())['outcome'], 'retained')
+            (root/'offline-outcome.json').unlink()
+            completion.write_text(json.dumps({**completion_value(request,batch),'pid':999}))
+            with patch('logbook.fixture_offline_recovery.boot_id', return_value='boot-two'), \
+                 patch('logbook.fixture_offline_recovery.FixtureBootGuard') as guard:
+                guard.return_value.marker = root/'start-allowed'
+                with self.assertRaisesRegex(ValueError, 'completion'):
+                    recover_offline(request, Mock())

@@ -30,3 +30,25 @@ class FixtureOfflineWorkerTests(unittest.TestCase):
             driver.verify_connectivity.side_effect = ServiceUnavailable('offline')
             with self.assertRaises(ServiceUnavailable):
                 rollback(Path('/journal'), Path('/private'), 7697)
+
+    def test_completed_batch_is_verified_and_retained(self):
+        driver = MagicMock()
+        driver.__enter__.return_value = driver
+        with patch('logbook.fixture_offline_worker.read_private_json', return_value={'batch':'fixture'}), \
+             patch('logbook.fixture_offline_worker.GraphDatabase.driver', return_value=driver), \
+             patch('logbook.fixture_offline_worker.GraphWriteLock'), \
+             patch('logbook.fixture_offline_worker.rollback_batch', return_value='verified') as verify:
+            self.assertEqual(rollback(Path('/journal'), Path('/private'), 7697, 'retain'), 'retained')
+            self.assertTrue(verify.call_args.kwargs['verify_only'])
+
+    def test_invalid_mode_or_unverified_batch_fails(self):
+        with self.assertRaisesRegex(ValueError, 'mode'):
+            rollback(Path('/journal'), Path('/private'), 7697, 'unknown')
+        driver = MagicMock()
+        driver.__enter__.return_value = driver
+        with patch('logbook.fixture_offline_worker.read_private_json', return_value={'batch':'fixture'}), \
+             patch('logbook.fixture_offline_worker.GraphDatabase.driver', return_value=driver), \
+             patch('logbook.fixture_offline_worker.GraphWriteLock'), \
+             patch('logbook.fixture_offline_worker.rollback_batch', return_value='absent'):
+            with self.assertRaisesRegex(ValueError, 'unconfirmed'):
+                rollback(Path('/journal'), Path('/private'), 7697, 'retain')
