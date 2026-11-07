@@ -56,6 +56,37 @@ class OperatorBundleTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 install_bundle(payload, destination, hashlib.sha256(payload).hexdigest())
 
+    def test_install_syncs_contents_and_directories_before_return(self):
+        import os
+        import stat
+        from unittest.mock import patch
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = archive('logbook/nested/example.py')
+            synced = []
+            real_fsync = os.fsync
+            def record_sync(fd):
+                info = os.fstat(fd)
+                synced.append((stat.S_ISDIR(info.st_mode), info.st_size))
+                real_fsync(fd)
+            with patch('logbook.operator_bundle_bootstrap.os.fsync', side_effect=record_sync):
+                install_bundle(payload, root/'bundle', hashlib.sha256(payload).hexdigest())
+            files = [size for is_dir, size in synced if not is_dir]
+            self.assertIn(len(b'fixture'), files)
+            self.assertIn(65, files)
+            self.assertGreaterEqual(sum(is_dir for is_dir, _ in synced), 3)
+            self.assertTrue(synced[-1][0])
+
+    def test_sync_failure_does_not_accept_partial_bundle(self):
+        from unittest.mock import patch
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = archive('logbook/example.py')
+            with patch('logbook.operator_bundle_bootstrap.os.fsync', side_effect=OSError('sync failed')):
+                with self.assertRaisesRegex(OSError, 'sync failed'):
+                    install_bundle(payload, root/'bundle', hashlib.sha256(payload).hexdigest())
+            self.assertFalse((root/'bundle').exists())
+
     def test_rejects_wrong_digest_and_unsafe_paths(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
