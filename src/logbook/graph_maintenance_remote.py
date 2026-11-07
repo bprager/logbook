@@ -10,8 +10,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from logbook.fixture_boot_guard import FixtureBootGuard, verify_fixture_binding  # noqa: E402
-from logbook.fixture_offline_recovery import record_fixture_storage, recover_offline  # noqa: E402
-from logbook.fixture_recovery_release import authorize_fixture_restart, fixture_restarted, verify_offline_receipt  # noqa: E402
+from logbook.fixture_offline_recovery import record_fixture_storage, recover_offline, recover_named_graph_offline  # noqa: E402
+from logbook.fixture_recovery_release import (authorize_fixture_restart, fixture_restarted, verify_offline_receipt,
+                                              authorize_named_graph_restart, verify_named_graph_receipt, _validate_named)  # noqa: E402
 from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E402
 from logbook.graph_maintenance_launcher import DockerLaunch, StartupRejected  # noqa: E402
 from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
@@ -20,7 +21,7 @@ from logbook.graph_maintenance_worker import completion_matches, completion_valu
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize"}:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome"}:
         raise ValueError("expected launch or status")
     request = json.load(sys.stdin)
     recovery = DockerRecovery(request["container_id"], request["pid"],
@@ -28,6 +29,25 @@ def main() -> None:
     launcher = DockerLaunch(recovery, Path(request["private_dir"]), Path(request["worker"]),
                             Path(request["recovery_file"]), request["seconds"],
                             Path(request["recovery_worker"]) if request.get("recovery_worker") else None)
+    if sys.argv[1].startswith('named-'):
+        if request.get('profile') != 'named-graph' or request.get('sandbox_only') is True:
+            raise ValueError('named graph recovery state required')
+        _validate_named(request)
+        if sys.argv[1] == 'named-offline':
+            print(recover_named_graph_offline(request, recovery))
+        elif sys.argv[1] == 'named-authorize':
+            authorize_named_graph_restart(request, recovery)
+            print('STARTED')
+        else:
+            try:
+                confirmed = fixture_restarted(request, recovery, _named=True)
+            except Exception:
+                confirmed = False
+            if sys.argv[1] == 'named-status':
+                print('RECOVERED' if confirmed else 'PENDING')
+            else:
+                print(verify_named_graph_receipt(request)['outcome'] if confirmed else 'PENDING')
+        return
     if request.get('sandbox_only') and sys.argv[1] in {'stage', 'retry'}:
         name = recovery.run(['docker', 'inspect', '--format', '{{.Name}}', request['container_id']]).strip()
         if not name.startswith('/logbook-fixture-'):

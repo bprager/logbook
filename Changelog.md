@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add bounded recovery-only operator commands for an already staged named graph window.
+
 - Connect named graph startup checks to the existing target-bound offline recovery code, without exposing a live operator entry.
 
 - Prepare a persistent startup guard for the named Memgraph service; not activated.

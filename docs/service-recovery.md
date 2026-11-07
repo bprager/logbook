@@ -310,6 +310,9 @@ or connected to production maintenance and does not authorize live graph
 repair. The checked directory and marker must be root-private and persistent.
 The named recovery helpers reuse the fixture outcome and offline recovery checks
 and require the exact named service, marker directory, port and recorded volume.
-They are not exposed by the operator command or installed in production. The
-marker must be removed before maintenance begins and restored only after a
-verified outcome; this does not exclude direct Docker starts or privileged writers.
+Recovery-only operator commands `named-offline`, `named-authorize` and
+`named-status` accept an existing private named-window state; `named-release`
+rechecks recovery under both processing locks before removing the matching
+processing marker. No named-service staging or launch command is provided. The
+candidate is not installed in production. This does not exclude direct Docker
+starts or privileged writers.
