@@ -28,7 +28,7 @@ class SshMaintenance:
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
     def invoke(self, action: str, payload: dict | None = None) -> str:
-        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome"}:
+        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-stage", "named-preflight", "named-launch"}:
             raise ValueError("invalid remote action")
         command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
         try:
@@ -74,7 +74,22 @@ class SshMaintenance:
 
 
 class NamedGraphMaintenance(SshMaintenance):
-    """Recovery-only commands for an already staged named graph window."""
+    """Bounded named graph launch and recovery commands."""
+
+    def stage(self, plan: dict) -> None:
+        if self.invoke("named-stage", {**self.request, "plan_data": plan}) != "STAGED":
+            raise ConnectionError("remote staging rejected")
+
+    def preflight(self) -> None:
+        if self.invoke("named-preflight") != "PREFLIGHT_OK":
+            raise ConnectionError("remote preflight rejected")
+
+    def launch(self) -> None:
+        result = self.invoke("named-launch")
+        if result == "REJECTED":
+            raise StartupRejected("remote startup rejected")
+        if result != "LAUNCHED":
+            raise ConnectionError("unexpected remote launch response")
 
     def recovered(self) -> bool:
         return self.invoke("named-status") == "RECOVERED"
@@ -143,7 +158,7 @@ def coordinate_window(config: AppConfig, launch: Callable[[], None],
 
 
 def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
-                             timeout_seconds: float) -> None:
+                             timeout_seconds: float, stage_plan: dict | None = None) -> None:
     """Keep inherited locks in an independent process until remote recovery."""
     unit = remote.request.get("unit", "")
     if not isinstance(unit, str) or not re.fullmatch(
@@ -151,12 +166,16 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
     ):
         raise ValueError("fresh maintenance unit required")
 
-    remote.preflight()
+    if stage_plan is None:
+        remote.preflight()
 
     def operation(pipeline_fd: int, graph_fd: int) -> None:
         if remote.recovered():
             raise ValueError("maintenance unit already reports recovery")
         arm_guard(config.processing_root, unit)
+        if stage_plan is not None:
+            remote.stage(stage_plan)
+            remote.preflight()
         lease = subprocess.Popen(
             [sys.executable, "-m", "logbook.graph_maintenance_lease", str(pipeline_fd), str(graph_fd)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -175,7 +194,8 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
         except Exception:
             lease.terminate()
             lease.wait(timeout=5)
-            clear_guard(config.processing_root, unit)
+            if stage_plan is None:
+                clear_guard(config.processing_root, unit)
             raise
         failure = None
         try:
@@ -183,7 +203,8 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
         except StartupRejected:
             lease.terminate()
             lease.wait(timeout=5)
-            clear_guard(config.processing_root, unit)
+            if stage_plan is None:
+                clear_guard(config.processing_root, unit)
             raise
         except Exception as error:
             failure = error

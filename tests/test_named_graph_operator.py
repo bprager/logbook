@@ -63,6 +63,7 @@ class NamedGraphOperatorTests(TestCase):
                  'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed',return_value=False), \
              patch('logbook.graph_maintenance_remote.fixture_restarted',side_effect=[False,True,True]), \
              patch('logbook.graph_maintenance_remote.verify_named_graph_receipt',return_value={'outcome':'rolled-back'}), \
              patch('sys.stdout',new_callable=io.StringIO) as out:
@@ -118,6 +119,7 @@ class NamedGraphOperatorTests(TestCase):
                  'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed',return_value=False), \
              patch('logbook.graph_maintenance_remote.fixture_restarted',side_effect=ValueError('bad')), \
              patch('sys.stdout',new_callable=io.StringIO) as out, \
              patch('sys.argv',['remote','named-outcome']), patch('sys.stdin',io.StringIO(json.dumps(request))):
@@ -136,3 +138,157 @@ class NamedGraphOperatorTests(TestCase):
                  'boot_guard_dir':'/var/lib/logbook-graph-guard','port':7697}
         with self.assertRaisesRegex(ValueError,'unit'):
             release_named_processing_guard(config,Mock(request=request))
+
+    def test_named_stage_consumes_bound_approval_before_disarming_and_staging(self):
+        request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard',
+                 'plan_data':{'nodes':[]}}
+        events=[]
+        with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.consume_named_approval',side_effect=lambda *a:events.append('approval')), \
+             patch('logbook.graph_maintenance_remote.record_named_graph_storage',side_effect=lambda *a:events.append('record')), \
+             patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard, \
+             patch('logbook.graph_maintenance_remote.stage_plan',side_effect=lambda *a:events.append('stage')), \
+             patch('sys.stdout',new_callable=io.StringIO), patch('sys.argv',['remote','named-stage']), \
+             patch('sys.stdin',io.StringIO(json.dumps(request))):
+            launcher.return_value.verify_target.side_effect=lambda:events.append('target')
+            guard.return_value.disarm.side_effect=lambda:events.append('guard')
+            remote_main()
+            self.assertEqual(events,['target','approval','record','guard','stage'])
+            recovery.assert_called_once()
+
+    def test_named_preflight_and_launch_recheck_approval(self):
+        request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.validate_consumed_approval') as approval, \
+             patch('sys.stdout',new_callable=io.StringIO) as out:
+            for action in ('named-preflight','named-launch'):
+                with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))):
+                    remote_main()
+            self.assertEqual(approval.call_count,2)
+            launcher.return_value.preflight.assert_called_once()
+            launcher.return_value.run_window.assert_called_once()
+            self.assertEqual(out.getvalue(),'PREFLIGHT_OK\nLAUNCHED\n')
+
+    def test_named_staging_failure_keeps_processing_blocked(self):
+        from logbook.graph_maintenance_cross_host import coordinate_leased_window
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            config=SimpleNamespace(processing_root=root)
+            remote=Mock(request={'unit':'logbook-graph-maintenance-'+'a'*32+'.service'})
+            remote.recovered.return_value=False
+            remote.stage.side_effect=ValueError('approval rejected')
+            def under_locks(_config, callback):
+                callback(3,4)
+            with patch('logbook.graph_maintenance_cross_host.with_logbook_lock_descriptors',side_effect=under_locks), \
+                 self.assertRaisesRegex(ValueError,'approval rejected'):
+                coordinate_leased_window(config,remote,timeout_seconds=1,stage_plan={'nodes':[]})
+            self.assertTrue((root/'graph-maintenance.pending').exists())
+            remote.preflight.assert_not_called()
+            remote.launch.assert_not_called()
+
+    def test_named_normal_outcome_allows_restart_only_after_verified_result(self):
+        request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed',return_value=True), \
+             patch('logbook.graph_maintenance_remote.confirmed_normal_outcome',return_value='retained') as result, \
+             patch('logbook.graph_maintenance_remote.verify_memgraph_binding') as binding, \
+             patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard, \
+             patch('sys.stdout',new_callable=io.StringIO) as out, \
+             patch('sys.argv',['remote','named-outcome']), patch('sys.stdin',io.StringIO(json.dumps(request))):
+            remote_main()
+            result.assert_called_once()
+            binding.assert_called_once()
+            guard.return_value.allow.assert_called_once()
+            self.assertEqual(out.getvalue(),'retained\n')
+
+    def test_prepare_and_run_bind_private_plan_to_named_target(self):
+        from logbook.operator_entry import prepare_named, run_named
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            root.chmod(0o700)
+            state=root/'state.json'
+            options={'remote_parent':'/var/lib/maintenance', 'journal_dir':'/var/lib/journal',
+                     'container_id':'a'*64, 'pid':42, 'revision':'b'*40, 'wheel_dir':'/wheels',
+                     'host':'graph', 'identity':'/key', 'seconds':30}
+            plan={'nodes':[{'id':'one'}], 'relationships':[]}
+            def prepare(_config, _job, path):
+                path.write_text(json.dumps(plan))
+                path.chmod(0o600)
+            with patch('logbook.operator_entry.verify_checkout'), \
+                 patch('logbook.operator_entry.build_release_bundle',return_value=b'bundle'), \
+                 patch('logbook.operator_entry.prepare_job_plan',side_effect=prepare), \
+                 patch('logbook.operator_entry.provision_bundle') as provision:
+                self.assertEqual(prepare_named(Mock(),7,options,state),'prepared')
+                provision.assert_called_once()
+            saved=json.loads(state.read_text())
+            self.assertEqual(saved['request']['job_id'],7)
+            self.assertEqual(saved['request']['boot_guard_service'],'memgraph.service')
+            with patch('logbook.operator_entry.coordinate_leased_window') as coordinate, \
+                 patch('logbook.operator_entry.NamedGraphMaintenance') as remote:
+                remote.return_value.request=saved['request']
+                remote.return_value.outcome.return_value='retained'
+                self.assertEqual(run_named(Mock(),state),'retained')
+                self.assertEqual(coordinate.call_args.kwargs['stage_plan'],plan)
+                saved['plan']['nodes'].append({'id':'changed'})
+                state.write_text(json.dumps(saved))
+                state.chmod(0o600)
+                with self.assertRaisesRegex(ValueError,'plan mismatch'):
+                    run_named(Mock(),state)
+
+    def test_named_remote_checks_each_launch_response(self):
+        from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
+        from logbook.graph_maintenance_launcher import StartupRejected
+        remote=NamedGraphMaintenance('host',Path('/key'),Path('/entry'),{})
+        with patch.object(remote,'invoke',side_effect=['STAGED','bad','PREFLIGHT_OK','bad','LAUNCHED','REJECTED','bad']):
+            remote.stage({})
+            with self.assertRaises(ConnectionError):
+                remote.stage({})
+            remote.preflight()
+            with self.assertRaises(ConnectionError):
+                remote.preflight()
+            remote.launch()
+            with self.assertRaises(StartupRejected):
+                remote.launch()
+            with self.assertRaises(ConnectionError):
+                remote.launch()
+
+    def test_named_preflight_failure_preserves_processing_guard(self):
+        from logbook.graph_maintenance_cross_host import coordinate_leased_window
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            remote=Mock(request={'unit':'logbook-graph-maintenance-'+'a'*32+'.service'})
+            remote.recovered.return_value=False
+            remote.preflight.side_effect=ValueError('expired')
+            with patch('logbook.graph_maintenance_cross_host.with_logbook_lock_descriptors',
+                       side_effect=lambda config, callback: callback(3,4)), self.assertRaises(ValueError):
+                coordinate_leased_window(SimpleNamespace(processing_root=root),remote,timeout_seconds=1,stage_plan={})
+            self.assertTrue((root/'graph-maintenance.pending').exists())
+
+    def test_named_rejected_launch_and_normal_status(self):
+        from logbook.graph_maintenance_launcher import StartupRejected
+        request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.validate_consumed_approval'), \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed',side_effect=[True,ValueError()]), \
+             patch('logbook.graph_maintenance_remote.fixture_restarted',return_value=False), \
+             patch('sys.stdout',new_callable=io.StringIO) as out:
+            launcher.return_value.run_window.side_effect=StartupRejected('no')
+            for action in ('named-launch','named-status','named-status'):
+                with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))):
+                    remote_main()
+            self.assertEqual(out.getvalue(),'REJECTED\nRECOVERED\nPENDING\n')

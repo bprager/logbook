@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from logbook.graph_maintenance_cross_host import SshMaintenance
+from logbook.graph_maintenance_cross_host import NamedGraphMaintenance, SshMaintenance
 from logbook.processing_restart_guard import clear_guard
 
 
@@ -17,7 +17,8 @@ def main() -> None:
     for value in sys.argv[1:]:
         os.fstat(int(value))
     payload = json.loads(sys.stdin.readline())
-    remote = SshMaintenance(payload["host"], Path(payload["identity"]),
+    remote_type = NamedGraphMaintenance if payload["request"].get("profile") == "named-graph" else SshMaintenance
+    remote = remote_type(payload["host"], Path(payload["identity"]),
                             Path(payload["entrypoint"]), payload["request"])
     print("READY", flush=True)
     if sys.stdin.readline().strip() != "CHECK":
