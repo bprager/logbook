@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from logbook.config import AppConfig, OdinConfig, RecorderConfig, RetentionConfig
+from logbook.config import AppConfig, ObsidianConfig, OdinConfig, RecorderConfig, RetentionConfig
 from logbook.copying import copy_discovered_recordings
 from logbook.ledger import open_ledger
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
@@ -176,6 +176,7 @@ def _app_config(root: Path, cleanup_mode: str = "trash_then_delete") -> AppConfi
         ),
         odin=_odin_config(),
         retention=RetentionConfig(hours=24, cleanup_mode=cleanup_mode),
+        obsidian=ObsidianConfig(cli_bin="obsidian", vault_repo_url="", vault_local_path=root / "VoiceIngest" / "test-vault"),
     )
 
 
