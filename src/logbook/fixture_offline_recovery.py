@@ -83,7 +83,27 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
         raise ValueError('fixture startup guard must be closed')
     guard.verify('inactive')
     journal = Path(request['journal'])
+    private_directory(journal.parent)
     completed = os.path.lexists(journal.with_name(journal.name+'.complete'))
+    if _named and not os.path.lexists(journal):
+        # The worker fsyncs the journal and its directory before any graph write.
+        # A missing journal after reboot therefore denotes a pre-write interruption,
+        # assuming the root-controlled journal storage has not been altered.
+        if completed or os.path.lexists(journal.with_name(journal.name+'.outcome')):
+            raise ValueError('conflicting pre-journal evidence')
+        volume, image = record.get('volume', ''), record.get('image', '')
+        if not _volume_valid(volume, True) or not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
+            raise ValueError('invalid recorded fixture storage')
+        with (directory/'offline-recovery.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
+                raise ValueError('fixture volume is in use')
+            if os.path.lexists(journal) or os.path.lexists(journal.with_name(journal.name+'.complete')):
+                raise ValueError('journal appeared during recovery')
+            _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(),
+                                                      'outcome':'not-retained', 'batch':None,
+                                                      'phase':'before-journal'})
+        return 'not-retained'
     journal_record = read_private_json(journal)
     batch = journal_record.get('batch', '')
     if journal_record.get('schema') != 1 or str(uuid.UUID(batch)) != batch:
