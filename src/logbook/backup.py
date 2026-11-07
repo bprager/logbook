@@ -60,6 +60,8 @@ def run_backup(
     backup_root: Path | str,
     execute: bool = False,
     ssh_identity_file: str | None = None,
+    restricted_rsync: bool = False,
+    rsync_executable: str = "rsync",
     now: datetime | None = None,
 ) -> BackupResult:
     timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
@@ -108,6 +110,8 @@ def run_backup(
                 backup_dir,
                 remote_target,
                 ssh_identity_file=ssh_identity_file,
+                restricted_rsync=restricted_rsync,
+                rsync_executable=rsync_executable,
             )
 
     return BackupResult(
@@ -127,6 +131,7 @@ def run_backup(
 def run_restore_drill(
     backup_location: Path | str,
     ssh_identity_file: str | None = None,
+    rsync_executable: str = "rsync",
 ) -> RestoreDrillResult:
     location = str(backup_location)
     if _is_remote_location(location):
@@ -136,6 +141,7 @@ def run_restore_drill(
                 location,
                 local_dir,
                 ssh_identity_file=ssh_identity_file,
+                rsync_executable=rsync_executable,
             )
             return _run_local_restore_drill(local_dir)
     return _run_local_restore_drill(Path(backup_location))
@@ -334,14 +340,19 @@ def _copy_directory_to_remote(
     remote_target: str,
     *,
     ssh_identity_file: str | None,
+    restricted_rsync: bool = False,
+    rsync_executable: str = "rsync",
 ) -> None:
-    host, remote_path = remote_target.split(":", 1)
-    subprocess.run(
-        backup_ssh_command(ssh_identity_file)
-        + [host, f"mkdir -p -- {shlex.quote(remote_path)}"],
-        check=True,
-    )
-    rsync_command = ["rsync", "-a", "--delete"]
+    if not restricted_rsync:
+        host, remote_path = remote_target.split(":", 1)
+        subprocess.run(
+            backup_ssh_command(ssh_identity_file)
+            + [host, f"mkdir -p -- {shlex.quote(remote_path)}"],
+            check=True,
+        )
+    rsync_command = [rsync_executable, "-a"]
+    if not restricted_rsync:
+        rsync_command.append("--delete")
     if ssh_identity_file:
         rsync_command.extend(["-e", " ".join(shlex.quote(part) for part in backup_ssh_command(ssh_identity_file))])
     subprocess.run(
@@ -355,9 +366,10 @@ def _copy_directory_from_remote(
     local_target: Path,
     *,
     ssh_identity_file: str | None,
+    rsync_executable: str = "rsync",
 ) -> None:
     local_target.mkdir(parents=True)
-    rsync_command = ["rsync", "-a"]
+    rsync_command = [rsync_executable, "-a"]
     if ssh_identity_file:
         rsync_command.extend(["-e", " ".join(shlex.quote(part) for part in backup_ssh_command(ssh_identity_file))])
     subprocess.run(
