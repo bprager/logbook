@@ -301,3 +301,13 @@ The marker protects only updated cooperating code using the same processing root
 older deployments, other graph clients, direct filesystem changes and privileged
 operators can bypass it. It does not restore the process lease or authorize
 production use. Install and verify the updated processing code before relying on it.
+
+### Named graph service guard candidate
+
+The repository contains a candidate positive-start condition for the named
+`memgraph.service` and its `memgraph-service` container. It is not installed
+or connected to production maintenance and does not authorize live graph
+repair. The checked directory and marker must be root-private and persistent.
+The marker must be removed before maintenance begins and restored only after a
+verified outcome; a service condition by itself does not perform recovery or
+exclude direct Docker starts and privileged writers.

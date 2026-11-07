@@ -12,7 +12,15 @@ from typing import Callable
 def verify_fixture_binding(recovery, service: str) -> None:
     if not re.fullmatch(r'logbook-fixture-[a-z0-9-]+\.service', service):
         raise ValueError('fixture binding requires fixture service')
-    name = service.removesuffix('.service')
+    _verify_binding(recovery, service, service.removesuffix('.service'))
+
+
+def verify_memgraph_binding(recovery) -> None:
+    """Check the named Memgraph service supervises the selected container."""
+    _verify_binding(recovery, 'memgraph.service', 'memgraph-service')
+
+
+def _verify_binding(recovery, service: str, name: str) -> None:
     pid = recovery.run(['systemctl', 'show', service, '-p', 'MainPID', '--value']).strip()
     if not pid.isdigit() or int(pid) < 1:
         raise ValueError('fixture service binding invalid')
@@ -86,3 +94,14 @@ class FixtureBootGuard:
             output.flush()
             os.fsync(output.fileno())
         self._sync()
+
+
+class MemgraphBootGuard(FixtureBootGuard):
+    """The same positive-start guard bound to the named graph service.
+
+    This does not install or authorize the guard on the live service.
+    """
+
+    def __init__(self, directory: Path, run: Callable[[list[str]], str]):
+        self.directory, self.service, self.run = directory, 'memgraph.service', run
+        self.marker = directory/'start-allowed'
