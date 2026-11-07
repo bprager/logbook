@@ -23,6 +23,39 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Package fixture repair dependencies from checksum-pinned distribution wheels.
+
+- Check the fixture coordinator checkout and use the selected bundle bootstrap.
+
+- Build experimental repair source from a selected Git commit and record the package digest.
+
+- Expose guarded retry and confirmed outcome status for fixture repair runs.
+
+- Reject unsafe ancestor directories when installing experimental graph repair bundles.
+
+- Add an experimental single-batch graph repair path that saves a durable
+  recovery identifier before applying a bounded create-only repair.
+
+- Add an experimental independent lock holder that outlives the graph
+  maintenance coordinator until remote recovery is confirmed.
+
+- Add experimental cross-host maintenance coordination that checks recovery
+  over a fresh connection while holding both Logbook locks.
+
+- Fence IPv4 and IPv6 together during experimental graph maintenance, drain
+  pre-existing transactions, and provide a wrapper for both Logbook locks.
+
+- Add an experimental fenced graph-maintenance launcher with a gated worker
+  and independent, setup-serialized recovery timer; it is not enabled live.
+
+- Add fail-closed recovery for a fenced graph maintenance worker, stopping the
+  worker and draining transactions before outside access is restored.
+
+- Require a held local graph writer lock throughout guarded repair and rollback.
+
+- Coordinate Logbook's graph sync and repair commands with a shared local
+  write lock; an occupied lock returns an error for retry.
+
 - Keep unreviewed recordings and recordings with missing final notes out of
   audio cleanup, even after their retention period has elapsed.
 
@@ -63,6 +96,13 @@ production version remains 1.2.3.
   checks. No release tag or version promotion.
 
 ### Changed
+
+- Add an experimental, create-only graph repair batch and conflict-detecting
+  transactional rollback for isolated evaluation. It is not enabled in the CLI
+  or approved for the live graph; uniqueness and endpoint locking need broader
+  concurrent-writer and rollout verification. Validate repair IDs and types
+  against the existing canonical graph plan before allowing batch creation. Group
+  graph operations and allow relationship-only batches for efficient repair.
 
 - Add boot-time, unprivileged supervision for the receiver, API and queue worker,
   with bounded Odin recovery, persistent three-attempt budgets, startup grace,

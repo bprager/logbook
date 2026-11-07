@@ -1,5 +1,16 @@
 # Backlog
 
+## November 5 graph repair safety
+
+An experimental bounded repair/rollback module has isolated graph tests. It is
+not enabled for live use. It now requires node uniqueness constraints and locks
+relationship endpoints during each transaction and validates canonical IDs and
+types. Grouped operations reduce repeated graph searches, and relationship-only
+batches can be reversed. Isolated tests cover the observed races, and all current
+planned nodes and relationships match the canonical format. Other writers are not forced to honor
+this format; constraint changes and live rollout remain unverified. Resolve these
+gaps and validate recovery before any repair. Preserve stale data.
+
 ## November 5 audio cleanup protection
 
 Preserve unreviewed recordings until reviewed and block cleanup when the final

@@ -235,3 +235,27 @@ next one-minute check. Restarting the supervisor alone preserves the budgets.
 Verify with the full quality gate and the Prometheus rule test file before
 changing the policy. Confirm a real upload, transcription and published vault
 commit separately: an upload receipt proves durable delivery, not publication.
+
+### Experimental fixture repair recovery
+
+The undeployed graph repair prototype requires the full selected Git commit in
+the private options as `revision`. It archives Logbook source from that commit
+and records the revision and bundle digest in the private state file before
+starting a fixture run. The bootstrap comes from that bundle, and tracked and
+non-ignored untracked Logbook source is checked against the selected commit. Dependencies are read from the wheel directory named by `wheel_dir` in the private
+options. Obtain `neo4j==5.28.4` and `pytz==2026.2` as binary wheels; the
+package builder checks their SHA-256 digests against the values in the selected
+source before using them. For example, use `python -m pip download --no-deps
+--only-binary=:all: --dest WHEEL_DIRECTORY neo4j==5.28.4 pytz==2026.2`.
+The commit selection does not establish human review, and the coordinator's own
+Python environment is still local. If its protected recovery needs an operator retry, use
+that same file with `python -m logbook.operator_entry retry PRIVATE_STATE`.
+The response `retry-started` only confirms that the retry was launched. Check
+`python -m logbook.operator_entry status PRIVATE_STATE` until it reports a
+confirmed outcome; `pending` means recovery is not confirmed. Failed recovery
+remains fenced and the existing independent lock holder continues checking.
+
+These commands are for disposable fixture containers only. A container name
+check is not a production authorization boundary; do not use the prototype on
+the live graph. The state file, staged files and remote journal must remain
+available for recovery. Trust, host restart and cleanup boundaries remain open.
