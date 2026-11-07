@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add an experimental fixture startup guard for interrupted graph maintenance.
+
 - Package fixture repair dependencies from checksum-pinned distribution wheels.
 
 - Check the fixture coordinator checkout and use the selected bundle bootstrap.

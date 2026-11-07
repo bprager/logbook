@@ -31,7 +31,8 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
     request = {'container_id':options['container_id'], 'pid':options['pid'], 'port':options['port'],
                'unit':unit, 'private_dir':str(staging), 'journal':str(journal),
                'worker':str(staging/'worker'), 'recovery_file':str(bundle/'logbook/graph_maintenance_recovery.py'),
-               'recovery_worker':str(staging/'restore'), 'seconds':options['seconds'], 'sandbox_only':True}
+               'recovery_worker':str(staging/'restore'), 'seconds':options['seconds'], 'sandbox_only':True,
+               'boot_guard_dir':options['boot_guard_dir'], 'boot_guard_service':options['boot_guard_service']}
     entrypoint = bundle/'logbook/graph_maintenance_remote.py'
     revision = options['revision']
     verify_checkout(Path(__file__).resolve().parents[2], revision)

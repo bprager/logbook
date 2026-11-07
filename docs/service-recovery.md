@@ -259,3 +259,11 @@ These commands are for disposable fixture containers only. A container name
 check is not a production authorization boundary; do not use the prototype on
 the live graph. The state file, staged files and remote journal must remain
 available for recovery. Trust, host restart and cleanup boundaries remain open.
+
+The fixture operator also requires `boot_guard_dir` and `boot_guard_service` in
+its private options. The service must be an active `logbook-fixture-*.service`
+with a positive `ConditionPathExists` pointing to `start-allowed` in the private
+guard directory. Staging removes that file; a confirmed outcome restores it.
+A restart during a run keeps that fixture service stopped. Recovery after a host
+restart remains manual and unimplemented, and the service-to-container link is
+not established by this check. This is not a guard for the production graph.

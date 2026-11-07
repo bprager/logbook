@@ -13,7 +13,8 @@ class OperatorEntryTests(unittest.TestCase):
             state = Path(tmp)/'state.json'
             options = {'host':'odin', 'identity':'/key', 'remote_parent':'/private',
                        'journal_dir':'/private/journals', 'container_id':'a'*64, 'pid':123,
-                       'port':7687, 'seconds':15, 'revision':'a'*40, 'wheel_dir':'/wheels'}
+                       'port':7687, 'seconds':15, 'revision':'a'*40, 'wheel_dir':'/wheels',
+                       'boot_guard_dir':'/guard', 'boot_guard_service':'logbook-fixture-graph.service'}
             remote = Mock()
             def run(config, job_id, candidate, *, timeout_seconds):
                 self.assertTrue(state.exists())

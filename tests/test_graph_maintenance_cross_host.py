@@ -415,3 +415,43 @@ class RejectedLaunchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'fixture'):
                 main()
             launcher.return_value.retry_recovery.assert_not_called()
+
+    def test_fixture_guard_is_removed_before_staging(self):
+        request = {'container_id':'id', 'pid':1, 'port':2, 'unit':'unit',
+                   'private_dir':'/private', 'worker':'/worker', 'recovery_file':'/recovery',
+                   'seconds':10, 'sandbox_only':True, 'boot_guard_dir':'/guard',
+                   'boot_guard_service':'logbook-fixture-graph.service'}
+        events = []
+        with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.FixtureBootGuard') as guard, \
+             patch('logbook.graph_maintenance_remote.stage_plan', side_effect=lambda *_:events.append('stage')), \
+             patch('sys.stdin', io.StringIO(json.dumps(request))), \
+             patch('sys.stdout', new_callable=io.StringIO), patch('sys.argv', ['remote', 'stage']):
+            recovery.return_value.run.return_value = '/logbook-fixture-graph'
+            guard.return_value.disarm.side_effect = lambda:events.append('guard')
+            main()
+            self.assertEqual(events, ['guard', 'stage'])
+
+    def test_fixture_guard_restored_only_after_confirmed_outcome(self):
+        request = {'container_id':'a'*64, 'pid':1, 'port':7687, 'unit':'unit',
+                   'private_dir':'/private', 'worker':'/worker', 'recovery_file':'/recovery',
+                   'seconds':10, 'journal':'/private/journal', 'sandbox_only':True,
+                   'boot_guard_dir':'/guard', 'boot_guard_service':'logbook-fixture-graph.service'}
+        batch = '00000000-0000-0000-0000-000000000001'
+        record = {'schema':1, 'batch':batch}
+        outcome = {key:request[key] for key in ('container_id','pid','port','unit')}
+        outcome.update({'batch':batch, 'outcome':'retained'})
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.FixtureBootGuard') as guard, \
+             patch('logbook.graph_maintenance_remote.recovery_confirmed', side_effect=[False,True]), \
+             patch('logbook.graph_maintenance_remote.read_private_json', side_effect=[record,outcome]), \
+             patch('logbook.graph_maintenance_remote.completion_matches', return_value=True), \
+             patch('sys.stdout', new_callable=io.StringIO), patch('sys.argv', ['remote', 'outcome']):
+            with patch('sys.stdin', io.StringIO(json.dumps(request))):
+                main()
+            guard.assert_not_called()
+            with patch('sys.stdin', io.StringIO(json.dumps(request))):
+                main()
+            guard.return_value.allow.assert_called_once()
