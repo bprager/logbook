@@ -63,16 +63,21 @@ def fixture_recovery(state: Path, action: str) -> str:
     if action == 'retry':
         remote.retry()
         return 'retry-started'
+    if action == 'offline':
+        result = remote.invoke('offline')
+        if result not in {'rolled-back', 'not-retained'}:
+            raise RuntimeError('offline recovery outcome unconfirmed')
+        return result
     if action == 'status':
         return remote.outcome() if remote.recovered() else 'pending'
-    raise ValueError('expected retry or status')
+    raise ValueError('expected retry, status or offline')
 
 
 if __name__ == '__main__':  # pragma: no cover
-    if len(sys.argv) == 3 and sys.argv[1] in {'retry', 'status'}:
+    if len(sys.argv) == 3 and sys.argv[1] in {'retry', 'status', 'offline'}:
         print(fixture_recovery(Path(sys.argv[2]), sys.argv[1]))
     elif len(sys.argv) == 5:
         print(run_fixture(load_app_config(Path(sys.argv[1])), int(sys.argv[2]),
                           read_private_json(Path(sys.argv[3])), Path(sys.argv[4])))
     else:
-        raise SystemExit('usage: operator_entry ENV JOB_ID PRIVATE_OPTIONS PRIVATE_STATE | retry|status PRIVATE_STATE')
+        raise SystemExit('usage: operator_entry ENV JOB_ID PRIVATE_OPTIONS PRIVATE_STATE | retry|status|offline PRIVATE_STATE')

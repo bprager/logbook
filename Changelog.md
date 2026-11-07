@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add a fixture-only isolated rollback operation after a graph host restart.
+
 - Check that a guarded fixture service supervises its selected graph container.
 
 - Add an experimental fixture startup guard for interrupted graph maintenance.

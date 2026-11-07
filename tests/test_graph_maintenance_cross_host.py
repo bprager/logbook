@@ -425,6 +425,7 @@ class RejectedLaunchTests(unittest.TestCase):
         with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
              patch('logbook.graph_maintenance_remote.DockerLaunch'), \
              patch('logbook.graph_maintenance_remote.verify_fixture_binding'), \
+             patch('logbook.graph_maintenance_remote.record_fixture_storage'), \
              patch('logbook.graph_maintenance_remote.FixtureBootGuard') as guard, \
              patch('logbook.graph_maintenance_remote.stage_plan', side_effect=lambda *_:events.append('stage')), \
              patch('sys.stdin', io.StringIO(json.dumps(request))), \
@@ -446,6 +447,7 @@ class RejectedLaunchTests(unittest.TestCase):
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch'), \
              patch('logbook.graph_maintenance_remote.verify_fixture_binding'), \
+             patch('logbook.graph_maintenance_remote.record_fixture_storage'), \
              patch('logbook.graph_maintenance_remote.FixtureBootGuard') as guard, \
              patch('logbook.graph_maintenance_remote.recovery_confirmed', side_effect=[False,True]), \
              patch('logbook.graph_maintenance_remote.read_private_json', side_effect=[record,outcome]), \
@@ -457,3 +459,18 @@ class RejectedLaunchTests(unittest.TestCase):
             with patch('sys.stdin', io.StringIO(json.dumps(request))):
                 main()
             guard.return_value.allow.assert_called_once()
+
+    def test_remote_offline_recovery_requires_fixture(self):
+        request = {'container_id':'id','pid':1,'port':2,'unit':'unit',
+                   'private_dir':'/private','worker':'/worker','recovery_file':'/recovery',
+                   'seconds':10,'sandbox_only':True}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.recover_offline', return_value='rolled-back'), \
+             patch('sys.stdout', new_callable=io.StringIO) as out, patch('sys.argv', ['remote', 'offline']):
+            with patch('sys.stdin', io.StringIO(json.dumps(request))):
+                main()
+            self.assertEqual(out.getvalue(), 'rolled-back\n')
+            request['sandbox_only'] = False
+            with patch('sys.stdin', io.StringIO(json.dumps(request))), self.assertRaisesRegex(ValueError, 'fixture'):
+                main()

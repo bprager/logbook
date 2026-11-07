@@ -85,9 +85,9 @@ class DockerRecovery:
         self.table = "logbook_" + hashlib.sha256(unit.encode()).hexdigest()[:16]
 
     @staticmethod
-    def run(args: list[str], text: str | None = None) -> str:
+    def run(args: list[str], text: str | None = None, timeout: int = 10) -> str:
         result = subprocess.run(args, input=text, capture_output=True, text=True,
-                                check=True, timeout=10)
+                                check=True, timeout=timeout)
         return result.stdout
 
     def install_fence(self) -> None:

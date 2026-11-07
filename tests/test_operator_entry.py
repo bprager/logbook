@@ -54,6 +54,11 @@ class OperatorEntryTests(unittest.TestCase):
                 self.assertEqual(fixture_recovery(state, 'status'), 'pending')
                 self.assertEqual(fixture_recovery(state, 'status'), 'rolled-back')
                 remote.retry.assert_called_once()
+                remote.invoke.return_value = 'rolled-back'
+                self.assertEqual(fixture_recovery(state, 'offline'), 'rolled-back')
+                remote.invoke.return_value = 'unknown'
+                with self.assertRaisesRegex(RuntimeError, 'unconfirmed'):
+                    fixture_recovery(state, 'offline')
                 with self.assertRaisesRegex(ValueError, 'expected'):
                     fixture_recovery(state, 'other')
             state.write_text(json.dumps({'host':'odin', 'identity':'/key', 'entrypoint':'/entry',

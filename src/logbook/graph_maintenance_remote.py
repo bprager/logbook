@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from logbook.fixture_boot_guard import FixtureBootGuard, verify_fixture_binding  # noqa: E402
+from logbook.fixture_offline_recovery import record_fixture_storage, recover_offline  # noqa: E402
 from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E402
 from logbook.graph_maintenance_launcher import DockerLaunch, StartupRejected  # noqa: E402
 from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
@@ -18,7 +19,7 @@ from logbook.graph_maintenance_worker import completion_matches, completion_valu
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome"}:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline"}:
         raise ValueError("expected launch or status")
     request = json.load(sys.stdin)
     recovery = DockerRecovery(request["container_id"], request["pid"],
@@ -30,7 +31,11 @@ def main() -> None:
         name = recovery.run(['docker', 'inspect', '--format', '{{.Name}}', request['container_id']]).strip()
         if not name.startswith('/logbook-fixture-'):
             raise ValueError('fixture container required')
-    if sys.argv[1] == "outcome":
+    if sys.argv[1] == "offline":
+        if request.get('sandbox_only') is not True:
+            raise ValueError('fixture recovery required')
+        print(recover_offline(request, recovery))
+    elif sys.argv[1] == "outcome":
         if not recovery_confirmed(recovery, launcher.timer):
             print("PENDING")
             return
@@ -57,6 +62,7 @@ def main() -> None:
         launcher.verify_target()
         if request.get('sandbox_only'):
             verify_fixture_binding(recovery, request['boot_guard_service'])
+            record_fixture_storage(request, recovery)
             FixtureBootGuard(Path(request['boot_guard_dir']), request['boot_guard_service'], recovery.run).disarm()
         stage_plan(request, Path(__file__).resolve().parent.parent)
         print("STAGED")

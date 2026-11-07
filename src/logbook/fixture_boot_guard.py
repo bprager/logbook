@@ -37,13 +37,13 @@ class FixtureBootGuard:
         self.directory, self.service, self.run = directory, service, run
         self.marker = directory/'start-allowed'
 
-    def verify(self) -> None:
+    def verify(self, expected_state: str = 'active') -> None:
         info = self.directory.lstat()
         if (not self.directory.is_absolute() or not stat.S_ISDIR(info.st_mode)
                 or info.st_uid != os.geteuid() or info.st_mode & 0o077):
             raise ValueError('private fixture directory required')
         status = self.run(['systemctl', 'show', self.service, '-p', 'LoadState', '-p', 'ActiveState', '--value'])
-        if status.splitlines() != ['loaded', 'active']:
+        if status.splitlines() != ['loaded', expected_state]:
             raise ValueError('active fixture service required')
         name = ''.join(c if c.isascii() and c.isalnum() else f'_{ord(c):02x}' for c in self.service)
         result = self.run(['busctl', '--json=short', 'get-property', 'org.freedesktop.systemd1',

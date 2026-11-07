@@ -267,3 +267,15 @@ guard directory. Staging removes that file; a confirmed outcome restores it.
 A restart during a run keeps that fixture service stopped. Recovery after a host
 restart remains manual and unimplemented, and the fixture service must supervise a Docker run process whose name, container ID and
 process ID match the target. Direct Docker starts and privileged changes remain outside this check. This is not a guard for the production graph.
+
+For fixture runs staged with this version, the private staging directory records
+the original named fixture volume, image, boot and target before writes. After a
+host restart, `python -m logbook.operator_entry offline PRIVATE_STATE` can use
+a temporary network-isolated container on that recorded volume to roll back an
+incomplete journaled batch. It refuses a running service, open startup guard,
+active volume user, changed target, completed batch or unconfirmed rollback.
+The recovery container is stopped before the outcome is recorded.
+
+This operation deliberately leaves startup permission absent and the processing
+lease held. It does not yet reopen the service or release the lease; those steps
+need separate verified handling. It remains experimental and fixture-only.
