@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from logbook.graph_maintenance_worker import private_directory, read_private_jso
 from logbook.operator_bundle import build_revision_bundle, provision_bundle, verify_checkout
 from logbook.operator_window import stage_plan_and_run
 from logbook.operator_plan import prepare_job_plan
-from logbook.named_graph_approval import plan_digest
+from logbook.named_graph_approval import FIELDS, _check, plan_digest
 
 
 def build_release_bundle(revision: str, wheel_dir: Path) -> bytes:
@@ -113,6 +114,31 @@ def run_named(config: AppConfig, state: Path) -> str:
     coordinate_leased_window(config, remote, timeout_seconds=remote.request['seconds']+270, stage_plan=plan)
     return remote.outcome()
 
+
+def prepare_owner_approval(state: Path, destination: Path) -> str:
+    """Prepare a short-lived request for the owner to review and sign."""
+    saved = read_private_json(state)
+    remote = _named_remote(state)
+    request = remote.request
+    plan = saved['plan']
+    if not isinstance(plan, dict) or plan_digest(plan) != request.get('plan_sha256'):
+        raise ValueError('prepared plan mismatch')
+    private_directory(destination.parent)
+    now = int(time.time())
+    approval = {'schema':1, **{key:request[key] for key in FIELDS}, 'approved_at':now, 'expires_at':now+300}
+    _check(request, approval, now)
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as output:
+        json.dump(approval, output, sort_keys=True)
+        output.flush()
+        os.fsync(output.fileno())
+    directory = os.open(destination.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return 'approval-prepared'
+
 def release_processing_guard(config: AppConfig, remote: SshMaintenance) -> None:
     """Clear a matching fixture guard only under both locks and after confirmation."""
     request = remote.request
@@ -205,7 +231,9 @@ def fixture_recovery(state: Path, action: str) -> str:
 
 
 if __name__ == '__main__':  # pragma: no cover
-    if len(sys.argv) == 6 and sys.argv[1] == 'named-prepare':
+    if len(sys.argv) == 4 and sys.argv[1] == 'named-approval':
+        print(prepare_owner_approval(Path(sys.argv[2]), Path(sys.argv[3])))
+    elif len(sys.argv) == 6 and sys.argv[1] == 'named-prepare':
         print(prepare_named(load_app_config(Path(sys.argv[2])), int(sys.argv[3]),
                             read_private_json(Path(sys.argv[4])), Path(sys.argv[5])))
     elif len(sys.argv) == 4 and sys.argv[1] == 'named-run':
