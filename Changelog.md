@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Prepare automatic ledger-generated repair plan attestations; this candidate is not wired to production or independently protected.
+
 - Prepare a restricted SSH gateway that forwards only the existing named repair commands without a shell; not deployed.
 
 - Recheck prepared graph repairs against the current ledger under processing locks before staging; this candidate does not establish an independent security boundary.
