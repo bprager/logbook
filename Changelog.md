@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add an unconnected candidate check for a signed standing graph-repair policy, allowing repeat checks without per-repair signatures; not a production authorization boundary.
+
 - Add bounded recovery-only operator commands for an already staged named graph window.
 
 - Connect named graph startup checks to the existing target-bound offline recovery code, without exposing a live operator entry.
