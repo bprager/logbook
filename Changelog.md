@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Prepare a fixed named-repair bundle installer that checks a standing-policy signature and package digest instead of running installer code supplied by the operator; not deployed.
+
 - Exercise a signed standing policy across experimental repair staging and preflight, and reject a changed policy before launch; no live graph access is involved.
 
 - Bind the candidate standing repair policy to the exact repair bundle digest and produce repeatable bundles for the same reviewed revision and dependencies.

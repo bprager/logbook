@@ -289,7 +289,7 @@ class NamedGraphOperatorTests(TestCase):
             root=Path(tmp)
             root.chmod(0o700)
             state=root/'state.json'
-            options={'remote_parent':'/var/lib/maintenance', 'journal_dir':'/var/lib/journal',
+            options={'remote_parent':'/var/lib/logbook-graph-guard/bundles', 'journal_dir':'/var/lib/journal',
                      'container_id':'a'*64, 'pid':42, 'revision':'b'*40, 'wheel_dir':'/wheels',
                      'host':'graph', 'identity':'/key', 'seconds':30}
             plan={'nodes':[{'id':'one'}], 'relationships':[]}
@@ -299,7 +299,7 @@ class NamedGraphOperatorTests(TestCase):
             with patch('logbook.operator_entry.verify_checkout'), \
                  patch('logbook.operator_entry.build_release_bundle',return_value=b'bundle'), \
                  patch('logbook.operator_entry.prepare_job_plan',side_effect=prepare), \
-                 patch('logbook.operator_entry.provision_bundle') as provision:
+                 patch('logbook.operator_entry.provision_named_bundle') as provision:
                 self.assertEqual(prepare_named(Mock(),7,options,state),'prepared')
                 provision.assert_called_once()
             saved=json.loads(state.read_text())

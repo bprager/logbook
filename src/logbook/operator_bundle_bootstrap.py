@@ -1,13 +1,18 @@
+#!/usr/bin/python3
 """Standard-library-only installer for a private, validated maintenance bundle."""
 from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
+import re
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
+import time
 from pathlib import Path, PurePosixPath
 
 
@@ -75,7 +80,65 @@ def install_bundle(data: bytes, destination: Path, digest: str) -> None:
             raise
 
 
-if __name__ == '__main__':  # pragma: no cover
+def _private_file(path: Path) -> bytes:
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or info.st_size > 100000:
+            raise ValueError('private policy file required')
+        return source.read()
+
+
+def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: Path) -> None:
+    """Install only a standing-policy-approved package at a constrained location."""
+    trusted_parent(guard/'bundles'/'check')
+    guard_info = guard.lstat()
+    if not stat.S_ISDIR(guard_info.st_mode) or guard_info.st_uid != os.geteuid() or guard_info.st_mode & 0o077:
+        raise ValueError('private policy directory required')
+    parent = guard/'bundles'
+    match = re.fullmatch(r'bundle-([a-f0-9]{32})', destination.name)
+    if (not match or destination.parent != parent or staging.parent != parent
+            or staging.name != 'window-'+match.group(1)):
+        raise ValueError('named bundle paths rejected')
+    allowed, signature = guard/'approval.allowed_signers', guard/'standing-policy.json.sig'
+    content = _private_file(guard/'standing-policy.json')
+    _private_file(allowed)
+    _private_file(signature)
+    result = subprocess.run(['/usr/bin/ssh-keygen','-Y','verify','-f',str(allowed),'-I','owner',
+                             '-n','logbook-graph-policy','-s',str(signature)], input=content,
+                            capture_output=True, timeout=10)
+    if result.returncode:
+        raise ValueError('standing policy signature invalid')
+    try:
+        policy = json.loads(content)
+        if (not isinstance(policy, dict) or set(policy) != {'schema','revision','bundle_sha256','max_records','expires_at'}
+                or type(policy['schema']) is not int or policy['schema'] != 1
+                or not isinstance(policy['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}',policy['revision'])
+                or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
+                or type(policy['expires_at']) is not int or policy['expires_at'] < int(time.time())
+                or not isinstance(policy['bundle_sha256'], str)
+                or not re.fullmatch(r'[a-f0-9]{64}',policy['bundle_sha256'])
+                or hashlib.sha256(data).hexdigest() != policy['bundle_sha256']):
+            raise ValueError('standing policy does not approve bundle')
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('invalid standing policy') from error
+    staging.mkdir(mode=0o700)
+    try:
+        install_bundle(data,destination,policy['bundle_sha256'])
+        sync_directory(parent)
+    except Exception:
+        staging.rmdir()
+        raise
+
+
+def main() -> None:  # pragma: no cover
+    if Path(sys.argv[0]).name == 'logbook-repair-bundle-installer':
+        if os.geteuid() != 0 or len(sys.argv) != 3:
+            raise SystemExit('root, named destination and staging required')
+        install_named_bundle(sys.stdin.buffer.read(30000001), Path(sys.argv[1]), Path(sys.argv[2]),
+                             Path('/var/lib/logbook-graph-guard'))
+        print('BUNDLE_INSTALLED')
+        return
     if os.geteuid() != 0 or len(sys.argv) != 4:
         raise SystemExit('root, destination, staging and digest required')
     destination, staging = Path(sys.argv[1]), Path(sys.argv[2])
@@ -85,3 +148,7 @@ if __name__ == '__main__':  # pragma: no cover
     staging.mkdir(mode=0o700)
     sync_directory(staging.parent)
     print('BUNDLE_INSTALLED')
+
+
+if __name__ == '__main__':  # pragma: no cover
+    main()

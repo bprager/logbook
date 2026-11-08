@@ -117,3 +117,21 @@ def provision_bundle(host: str, identity: Path, destination: Path, staging: Path
     if result.stdout.strip() != b'BUNDLE_INSTALLED':
         raise RuntimeError('unexpected bundle installer response')
     return digest
+
+
+def provision_named_bundle(host: str, identity: Path, destination: Path, staging: Path, data: bytes) -> str:
+    """Call a preinstalled trusted named installer; never transmit root code."""
+    from logbook.graph_maintenance_cross_host import SshMaintenance
+    SshMaintenance(host, identity, Path('/unused'), {})
+    parent = Path('/var/lib/logbook-graph-guard/bundles')
+    match = re.fullmatch(r'bundle-([a-f0-9]{32})', destination.name)
+    if not match or destination.parent != parent or staging.parent != parent or staging.name != 'window-'+match.group(1):
+        raise ValueError('named bundle paths rejected')
+    command = shlex.join(['sudo', '-n', '/usr/local/libexec/logbook-repair-bundle-installer',
+                          str(destination), str(staging)])
+    result = subprocess.run(['ssh', '-i', str(identity), '-o', 'BatchMode=yes', '-o',
+                             'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=yes', host, command],
+                            input=data, capture_output=True, timeout=60, check=True)
+    if result.stdout.strip() != b'BUNDLE_INSTALLED':
+        raise RuntimeError('unexpected bundle installer response')
+    return hashlib.sha256(data).hexdigest()

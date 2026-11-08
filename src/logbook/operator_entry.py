@@ -17,7 +17,7 @@ from logbook.processing_restart_guard import clear_guard
 from logbook.fixture_recovery_release import _validate_named
 from logbook.graph_maintenance_recovery import DockerRecovery
 from logbook.graph_maintenance_worker import private_directory, read_private_json
-from logbook.operator_bundle import build_revision_bundle, provision_bundle, verify_checkout
+from logbook.operator_bundle import build_revision_bundle, provision_bundle, provision_named_bundle, verify_checkout
 from logbook.operator_window import stage_plan_and_run
 from logbook.operator_plan import prepare_job_plan
 from logbook.named_graph_approval import FIELDS, _check, plan_digest
@@ -101,7 +101,7 @@ def prepare_named(config: AppConfig, job_id: int, options: dict, state: Path) ->
         os.fsync(directory)
     finally:
         os.close(directory)
-    provision_bundle(options['host'], Path(options['identity']), bundle, staging, payload)
+    provision_named_bundle(options['host'], Path(options['identity']), bundle, staging, payload)
     return 'prepared'
 
 
