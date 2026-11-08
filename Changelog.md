@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Require a pre-seeded unique fixture marker before graph integration tests modify a database.
+
 - Connect candidate named repair preparation to a fixed automated plan producer; separate installation and authority qualification remain outstanding.
 
 - Require the candidate producer proof before named repair staging, preflight and launch; the producer remains unconnected and undeployed.

@@ -17,6 +17,7 @@ from tempfile import TemporaryDirectory
 from logbook.memory_graph import MemoryNode, MemoryRelationship
 from logbook.memory_graph import MemoryGraphPlan, MemoryGraphRepairPlan
 from logbook.bounded_graph_repair import apply_one_batch, rollback_one_batch
+from tests.graph_fixture_guard import require_fixture
 
 
 @unittest.skipUnless(
@@ -25,11 +26,14 @@ from logbook.bounded_graph_repair import apply_one_batch, rollback_one_batch
 )
 class GuardedRepairIntegrationTests(unittest.TestCase):
     def setUp(self):
+        self.driver = GraphDatabase.driver(os.environ['LOGBOOK_TEST_GRAPH_URI'])
+        self.addCleanup(self.driver.close)
+        self.session = self.driver.session()
+        self.addCleanup(self.session.close)
+        require_fixture(self.session, os.environ.get('LOGBOOK_TEST_GRAPH_FIXTURE_TOKEN'))
         self.tmp = TemporaryDirectory()
         self.lock = GraphWriteLock(Path(self.tmp.name))
         self.lock.__enter__()
-        self.driver = GraphDatabase.driver(os.environ['LOGBOOK_TEST_GRAPH_URI'])
-        self.session = self.driver.session()
         constraints = list(self.session.run('SHOW CONSTRAINT INFO'))
         for label in ('LogbookJob', 'LogbookRepairBatch'):
             if not any(r['label'] == label and r['properties'] == ['id']
