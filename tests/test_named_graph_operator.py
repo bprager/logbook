@@ -139,7 +139,7 @@ class NamedGraphOperatorTests(TestCase):
         with self.assertRaisesRegex(ValueError,'unit'):
             release_named_processing_guard(config,Mock(request=request))
 
-    def test_named_stage_consumes_bound_approval_before_disarming_and_staging(self):
+    def test_named_stage_checks_standing_policy_before_disarming_and_staging(self):
         request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
                  'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard',
@@ -148,7 +148,7 @@ class NamedGraphOperatorTests(TestCase):
         with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
              patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
              patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
-             patch('logbook.graph_maintenance_remote.consume_named_approval',side_effect=lambda *a:events.append('approval')), \
+             patch('logbook.graph_maintenance_remote.authorize_repair',side_effect=lambda *a:events.append('policy')), \
              patch('logbook.graph_maintenance_remote.record_named_graph_storage',side_effect=lambda *a:events.append('record')), \
              patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard, \
              patch('logbook.graph_maintenance_remote.stage_plan',side_effect=lambda *a:events.append('stage')), \
@@ -157,17 +157,18 @@ class NamedGraphOperatorTests(TestCase):
             launcher.return_value.verify_target.side_effect=lambda:events.append('target')
             guard.return_value.disarm.side_effect=lambda:events.append('guard')
             remote_main()
-            self.assertEqual(events,['target','approval','record','guard','stage'])
+            self.assertEqual(events,['target','policy','record','guard','stage'])
             recovery.assert_called_once()
 
-    def test_named_preflight_and_launch_recheck_approval(self):
+    def test_named_preflight_and_launch_recheck_staged_plan_and_policy(self):
         request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
                  'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
              patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
-             patch('logbook.graph_maintenance_remote.validate_consumed_approval') as approval, \
+             patch('logbook.graph_maintenance_remote.read_private_json',return_value={'nodes':[]}), \
+             patch('logbook.graph_maintenance_remote.authorize_repair') as approval, \
              patch('sys.stdout',new_callable=io.StringIO) as out:
             for action in ('named-preflight','named-launch'):
                 with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))):
@@ -176,6 +177,25 @@ class NamedGraphOperatorTests(TestCase):
             launcher.return_value.preflight.assert_called_once()
             launcher.return_value.run_window.assert_called_once()
             self.assertEqual(out.getvalue(),'PREFLIGHT_OK\nLAUNCHED\n')
+
+    def test_policy_rejection_blocks_stage_and_launch(self):
+        request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard',
+                 'plan_data':{'nodes':[]}}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.read_private_json',return_value={'nodes':[]}), \
+             patch('logbook.graph_maintenance_remote.authorize_repair',side_effect=ValueError('policy rejected')), \
+             patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard:
+            for action in ('named-stage','named-preflight','named-launch'):
+                with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))), \
+                     self.assertRaisesRegex(ValueError,'policy rejected'):
+                    remote_main()
+            guard.return_value.disarm.assert_not_called()
+            launcher.return_value.preflight.assert_not_called()
+            launcher.return_value.run_window.assert_not_called()
 
     def test_named_staging_failure_keeps_processing_blocked(self):
         from logbook.graph_maintenance_cross_host import coordinate_leased_window
@@ -283,7 +303,8 @@ class NamedGraphOperatorTests(TestCase):
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
              patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
-             patch('logbook.graph_maintenance_remote.validate_consumed_approval'), \
+             patch('logbook.graph_maintenance_remote.read_private_json',return_value={'nodes':[]}), \
+             patch('logbook.graph_maintenance_remote.authorize_repair'), \
              patch('logbook.graph_maintenance_remote.recovery_confirmed',side_effect=[True,ValueError()]), \
              patch('logbook.graph_maintenance_remote.fixture_restarted',return_value=False), \
              patch('sys.stdout',new_callable=io.StringIO) as out:

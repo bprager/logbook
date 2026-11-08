@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Connect the experimental named-graph runner to the standing-policy check before staging and before launch; this remains undeployed and requires independent trust-boundary qualification.
+
 - Add an unconnected candidate check for a signed standing graph-repair policy, allowing repeat checks without per-repair signatures; not a production authorization boundary.
 
 - Add bounded recovery-only operator commands for an already staged named graph window.

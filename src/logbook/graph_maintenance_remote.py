@@ -17,7 +17,8 @@ from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E40
 from logbook.graph_maintenance_launcher import DockerLaunch, StartupRejected  # noqa: E402
 from logbook.graph_maintenance_recovery import DockerRecovery  # noqa: E402
 from logbook.graph_maintenance_stage import stage_plan  # noqa: E402
-from logbook.named_graph_approval import consume_named_approval, validate_consumed_approval, verify_bundle_marker  # noqa: E402
+from logbook.named_graph_approval import verify_bundle_marker  # noqa: E402
+from logbook.standing_graph_policy import authorize_repair  # noqa: E402
 from logbook.graph_maintenance_worker import completion_matches, completion_value, read_private_json  # noqa: E402
 
 
@@ -57,14 +58,15 @@ def main() -> None:
         if action == 'named-stage':
             launcher.verify_target()
             verify_bundle_marker(request, Path(__file__).resolve().parent.parent)
-            consume_named_approval(request, request['plan_data'], Path(request['boot_guard_dir']), Path(request['private_dir']))
+            authorize_repair(request, request['plan_data'], Path(request['boot_guard_dir']))
             record_named_graph_storage(request, recovery)
             MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).disarm()
             stage_plan(request, Path(__file__).resolve().parent.parent)
             print('STAGED')
         elif action in {'named-preflight', 'named-launch'}:
             verify_bundle_marker(request, Path(__file__).resolve().parent.parent)
-            validate_consumed_approval(request, Path(request['private_dir']))
+            plan = read_private_json(Path(request['private_dir']) / 'plan.json')
+            authorize_repair(request, plan, Path(request['boot_guard_dir']))
             if action == 'named-preflight':
                 launcher.preflight()
                 print('PREFLIGHT_OK')
