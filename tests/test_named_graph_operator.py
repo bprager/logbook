@@ -197,6 +197,57 @@ class NamedGraphOperatorTests(TestCase):
             launcher.return_value.preflight.assert_not_called()
             launcher.return_value.run_window.assert_not_called()
 
+    def test_real_signed_policy_is_rechecked_across_stage_and_launch(self):
+        import subprocess
+        import time
+        from logbook.named_graph_approval import plan_digest
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            guard_dir=root/'guard'
+            stage=root/'stage'
+            guard_dir.mkdir(mode=0o700)
+            stage.mkdir(mode=0o700)
+            key=root/'owner'
+            subprocess.run(['/usr/bin/ssh-keygen','-q','-t','ed25519','-N','','-f',str(key)],check=True)
+            signers=guard_dir/'approval.allowed_signers'
+            signers.write_text('owner '+key.with_suffix('.pub').read_text())
+            signers.chmod(0o600)
+            policy=guard_dir/'standing-policy.json'
+            policy.write_text(json.dumps({'schema':1,'revision':'a'*40,'bundle_sha256':'b'*64,
+                                          'max_records':5,'expires_at':int(time.time())+300}))
+            policy.chmod(0o600)
+            subprocess.run(['/usr/bin/ssh-keygen','-Y','sign','-n','logbook-graph-policy',
+                            '-f',str(key),str(policy)],check=True,capture_output=True)
+            (guard_dir/'standing-policy.json.sig').chmod(0o600)
+            plan={'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],
+                            'properties':{'project':'logbook','job_id':147}}],
+                  'relationships':[],'generated_at':'now'}
+            request={'container_id':'c'*64,'pid':1,'port':7697,'unit':'unit','private_dir':str(stage),
+                     'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                     'boot_guard_service':'memgraph.service','boot_guard_dir':str(guard_dir),
+                     'revision':'a'*40,'bundle_sha256':'b'*64,'job_id':147,
+                     'plan_sha256':plan_digest(plan),'plan_data':plan}
+            def fake_stage(_request, _bundle):
+                path=stage/'plan.json'
+                path.write_text(json.dumps(plan))
+                path.chmod(0o600)
+            with patch('logbook.graph_maintenance_remote._validate_named'), \
+                 patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+                 patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+                 patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+                 patch('logbook.graph_maintenance_remote.record_named_graph_storage'), \
+                 patch('logbook.graph_maintenance_remote.MemgraphBootGuard'), \
+                 patch('logbook.graph_maintenance_remote.stage_plan',side_effect=fake_stage), \
+                 patch('sys.stdout',new_callable=io.StringIO):
+                for action in ('named-stage','named-preflight'):
+                    with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))):
+                        remote_main()
+                policy.write_text('{}')
+                with patch('sys.argv',['remote','named-launch']), patch('sys.stdin',io.StringIO(json.dumps(request))), \
+                     self.assertRaisesRegex(ValueError,'signature'):
+                    remote_main()
+                launcher.return_value.run_window.assert_not_called()
+
     def test_named_staging_failure_keeps_processing_blocked(self):
         from logbook.graph_maintenance_cross_host import coordinate_leased_window
         with TemporaryDirectory() as tmp:

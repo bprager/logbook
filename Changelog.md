@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Exercise a signed standing policy across experimental repair staging and preflight, and reject a changed policy before launch; no live graph access is involved.
+
 - Bind the candidate standing repair policy to the exact repair bundle digest and produce repeatable bundles for the same reviewed revision and dependencies.
 
 - Connect the experimental named-graph runner to the standing-policy check before staging and before launch; this remains undeployed and requires independent trust-boundary qualification.
