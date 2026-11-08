@@ -32,6 +32,8 @@ def stage_plan(request: dict, bundle: Path) -> None:
             output.flush()
             os.fsync(output.fileno())
     put('plan.json', encoded, 0o600)
+    if request.get('profile') == 'named-graph':
+        put('plan-proof.json', json.dumps(request['plan_proof'], sort_keys=True).encode(), 0o600)
     put('request.json', json.dumps(worker_request, sort_keys=True).encode(), 0o600)
     for action, name in (('apply','worker'), ('recover','restore')):
         command = ['/usr/bin/nsenter', '-t', str(request['pid']), '-n', '/usr/bin/env',

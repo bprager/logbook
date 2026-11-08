@@ -17,7 +17,7 @@ class NamedRepairDispatcherTests(TestCase):
                 'worker':str(stage/'worker'),'recovery_worker':str(stage/'restore'),
                 'recovery_file':str(bundle/'logbook/graph_maintenance_recovery.py'),
                 'container_id':'c'*64,'pid':42,'seconds':30,'job_id':147,'revision':'a'*40,
-                'bundle_sha256':'b'*64,'plan_sha256':'d'*64,'plan_data':{'nodes':[]}}
+                'bundle_sha256':'b'*64,'plan_sha256':'d'*64,'plan_data':{'nodes':[]},'plan_proof':{}}
 
     def test_rejects_unapproved_action_and_paths(self):
         request=self.request()

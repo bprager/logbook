@@ -139,15 +139,34 @@ class NamedGraphOperatorTests(TestCase):
         with self.assertRaisesRegex(ValueError,'unit'):
             release_named_processing_guard(config,Mock(request=request))
 
-    def test_named_stage_checks_standing_policy_before_disarming_and_staging(self):
+    def test_named_stage_rejects_missing_producer_proof_before_disarming(self):
         request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
                  'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard',
+                 'job_id':7,'plan_data':{'nodes':[]}}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.authorize_repair'), \
+             patch('logbook.graph_maintenance_remote.record_named_graph_storage') as record, \
+             patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard, \
+             patch('logbook.graph_maintenance_remote.stage_plan'), \
+             patch('sys.argv',['remote','named-stage']), patch('sys.stdin',io.StringIO(json.dumps(request))), \
+             self.assertRaises((KeyError, ValueError)):
+            remote_main()
+        record.assert_not_called()
+        guard.return_value.disarm.assert_not_called()
+
+    def test_named_stage_checks_standing_policy_before_disarming_and_staging(self):
+        request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard','job_id':7,
                  'plan_data':{'nodes':[]}}
         events=[]
         with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
              patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
              patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.verify_plan'), \
              patch('logbook.graph_maintenance_remote.authorize_repair',side_effect=lambda *a:events.append('policy')), \
              patch('logbook.graph_maintenance_remote.record_named_graph_storage',side_effect=lambda *a:events.append('record')), \
              patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard, \
@@ -163,10 +182,11 @@ class NamedGraphOperatorTests(TestCase):
     def test_named_preflight_and_launch_recheck_staged_plan_and_policy(self):
         request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
-                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard','job_id':7}
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
              patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.verify_plan'), \
              patch('logbook.graph_maintenance_remote.read_private_json',return_value={'nodes':[]}), \
              patch('logbook.graph_maintenance_remote.authorize_repair') as approval, \
              patch('sys.stdout',new_callable=io.StringIO) as out:
@@ -222,15 +242,29 @@ class NamedGraphOperatorTests(TestCase):
             plan={'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],
                             'properties':{'project':'logbook','job_id':147}}],
                   'relationships':[],'generated_at':'now'}
+            from logbook.plan_attestation import issue_plan
+            producer=root/'producer'
+            subprocess.run(['/usr/bin/ssh-keygen','-q','-t','ed25519','-N','','-f',str(producer)],check=True)
+            allowed=guard_dir/'plan.allowed_signers'
+            allowed.write_text('producer '+producer.with_suffix('.pub').read_text())
+            allowed.chmod(0o600)
+            def generate(_config, _job, path):
+                path.write_text(json.dumps(plan))
+                path.chmod(0o600)
+            with patch('logbook.plan_attestation.prepare_job_plan',side_effect=generate):
+                _, proof = issue_plan(None,147,producer)
             request={'container_id':'c'*64,'pid':1,'port':7697,'unit':'unit','private_dir':str(stage),
                      'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
                      'boot_guard_service':'memgraph.service','boot_guard_dir':str(guard_dir),
                      'revision':'a'*40,'bundle_sha256':'b'*64,'job_id':147,
-                     'plan_sha256':plan_digest(plan),'plan_data':plan}
+                     'plan_sha256':plan_digest(plan),'plan_data':plan,'plan_proof':proof}
             def fake_stage(_request, _bundle):
                 path=stage/'plan.json'
                 path.write_text(json.dumps(plan))
                 path.chmod(0o600)
+                proof_path=stage/'plan-proof.json'
+                proof_path.write_text(json.dumps(proof))
+                proof_path.chmod(0o600)
             with patch('logbook.graph_maintenance_remote._validate_named'), \
                  patch('logbook.graph_maintenance_remote.DockerRecovery'), \
                  patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
@@ -242,6 +276,13 @@ class NamedGraphOperatorTests(TestCase):
                 for action in ('named-stage','named-preflight'):
                     with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))):
                         remote_main()
+                proof_path=stage/'plan-proof.json'
+                changed={**proof,'signature':proof['signature'][:-10]}
+                proof_path.write_text(json.dumps(changed))
+                with patch('sys.argv',['remote','named-launch']), patch('sys.stdin',io.StringIO(json.dumps(request))), \
+                     self.assertRaisesRegex(ValueError,'signature'):
+                    remote_main()
+                proof_path.write_text(json.dumps(proof))
                 policy.write_text('{}')
                 with patch('sys.argv',['remote','named-launch']), patch('sys.stdin',io.StringIO(json.dumps(request))), \
                      self.assertRaisesRegex(ValueError,'signature'):
@@ -368,6 +409,9 @@ class NamedGraphOperatorTests(TestCase):
         from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
         from logbook.graph_maintenance_launcher import StartupRejected
         remote=NamedGraphMaintenance('host',Path('/key'),Path('/entry'),{})
+        with self.assertRaisesRegex(ValueError, 'proof'):
+            remote.stage({})
+        remote.plan_proof = {'fixture': True}
         with patch.object(remote,'invoke',side_effect=['STAGED','bad','PREFLIGHT_OK','bad','LAUNCHED','REJECTED','bad']):
             remote.stage({})
             with self.assertRaises(ConnectionError):
@@ -397,10 +441,11 @@ class NamedGraphOperatorTests(TestCase):
         from logbook.graph_maintenance_launcher import StartupRejected
         request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
-                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard','job_id':7}
         with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
              patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
              patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.verify_plan'), \
              patch('logbook.graph_maintenance_remote.read_private_json',return_value={'nodes':[]}), \
              patch('logbook.graph_maintenance_remote.authorize_repair'), \
              patch('logbook.graph_maintenance_remote.recovery_confirmed',side_effect=[True,ValueError()]), \

@@ -39,7 +39,6 @@ def issue_plan(config: object, job_id: int, signing_key: Path, *, now: int | Non
 
 def verify_plan(plan: dict, job_id: int, proof: dict, allowed: Path, *, now: int | None = None) -> None:
     """Validate producer signature and bind it to the requested job and exact plan."""
-    _private_bytes(allowed)
     current = int(time.time()) if now is None else now
     if (not isinstance(proof, dict) or set(proof) != {'statement', 'signature'}
             or not isinstance(proof['statement'], dict) or not isinstance(proof['signature'], str)
@@ -54,6 +53,7 @@ def verify_plan(plan: dict, job_id: int, proof: dict, allowed: Path, *, now: int
             or statement['expires_at'] - statement['issued_at'] != 300
             or not statement['issued_at'] <= current <= statement['expires_at']):
         raise ValueError('plan proof does not match request')
+    _private_bytes(allowed)
     with tempfile.TemporaryDirectory() as temporary:
         signature = Path(temporary)/'proof.sig'
         signature.write_text(proof['signature'])

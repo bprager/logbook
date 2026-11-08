@@ -51,10 +51,13 @@ class OperatorWindowTests(unittest.TestCase):
                        'private_dir':str(private), 'journal':str(journal_dir/'batch.json'),
                        'worker':str(private/'worker'), 'recovery_worker':str(private/'restore'),
                        'recovery_file':str(bundle/'logbook/graph_maintenance_recovery.py'),
-                       'seconds':10, 'plan_data':{'nodes':[],'relationships':[],'generated_at':'test'}}
+                       'seconds':10, 'profile':'named-graph', 'plan_proof':{'signature':'fixture'},
+                       'plan_data':{'nodes':[],'relationships':[],'generated_at':'test'}}
             stage_plan(request, bundle)
             self.assertEqual((private/'plan.json').stat().st_mode & 0o777, 0o600)
             self.assertEqual((private/'worker').stat().st_mode & 0o777, 0o700)
+            self.assertEqual(json.loads((private/'plan-proof.json').read_text()), request['plan_proof'])
+            self.assertEqual((private/'plan-proof.json').stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads((private/'request.json').read_text())['journal'], request['journal'])
             with self.assertRaises(FileExistsError):
                 stage_plan(request, bundle)

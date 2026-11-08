@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Require the candidate producer proof before named repair staging, preflight and launch; the producer remains unconnected and undeployed.
+
 - Prepare automatic ledger-generated repair plan attestations; this candidate is not wired to production or independently protected.
 
 - Prepare a restricted SSH gateway that forwards only the existing named repair commands without a shell; not deployed.

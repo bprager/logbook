@@ -185,7 +185,9 @@ def _named_remote(state: Path) -> NamedGraphMaintenance:
     if not isinstance(request, dict) or request.get('profile') != 'named-graph' or request.get('sandbox_only') is True:
         raise ValueError('named graph recovery state required')
     _validate_named(request)
-    return NamedGraphMaintenance(saved['host'], Path(saved['identity']), Path(saved['entrypoint']), request)
+    remote = NamedGraphMaintenance(saved['host'], Path(saved['identity']), Path(saved['entrypoint']), request)
+    remote.plan_proof = saved.get('plan_proof')
+    return remote
 
 
 def named_graph_recovery(state: Path, action: str) -> str:

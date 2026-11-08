@@ -32,7 +32,7 @@ def trusted_path(path: Path, *, directory: bool, private: bool = False) -> None:
 def validate_request(action: str, request: dict) -> Path:
     if action not in ACTIONS or not isinstance(request,dict):
         raise ValueError('unsupported repair action')
-    expected = FIELDS | ({'plan_data'} if action == 'named-stage' else set())
+    expected = FIELDS | ({'plan_data','plan_proof'} if action == 'named-stage' else set())
     if set(request) != expected:
         raise ValueError('unexpected repair request fields')
     unit = request['unit']

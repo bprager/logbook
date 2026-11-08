@@ -85,7 +85,10 @@ class NamedGraphMaintenance(SshMaintenance):
         return shlex.join(['sudo','-n','/usr/local/libexec/logbook-repair-dispatcher',action])
 
     def stage(self, plan: dict) -> None:
-        if self.invoke("named-stage", {**self.request, "plan_data": plan}) != "STAGED":
+        proof = getattr(self, 'plan_proof', None)
+        if not isinstance(proof, dict):
+            raise ValueError('producer plan proof required')
+        if self.invoke("named-stage", {**self.request, "plan_data": plan, "plan_proof": proof}) != "STAGED":
             raise ConnectionError("remote staging rejected")
 
     def preflight(self) -> None:
