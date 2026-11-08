@@ -113,7 +113,20 @@ def run_named(config: AppConfig, state: Path) -> str:
     plan = saved['plan']
     if not isinstance(plan, dict) or plan_digest(plan) != remote.request.get('plan_sha256'):
         raise ValueError('prepared plan mismatch')
-    coordinate_leased_window(config, remote, timeout_seconds=remote.request['seconds']+270, stage_plan=plan)
+    def recheck_ledger() -> dict:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)/'plan.json'
+            prepare_job_plan(config, remote.request['job_id'], path)
+            fresh = read_private_json(path)
+        if (set(plan) != {'nodes', 'relationships', 'generated_at'}
+                or set(fresh) != set(plan)
+                or plan['nodes'] != fresh['nodes']
+                or plan['relationships'] != fresh['relationships']):
+            raise ValueError('prepared plan no longer matches ledger')
+        return plan
+
+    coordinate_leased_window(config, remote, timeout_seconds=remote.request['seconds']+270,
+                             stage_plan=recheck_ledger)
     return remote.outcome()
 
 

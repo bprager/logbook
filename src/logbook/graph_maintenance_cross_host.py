@@ -166,7 +166,7 @@ def coordinate_window(config: AppConfig, launch: Callable[[], None],
 
 
 def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
-                             timeout_seconds: float, stage_plan: dict | None = None) -> None:
+                             timeout_seconds: float, stage_plan: dict | Callable[[], dict] | None = None) -> None:
     """Keep inherited locks in an independent process until remote recovery."""
     unit = remote.request.get("unit", "")
     if not isinstance(unit, str) or not re.fullmatch(
@@ -180,9 +180,10 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
     def operation(pipeline_fd: int, graph_fd: int) -> None:
         if remote.recovered():
             raise ValueError("maintenance unit already reports recovery")
+        checked_plan = stage_plan() if callable(stage_plan) else stage_plan
         arm_guard(config.processing_root, unit)
-        if stage_plan is not None:
-            remote.stage(stage_plan)
+        if checked_plan is not None:
+            remote.stage(checked_plan)
             remote.preflight()
         lease = subprocess.Popen(
             [sys.executable, "-m", "logbook.graph_maintenance_lease", str(pipeline_fd), str(graph_fd)],
