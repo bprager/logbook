@@ -339,12 +339,13 @@ class NamedGraphOperatorTests(TestCase):
                 path.chmod(0o600)
             with patch('logbook.operator_entry.verify_checkout'), \
                  patch('logbook.operator_entry.build_release_bundle',return_value=b'bundle'), \
-                 patch('logbook.operator_entry.prepare_job_plan',side_effect=prepare), \
+                 patch('logbook.operator_entry.request_generated_plan',return_value=(plan,{'fixture':'proof'})), \
                  patch('logbook.operator_entry.provision_named_bundle') as provision:
                 self.assertEqual(prepare_named(Mock(),7,options,state),'prepared')
                 provision.assert_called_once()
             saved=json.loads(state.read_text())
             self.assertEqual(saved['request']['job_id'],7)
+            self.assertEqual(saved['plan_proof'], {'fixture':'proof'})
             self.assertEqual(saved['request']['boot_guard_service'],'memgraph.service')
             def prepare_fresh(_config, _job, path):
                 path.write_text(json.dumps({**plan, 'generated_at': 'later'}))

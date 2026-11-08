@@ -20,6 +20,7 @@ from logbook.graph_maintenance_worker import private_directory, read_private_jso
 from logbook.operator_bundle import build_revision_bundle, provision_bundle, provision_named_bundle, verify_checkout
 from logbook.operator_window import stage_plan_and_run
 from logbook.operator_plan import prepare_job_plan
+from logbook.plan_producer import request_generated_plan
 from logbook.named_graph_approval import FIELDS, _check, plan_digest
 
 
@@ -75,10 +76,7 @@ def prepare_named(config: AppConfig, job_id: int, options: dict, state: Path) ->
     revision = options['revision']
     verify_checkout(Path(__file__).resolve().parents[2], revision)
     payload = build_release_bundle(revision, Path(options['wheel_dir']))
-    with tempfile.TemporaryDirectory(dir=state.parent) as temporary:
-        plan_path = Path(temporary)/'plan.json'
-        prepare_job_plan(config, job_id, plan_path)
-        plan = read_private_json(plan_path)
+    plan, proof = request_generated_plan(job_id)
     request = {'profile':'named-graph', 'container_id':options['container_id'], 'pid':options['pid'],
                'port':7697, 'unit':unit, 'private_dir':str(staging),
                'journal':str(Path(options['journal_dir'])/f'{token}.json'),
@@ -89,7 +87,7 @@ def prepare_named(config: AppConfig, job_id: int, options: dict, state: Path) ->
                'plan_sha256':plan_digest(plan)}
     entrypoint = bundle/'logbook/graph_maintenance_remote.py'
     saved = {'host':options['host'], 'identity':options['identity'], 'entrypoint':str(entrypoint),
-             'request':request, 'plan':plan}
+             'request':request, 'plan':plan, 'plan_proof':proof}
     encoded = json.dumps(saved, sort_keys=True).encode()
     if len(encoded) > 5000000:
         raise ValueError('private state exceeds limit')

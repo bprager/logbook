@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Connect candidate named repair preparation to a fixed automated plan producer; separate installation and authority qualification remain outstanding.
+
 - Require the candidate producer proof before named repair staging, preflight and launch; the producer remains unconnected and undeployed.
 
 - Prepare automatic ledger-generated repair plan attestations; this candidate is not wired to production or independently protected.
