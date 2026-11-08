@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Prepare a restricted SSH gateway that forwards only the existing named repair commands without a shell; not deployed.
+
 - Recheck prepared graph repairs against the current ledger under processing locks before staging; this candidate does not establish an independent security boundary.
 
 - Prepare a fixed named-repair dispatcher with constrained actions and root-controlled paths; the candidate is not deployed and still requires independent authority and recovery qualification.
