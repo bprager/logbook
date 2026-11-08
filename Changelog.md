@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Allow the existing backup and restore commands to use a restricted Odin rsync identity without remote shell or delete permissions.
+
 - Preserve verified completed fixture repair batches across a graph-host restart.
 
 - Reopen a recovered fixture graph and release its lease after target and health checks.
