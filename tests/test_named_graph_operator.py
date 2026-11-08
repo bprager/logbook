@@ -289,7 +289,7 @@ class NamedGraphOperatorTests(TestCase):
             root=Path(tmp)
             root.chmod(0o700)
             state=root/'state.json'
-            options={'remote_parent':'/var/lib/logbook-graph-guard/bundles', 'journal_dir':'/var/lib/journal',
+            options={'remote_parent':'/var/lib/logbook-graph-guard/bundles', 'journal_dir':'/var/lib/logbook-graph-guard/journals',
                      'container_id':'a'*64, 'pid':42, 'revision':'b'*40, 'wheel_dir':'/wheels',
                      'host':'graph', 'identity':'/key', 'seconds':30}
             plan={'nodes':[{'id':'one'}], 'relationships':[]}

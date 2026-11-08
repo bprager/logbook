@@ -27,10 +27,13 @@ class SshMaintenance:
             raise ValueError("absolute paths required")
         self.host, self.identity, self.entrypoint, self.request = host, identity, entrypoint, request
 
+    def _command(self, action: str) -> str:
+        return shlex.join(['sudo', '-n', '/usr/bin/python3', str(self.entrypoint), action])
+
     def invoke(self, action: str, payload: dict | None = None) -> str:
         if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-stage", "named-preflight", "named-launch"}:
             raise ValueError("invalid remote action")
-        command = shlex.join(["sudo", "-n", "/usr/bin/python3", str(self.entrypoint), action])
+        command = self._command(action)
         try:
             result = subprocess.run(
                 ["ssh", "-i", str(self.identity), "-o", "BatchMode=yes", "-o",
@@ -75,6 +78,11 @@ class SshMaintenance:
 
 class NamedGraphMaintenance(SshMaintenance):
     """Bounded named graph launch and recovery commands."""
+
+    def _command(self, action: str) -> str:
+        if action not in {'named-stage','named-preflight','named-launch','named-status','named-outcome','named-offline','named-authorize'}:
+            raise ValueError('invalid named action')
+        return shlex.join(['sudo','-n','/usr/local/libexec/logbook-repair-dispatcher',action])
 
     def stage(self, plan: dict) -> None:
         if self.invoke("named-stage", {**self.request, "plan_data": plan}) != "STAGED":

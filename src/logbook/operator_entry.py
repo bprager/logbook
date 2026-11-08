@@ -67,6 +67,8 @@ def prepare_named(config: AppConfig, job_id: int, options: dict, state: Path) ->
     private_directory(state.parent)
     token = uuid.uuid4().hex
     parent = Path(options['remote_parent'])
+    if parent != Path('/var/lib/logbook-graph-guard/bundles') or Path(options['journal_dir']) != Path('/var/lib/logbook-graph-guard/journals'):
+        raise ValueError('named repair directories rejected')
     bundle, staging = parent/f'bundle-{token}', parent/f'window-{token}'
     unit = 'logbook-graph-maintenance-'+token+'.service'
     DockerRecovery(options['container_id'], options['pid'], 7697, unit)
