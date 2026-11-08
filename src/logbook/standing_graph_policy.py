@@ -17,16 +17,19 @@ from logbook.named_graph_approval import _private_bytes, plan_digest
 
 
 def check_plan(request: dict, plan: dict, policy: dict, *, now: int | None = None) -> None:
-    if (set(policy) != {'schema', 'revision', 'max_records', 'expires_at'}
+    if (set(policy) != {'schema', 'revision', 'bundle_sha256', 'max_records', 'expires_at'}
             or type(policy['schema']) is not int or policy['schema'] != 1
             or not isinstance(policy['revision'], str)
             or not re.fullmatch(r'[a-f0-9]{40}', policy['revision'])
+            or not isinstance(policy['bundle_sha256'], str)
+            or not re.fullmatch(r'[a-f0-9]{64}', policy['bundle_sha256'])
             or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
             or type(policy['expires_at']) is not int
             or policy['expires_at'] < (int(time.time()) if now is None else now)):
         raise ValueError('invalid or expired standing policy')
     job = request.get('job_id')
     if (type(job) is not int or job < 1 or request.get('revision') != policy['revision']
+            or request.get('bundle_sha256') != policy['bundle_sha256']
             or plan_digest(plan) != request.get('plan_sha256')):
         raise ValueError('repair request does not match policy or plan')
     if (set(plan) != {'nodes', 'relationships', 'generated_at'}

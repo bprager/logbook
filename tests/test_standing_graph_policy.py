@@ -18,7 +18,7 @@ class StandingGraphPolicyTests(TestCase):
             subprocess.run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], check=True)
             (root / 'approval.allowed_signers').write_text('owner ' + key.with_suffix('.pub').read_text())
             (root / 'approval.allowed_signers').chmod(0o600)
-            policy = {'schema': 1, 'revision': 'a' * 40, 'max_records': 5, 'expires_at': int(time.time()) + 600}
+            policy = {'schema': 1, 'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'max_records': 5, 'expires_at': int(time.time()) + 600}
             path = root / 'standing-policy.json'
             path.write_text(json.dumps(policy))
             path.chmod(0o600)
@@ -26,13 +26,15 @@ class StandingGraphPolicyTests(TestCase):
             (root / 'standing-policy.json.sig').chmod(0o600)
             plan = {'nodes': [{'id': 'logbook:job:000147', 'labels': ['LogbookJob'], 'properties': {'project': 'logbook', 'job_id': 147}}], 'relationships': [], 'generated_at': 'now'}
             digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-            request = {'revision': 'a' * 40, 'job_id': 147, 'plan_sha256': digest}
+            request = {'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'job_id': 147, 'plan_sha256': digest}
             authorize_repair(request, plan, root)
             authorize_repair(request, plan, root)
             with self.assertRaises(ValueError):
                 authorize_repair({**request, 'job_id': 148}, plan, root)
             with self.assertRaises(ValueError):
                 authorize_repair({**request, 'revision': 'b' * 40}, plan, root)
+            with self.assertRaises(ValueError):
+                authorize_repair({**request, 'bundle_sha256': 'd' * 64}, plan, root)
             path.write_text(json.dumps({**policy, 'max_records': 500}))
             with self.assertRaises(ValueError):
                 authorize_repair(request, plan, root)
@@ -41,8 +43,8 @@ class StandingGraphPolicyTests(TestCase):
         from logbook.standing_graph_policy import check_plan
         plan = {'nodes': [{'id': 'logbook:job:000147', 'labels': ['LogbookJob'], 'properties': {'project': 'logbook', 'job_id': 147}}], 'relationships': [], 'generated_at': 'now'}
         digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-        request = {'revision': 'a' * 40, 'job_id': 147, 'plan_sha256': digest}
-        policy = {'schema': 1, 'revision': 'a' * 40, 'max_records': 5, 'expires_at': 100}
+        request = {'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'job_id': 147, 'plan_sha256': digest}
+        policy = {'schema': 1, 'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'max_records': 5, 'expires_at': 100}
         with self.assertRaises(ValueError):
             check_plan(request, plan, policy, now=101)
         with self.assertRaises(ValueError):
@@ -52,21 +54,21 @@ class StandingGraphPolicyTests(TestCase):
         from logbook.standing_graph_policy import check_plan
         plan = {'nodes': [{'id': 'logbook:job:000148', 'labels': ['LogbookJob'], 'properties': {}}], 'relationships': [], 'generated_at': 'now'}
         digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-        request = {'revision': 'a' * 40, 'job_id': 147, 'plan_sha256': digest}
-        policy = {'schema': 1, 'revision': 'a' * 40, 'max_records': 5, 'expires_at': 200}
+        request = {'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'job_id': 147, 'plan_sha256': digest}
+        policy = {'schema': 1, 'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'max_records': 5, 'expires_at': 200}
         with self.assertRaisesRegex(ValueError, 'out-of-scope'):
             check_plan(request, plan, policy, now=101)
 
     def test_rejects_malformed_or_oversized_plan(self):
         from logbook.standing_graph_policy import check_plan
-        policy = {'schema': 1, 'revision': 'a' * 40, 'max_records': 1, 'expires_at': 200}
+        policy = {'schema': 1, 'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'max_records': 1, 'expires_at': 200}
         for plan in (
             {'nodes': [], 'relationships': [], 'generated_at': 'now'},
             {'nodes': [{}], 'relationships': [], 'generated_at': 'now'},
         ):
             digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
             with self.assertRaises(ValueError):
-                check_plan({'revision': 'a' * 40, 'job_id': 147, 'plan_sha256': digest}, plan, policy, now=101)
+                check_plan({'revision': 'a' * 40, 'bundle_sha256': 'c' * 64, 'job_id': 147, 'plan_sha256': digest}, plan, policy, now=101)
 
     def test_rejects_signed_invalid_policy_content(self):
         with TemporaryDirectory() as tmp:

@@ -234,7 +234,10 @@ class RevisionBundleTests(unittest.TestCase):
             pin_patch = patch('logbook.operator_bundle.PINNED_WHEELS', pins)
             pin_patch.start()
             self.addCleanup(pin_patch.stop)
-            payload = build_revision_bundle(root, revision, root)
+            with patch('gzip.time.time', return_value=100):
+                payload = build_revision_bundle(root, revision, root)
+            with patch('gzip.time.time', return_value=200):
+                self.assertEqual(payload, build_revision_bundle(root, revision, root))
             with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as tar:
                 self.assertEqual(tar.extractfile('logbook/__init__.py').read(), b'reviewed')
             from unittest.mock import patch

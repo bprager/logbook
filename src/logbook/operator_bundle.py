@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import io
 import re
 import shlex
@@ -81,7 +82,8 @@ def build_revision_bundle(repo: Path, revision: str, wheel_dir: Path) -> bytes:
                              'src/logbook'], capture_output=True, check=True).stdout
     output = io.BytesIO()
     with tarfile.open(fileobj=io.BytesIO(source), mode='r:') as original, \
-         tarfile.open(fileobj=output, mode='w:gz') as bundle:
+         gzip.GzipFile(fileobj=output, mode='wb', mtime=0) as compressed, \
+         tarfile.open(fileobj=compressed, mode='w') as bundle:
         for item in original:
             if item.name.rstrip('/') == 'src':
                 continue

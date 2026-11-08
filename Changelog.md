@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Bind the candidate standing repair policy to the exact repair bundle digest and produce repeatable bundles for the same reviewed revision and dependencies.
+
 - Connect the experimental named-graph runner to the standing-policy check before staging and before launch; this remains undeployed and requires independent trust-boundary qualification.
 
 - Add an unconnected candidate check for a signed standing graph-repair policy, allowing repeat checks without per-repair signatures; not a production authorization boundary.
