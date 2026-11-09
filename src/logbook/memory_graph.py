@@ -558,8 +558,7 @@ def _add_transcript(builder: _PlanBuilder, job: RecordingJob, job_id: str) -> No
     transcript_path = Path(transcript_value)
     if not transcript_path.exists() or not transcript_path.is_file():
         return
-    payload = _read_json(transcript_path)
-    artifact_checksum = _file_checksum(transcript_path)
+    payload, artifact_checksum = _read_json_with_checksum(transcript_path)
     segments = payload.get("segments")
     if not isinstance(segments, list) or not segments:
         segments = [
@@ -645,8 +644,7 @@ def _add_insights(
     path = config.processing_root / "insights" / f"job-{job.id:06d}.insights.json"
     if not path.exists():
         return
-    payload = _read_json(path)
-    artifact_checksum = _file_checksum(path)
+    payload, artifact_checksum = _read_json_with_checksum(path)
     evidence_id = f"{job_id}:evidence:insights"
     builder.node(
         MemoryNode(
@@ -1253,15 +1251,12 @@ def _sentences(text: str) -> list[str]:
     ]
 
 
-def _read_json(path: Path) -> dict[str, object]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+def _read_json_with_checksum(path: Path) -> tuple[dict[str, object], str]:
+    content = path.read_bytes()
+    payload = json.loads(content.decode("utf-8"))
     if not isinstance(payload, dict):
         raise ValueError(f"expected JSON object: {path}")
-    return payload
-
-
-def _file_checksum(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return payload, hashlib.sha256(content).hexdigest()
 
 
 def _hash_text(text: str) -> str:

@@ -42,6 +42,42 @@ from logbook.transcription import transcribe_copied_with_fake_odin
 
 
 class MemoryGraphTests(TestCase):
+    def test_artifact_fingerprints_match_the_contents_used_for_the_plan(self):
+        import hashlib
+
+        with TemporaryDirectory() as tmp:
+            config = _seed_memory_fixture(Path(tmp))
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                job = ledger.get_by_id(1)
+            finally:
+                ledger.close()
+            transcript = Path(job.diarization_path or job.transcript_path)
+            insights = config.processing_root / "insights" / "job-000001.insights.json"
+            originals = {path: path.read_bytes() for path in (transcript, insights)}
+            read_text = Path.read_text
+
+            def change_after_read(path, *args, **kwargs):
+                result = read_text(path, *args, **kwargs)
+                if path in originals:
+                    path.write_text('{"text":"changed", "action_items": []}')
+                return result
+
+            with patch.object(Path, "read_text", change_after_read):
+                plan = build_memory_graph_plan(config, job_id=1)
+            evidence = {
+                node.properties["source_kind"]: node.properties["artifact_checksum"]
+                for node in plan.nodes
+                if "SourceEvidence" in node.labels
+                and node.properties.get("source_kind") in {"transcript_segment", "insight_artifact"}
+            }
+            self.assertEqual(
+                evidence["transcript_segment"], hashlib.sha256(originals[transcript]).hexdigest()
+            )
+            self.assertEqual(
+                evidence["insight_artifact"], hashlib.sha256(originals[insights]).hexdigest()
+            )
+
     def test_graph_writes_refuse_while_another_writer_holds_lock(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
