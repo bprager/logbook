@@ -13,10 +13,24 @@ COMMAND = ['/usr/bin/sudo', '-n', '-u', 'bernd', '/usr/local/libexec/logbook-loc
 OPERATOR_KEY = Path('/Library/Application Support/LogbookRepairOperator/private/odin-repair')
 
 
-def coordinate_named_handoff(remote: NamedGraphMaintenance, refresh: Callable[[], dict], *,
-                             timeout_seconds: float) -> None:
+def _check_remote(remote: NamedGraphMaintenance) -> None:
     if remote.host != 'logbook-repair@odin' or remote.identity != OPERATOR_KEY:
         raise ValueError('fixed restricted repair connection required')
+
+
+def release_named_handoff(remote: NamedGraphMaintenance) -> None:
+    """Release a matching guard only after the fixed remote confirms recovery."""
+    _check_remote(remote)
+    result = subprocess.run(COMMAND, input=json.dumps({'release': remote.request}) + '\n',
+                            capture_output=True, text=True, timeout=60, check=False,
+                            env={'PATH':'/usr/bin:/bin', 'LANG':'C.UTF-8'})
+    if result.returncode or result.stdout != 'LOCKED\nRELEASED\n':
+        raise RuntimeError('guard release unconfirmed')
+
+
+def coordinate_named_handoff(remote: NamedGraphMaintenance, refresh: Callable[[], dict], *,
+                             timeout_seconds: float) -> None:
+    _check_remote(remote)
     child = subprocess.Popen(COMMAND, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL, text=True, start_new_session=True,
                              env={'PATH':'/usr/bin:/bin', 'LANG':'C.UTF-8'})

@@ -281,6 +281,10 @@ if __name__ == '__main__':  # pragma: no cover
         print(run_named(load_app_config(Path(sys.argv[2])), Path(sys.argv[3])))
     elif len(sys.argv) == 3 and sys.argv[1] == 'named-run-restricted':
         print(run_named(None, Path(sys.argv[2]), restricted=True))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'named-release-restricted':
+        from logbook.lock_guard_client import release_named_handoff
+        release_named_handoff(_named_remote(Path(sys.argv[2])))
+        print('released')
     elif len(sys.argv) == 4 and sys.argv[1] == 'named-release':
         release_named_processing_guard(load_app_config(Path(sys.argv[2])), _named_remote(Path(sys.argv[3])))
         print('released')

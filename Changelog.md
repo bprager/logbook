@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Allow the restricted repair operator to release a matching guard only after confirmed recovery.
+
 - Prepare an inactive restricted operator handoff for the existing processing locks and recovery guard.
 
 - Start the independent recovery monitor before requesting a graph repair.

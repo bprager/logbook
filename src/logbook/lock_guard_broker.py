@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors
 from logbook.named_repair_dispatcher import validate_request_shape
-from logbook.processing_restart_guard import arm_guard, clear_guard
+from logbook.processing_restart_guard import arm_guard, clear_guard, require_clear_guard
 from logbook.source_plan_broker import trusted_config
 
 ROOT = Path('/Users/bernd/VoiceIngest')
@@ -61,10 +61,21 @@ def hold_window(config, remote_factory, source, output) -> None:
         raw = source.readline(8193)
         if len(raw) > 8192 or not raw.endswith('\n'):
             raise ValueError('invalid bounded repair request')
-        remote = remote_factory(json.loads(raw))
+        payload = json.loads(raw)
+        releasing = isinstance(payload, dict) and set(payload) == {'release'}
+        remote = remote_factory(payload['release'] if releasing else payload)
         unit = remote.request.get('unit', '')
         if not isinstance(unit, str) or not re.fullmatch(r'logbook-graph-maintenance-[a-f0-9]{32}\.service', unit):
             raise ValueError('invalid maintenance unit')
+        if releasing:
+            if not remote.recovered():
+                raise RuntimeError('recovery unconfirmed')
+            remote.outcome()
+            clear_guard(config.processing_root, unit)
+            output.write('RELEASED\n')
+            output.flush()
+            return
+        require_clear_guard(config.processing_root)
         if remote.recovered():
             raise ValueError('maintenance unit already recovered')
         arm_guard(config.processing_root, unit)
@@ -83,7 +94,7 @@ def hold_window(config, remote_factory, source, output) -> None:
                 pass
             time.sleep(0.5)
 
-    with_logbook_lock_descriptors(config, operation)
+    with_logbook_lock_descriptors(config, operation, allow_pending=True)
 
 
 def main() -> None:  # pragma: no cover

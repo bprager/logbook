@@ -11,6 +11,54 @@ from unittest.mock import Mock, patch
 
 
 class LockGuardHandoffTests(TestCase):
+    def test_restricted_release_requires_matching_confirmed_recovery(self):
+        from logbook.lock_guard_broker import hold_window
+        from logbook.processing_restart_guard import arm_guard, require_clear_guard
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = SimpleNamespace(processing_root=root)
+            unit = 'logbook-graph-maintenance-' + 'a' * 32 + '.service'
+            arm_guard(root, unit)
+            remote = Mock(request={'unit':unit})
+            remote.recovered.return_value = False
+            payload = io.StringIO(json.dumps({'release':{'unit':unit}}) + '\n')
+            with self.assertRaisesRegex(RuntimeError, 'unconfirmed'):
+                hold_window(config, lambda request: remote, payload, io.StringIO())
+            with self.assertRaises(RuntimeError):
+                require_clear_guard(root)
+            with self.assertRaises(RuntimeError):
+                hold_window(config, lambda request: remote, io.StringIO('{}\n'), io.StringIO())
+            remote.recovered.return_value = True
+            other = Mock(request={'unit':'logbook-graph-maintenance-' + 'b' * 32 + '.service'})
+            other.recovered.return_value = True
+            with self.assertRaises(ValueError):
+                hold_window(config, lambda request: other,
+                            io.StringIO(json.dumps({'release':{'unit':other.request['unit']}}) + '\n'), io.StringIO())
+            with self.assertRaises(RuntimeError):
+                require_clear_guard(root)
+            output = io.StringIO()
+            hold_window(config, lambda request: remote,
+                        io.StringIO(json.dumps({'release':{'unit':unit}}) + '\n'), output)
+            self.assertEqual(output.getvalue(), 'LOCKED\nRELEASED\n')
+            remote.outcome.assert_called_once()
+            require_clear_guard(root)
+
+    def test_restricted_release_uses_fixed_holder(self):
+        from logbook.lock_guard_client import release_named_handoff, OPERATOR_KEY, COMMAND
+        from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
+        remote = Mock(spec=NamedGraphMaintenance, request={'unit':'fixture'})
+        remote.host, remote.identity = 'logbook-repair@odin', OPERATOR_KEY
+        result = SimpleNamespace(returncode=0, stdout='LOCKED\nRELEASED\n')
+        with patch('logbook.lock_guard_client.subprocess.run', return_value=result) as run:
+            release_named_handoff(remote)
+            self.assertEqual(run.call_args.args[0], COMMAND)
+            self.assertEqual(json.loads(run.call_args.kwargs['input']), {'release':remote.request})
+        for result in (SimpleNamespace(returncode=1, stdout=''),
+                       SimpleNamespace(returncode=0, stdout='LOCKED\n')):
+            with patch('logbook.lock_guard_client.subprocess.run', return_value=result), \
+                 self.assertRaisesRegex(RuntimeError, 'unconfirmed'):
+                release_named_handoff(remote)
+
     def test_disconnected_client_leaves_real_holder_running(self):
         import fcntl
         from logbook.processing_restart_guard import require_clear_guard
