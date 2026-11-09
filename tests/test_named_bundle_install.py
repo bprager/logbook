@@ -13,6 +13,74 @@ from logbook.operator_bundle_bootstrap import install_named_bundle
 
 
 class NamedBundleInstallerTests(TestCase):
+    def test_separately_signed_releases_share_one_policy(self):
+        from logbook.standing_graph_policy import authorize_repair
+        from logbook.named_graph_approval import plan_digest
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            guard = root/'guard'
+            guard.mkdir(mode=0o700)
+            parent = guard/'bundles'
+            parent.mkdir(mode=0o700)
+            keys = {}
+            for principal in ('owner', 'release'):
+                key = root/principal
+                subprocess.run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], check=True)
+                allowed = guard/('approval.allowed_signers' if principal == 'owner' else 'release.allowed_signers')
+                allowed.write_text(principal+' '+key.with_suffix('.pub').read_text())
+                allowed.chmod(0o600)
+                keys[principal] = key
+            def sign(path, principal, namespace):
+                sig = Path(str(path)+'.sig')
+                sig.unlink(missing_ok=True)
+                subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'sign', '-n', namespace, '-f', str(keys[principal]), str(path)], check=True, capture_output=True)
+                sig.chmod(0o600)
+            policy = guard/'standing-policy.json'
+            policy.write_text(json.dumps({'schema':2, 'max_records':5, 'expires_at':int(time.time())+300}))
+            policy.chmod(0o600)
+            sign(policy, 'owner', 'logbook-graph-policy')
+            plan = {'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],'properties':{'project':'logbook','job_id':147}}], 'relationships':[], 'generated_at':'now'}
+            release = guard/'release.json'
+            for version in ('a', 'b'):
+                stream = io.BytesIO()
+                with tarfile.open(fileobj=stream, mode='w') as tar:
+                    data = version.encode()
+                    item = tarfile.TarInfo('logbook/example.py')
+                    item.size = len(data)
+                    tar.addfile(item, io.BytesIO(data))
+                payload = stream.getvalue()
+                digest = hashlib.sha256(payload).hexdigest()
+                release.write_text(json.dumps({'schema':1, 'revision':version*40, 'bundle_sha256':digest}))
+                release.chmod(0o600)
+                sign(release, 'release', 'logbook-repair-release')
+                request = {'revision':version*40, 'bundle_sha256':digest, 'job_id':147, 'plan_sha256':plan_digest(plan)}
+                token = version*32
+                with patch('logbook.operator_bundle_bootstrap.trusted_parent'):
+                    with self.assertRaises(ValueError):
+                        install_named_bundle(payload+b'changed', parent/('bundle-'+token), parent/('window-'+token), guard)
+                    install_named_bundle(payload, parent/('bundle-'+token), parent/('window-'+token), guard)
+                authorize_repair(request, plan, guard)
+                with self.assertRaises(ValueError):
+                    authorize_repair({**request, 'revision':'c'*40}, plan, guard)
+                release.write_text(release.read_text()+' ')
+                with self.assertRaises(ValueError):
+                    authorize_repair(request, plan, guard)
+                sign(release, 'owner', 'logbook-repair-release')
+                with self.assertRaises(ValueError):
+                    authorize_repair(request, plan, guard)
+            for invalid in ('{}', '{'):
+                release.write_text(invalid)
+                sign(release, 'release', 'logbook-repair-release')
+                with self.assertRaisesRegex(ValueError, 'invalid release'):
+                    authorize_repair(request, plan, guard)
+            from logbook.standing_graph_policy import check_plan
+            with self.assertRaisesRegex(ValueError, 'invalid approved release'):
+                check_plan(request, plan, json.loads(policy.read_text()))
+            policy.write_text(json.dumps({'schema':2, 'max_records':5, 'expires_at':0}))
+            sign(policy, 'owner', 'logbook-graph-policy')
+            with patch('logbook.operator_bundle_bootstrap.trusted_parent'), self.assertRaisesRegex(ValueError, 'standing policy'):
+                install_named_bundle(payload, parent/('bundle-'+'c'*32), parent/('window-'+'c'*32), guard)
+
     def test_installed_named_command_cannot_use_legacy_installer_mode(self):
         from logbook.operator_bundle_bootstrap import main
         with patch('sys.argv',['/usr/local/libexec/logbook-repair-bundle-installer','/tmp/a','/tmp/b','digest']), \

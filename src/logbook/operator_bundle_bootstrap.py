@@ -89,6 +89,31 @@ def _private_file(path: Path) -> bytes:
         return source.read()
 
 
+def approved_release(guard: Path) -> dict:
+    """Read a separately signed release from the protected guard directory."""
+    content = _private_file(guard/'release.json')
+    allowed = guard/'release.allowed_signers'
+    signature = guard/'release.json.sig'
+    _private_file(allowed)
+    _private_file(signature)
+    result = subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'verify', '-f', str(allowed),
+                             '-I', 'release', '-n', 'logbook-repair-release', '-s', str(signature)],
+                            input=content, capture_output=True, timeout=10)
+    if result.returncode:
+        raise ValueError('release signature invalid')
+    try:
+        release = json.loads(content)
+        if (not isinstance(release, dict) or set(release) != {'schema', 'revision', 'bundle_sha256'}
+                or type(release['schema']) is not int or release['schema'] != 1
+                or not isinstance(release['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}', release['revision'])
+                or not isinstance(release['bundle_sha256'], str)
+                or not re.fullmatch(r'[a-f0-9]{64}', release['bundle_sha256'])):
+            raise ValueError('invalid release')
+        return release
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('invalid release') from error
+
+
 def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: Path) -> None:
     """Install only a standing-policy-approved package at a constrained location."""
     trusted_parent(guard/'bundles'/'check')
@@ -111,20 +136,24 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
         raise ValueError('standing policy signature invalid')
     try:
         policy = json.loads(content)
-        if (not isinstance(policy, dict) or set(policy) != {'schema','revision','bundle_sha256','max_records','expires_at'}
-                or type(policy['schema']) is not int or policy['schema'] != 1
-                or not isinstance(policy['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}',policy['revision'])
+        if (not isinstance(policy, dict) or type(policy.get('schema')) is not int
+                or policy['schema'] not in (1, 2)
+                or set(policy) != ({'schema','revision','bundle_sha256','max_records','expires_at'}
+                                   if policy['schema'] == 1 else {'schema','max_records','expires_at'})
                 or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
-                or type(policy['expires_at']) is not int or policy['expires_at'] < int(time.time())
-                or not isinstance(policy['bundle_sha256'], str)
-                or not re.fullmatch(r'[a-f0-9]{64}',policy['bundle_sha256'])
-                or hashlib.sha256(data).hexdigest() != policy['bundle_sha256']):
+                or type(policy['expires_at']) is not int or policy['expires_at'] < int(time.time())):
+            raise ValueError('standing policy does not approve bundle')
+        release = policy if policy['schema'] == 1 else approved_release(guard)
+        if (not isinstance(release['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}', release['revision'])
+                or not isinstance(release['bundle_sha256'], str)
+                or not re.fullmatch(r'[a-f0-9]{64}', release['bundle_sha256'])
+                or hashlib.sha256(data).hexdigest() != release['bundle_sha256']):
             raise ValueError('standing policy does not approve bundle')
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid standing policy') from error
     staging.mkdir(mode=0o700)
     try:
-        install_bundle(data,destination,policy['bundle_sha256'])
+        install_bundle(data,destination,release['bundle_sha256'])
         sync_directory(parent)
     except Exception:
         staging.rmdir()

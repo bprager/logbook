@@ -14,22 +14,27 @@ from pathlib import Path
 from logbook.guarded_graph_repair import _is_canonical_node, _is_canonical_relationship
 from logbook.memory_graph import MemoryNode, MemoryRelationship
 from logbook.named_graph_approval import _private_bytes, plan_digest
+from logbook.operator_bundle_bootstrap import approved_release
 
 
-def check_plan(request: dict, plan: dict, policy: dict, *, now: int | None = None) -> None:
-    if (set(policy) != {'schema', 'revision', 'bundle_sha256', 'max_records', 'expires_at'}
-            or type(policy['schema']) is not int or policy['schema'] != 1
-            or not isinstance(policy['revision'], str)
-            or not re.fullmatch(r'[a-f0-9]{40}', policy['revision'])
-            or not isinstance(policy['bundle_sha256'], str)
-            or not re.fullmatch(r'[a-f0-9]{64}', policy['bundle_sha256'])
+def check_plan(request: dict, plan: dict, policy: dict, *, now: int | None = None,
+               release: dict | None = None) -> None:
+    if (type(policy.get('schema')) is not int or policy['schema'] not in (1, 2)
+            or set(policy) != ({'schema', 'revision', 'bundle_sha256', 'max_records', 'expires_at'}
+                               if policy['schema'] == 1 else {'schema', 'max_records', 'expires_at'})
             or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
             or type(policy['expires_at']) is not int
             or policy['expires_at'] < (int(time.time()) if now is None else now)):
         raise ValueError('invalid or expired standing policy')
+    selected = policy if policy['schema'] == 1 else release
+    if (not isinstance(selected, dict) or not isinstance(selected.get('revision'), str)
+            or not re.fullmatch(r'[a-f0-9]{40}', selected['revision'])
+            or not isinstance(selected.get('bundle_sha256'), str)
+            or not re.fullmatch(r'[a-f0-9]{64}', selected['bundle_sha256'])):
+        raise ValueError('invalid approved release')
     job = request.get('job_id')
-    if (type(job) is not int or job < 1 or request.get('revision') != policy['revision']
-            or request.get('bundle_sha256') != policy['bundle_sha256']
+    if (type(job) is not int or job < 1 or request.get('revision') != selected['revision']
+            or request.get('bundle_sha256') != selected['bundle_sha256']
             or plan_digest(plan) != request.get('plan_sha256')):
         raise ValueError('repair request does not match policy or plan')
     if (set(plan) != {'nodes', 'relationships', 'generated_at'}
@@ -72,6 +77,7 @@ def authorize_repair(request: dict, plan: dict, guard: Path, *, now: int | None 
         policy = json.loads(content)
         if not isinstance(policy, dict):
             raise ValueError('standing policy must be an object')
-        check_plan(request, plan, policy, now=now)
+        release = approved_release(guard) if policy.get('schema') == 2 else None
+        check_plan(request, plan, policy, now=now, release=release)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid standing policy') from error
