@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Prepare repair plans from private copies of contained transcript and insight inputs.
+
 - Reject repair plans that omit a transcript referenced by the ledger.
 
 - Bind transcript and insight evidence fingerprints to the same file contents used to build the graph plan.
