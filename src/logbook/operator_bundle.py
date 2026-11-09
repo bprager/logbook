@@ -95,6 +95,36 @@ def build_revision_bundle(repo: Path, revision: str, wheel_dir: Path) -> bytes:
     return _bounded(output)
 
 
+
+def build_producer_bundle(repo: Path, revision: str) -> bytes:
+    """Package committed producer code and launcher, never mutable checkout contents."""
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
+        raise ValueError('full commit revision required')
+    kind = subprocess.run(['git', '-C', str(repo), 'cat-file', '-t', revision],
+                          capture_output=True, check=True).stdout.strip()
+    if kind != b'commit':
+        raise ValueError('revision must identify a commit')
+    source = subprocess.run(['git', '-C', str(repo), 'archive', '--format=tar', revision,
+                             'src/logbook', 'scripts/logbook-plan-producer'],
+                            capture_output=True, check=True).stdout
+    output = io.BytesIO()
+    with tarfile.open(fileobj=io.BytesIO(source), mode='r:') as original, \
+         tarfile.open(fileobj=output, mode='w') as bundle:
+        for item in original:
+            if item.name.rstrip('/') in {'src', 'scripts'}:
+                continue
+            if not (item.isfile() or item.isdir()):
+                raise ValueError('source contains unsupported file type')
+            if item.name == 'scripts/logbook-plan-producer':
+                item.name = 'launcher'
+            elif item.name.startswith('src/logbook/') or item.name.rstrip('/') == 'src/logbook':
+                item.name = item.name.removeprefix('src/')
+            else:
+                raise ValueError('unexpected producer package path')
+            bundle.addfile(item, original.extractfile(item) if item.isfile() else None)
+    return _bounded(output)
+
+
 def provision_bundle(host: str, identity: Path, destination: Path, staging: Path, data: bytes) -> str:
     from logbook.graph_maintenance_cross_host import SshMaintenance
     SshMaintenance(host, identity, Path('/unused'), {})  # validate host and identity

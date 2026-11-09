@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add a checked, non-overwriting installer for an inactive plan producer; it grants no permissions and is not deployed.
+
 - Refresh candidate repair proof automatically under locks before staging and persist matching recovery state.
 
 - Add a fixed plan producer launcher that checks its installed code is root controlled before use; not deployed.

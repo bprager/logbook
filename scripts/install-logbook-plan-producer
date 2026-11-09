@@ -1,0 +1,127 @@
+#!/usr/bin/python3 -I
+"""Install a checked producer package; does not enable a service or grant sudo."""
+import hashlib
+import io
+import os
+import pwd
+import re
+import shutil
+import stat
+import sys
+import tarfile
+from pathlib import Path, PurePosixPath
+
+BASE = Path('/Library/Application Support/LogbookPlanProducer')
+LAUNCHER = Path('/usr/local/libexec/logbook-plan-producer')
+REQUIRED = {'launcher', 'logbook/__init__.py', 'logbook/plan_producer.py',
+            'logbook/plan_attestation.py'}
+
+
+def trusted_ancestors(path):
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('absolute trusted path required')
+    for current in (path, *path.parents):
+        info = current.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('root-controlled directory required')
+
+
+def sync_dir(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def install(data, digest, base, launcher, producer_uid, producer_gid):
+    if (len(data) > 30000000 or not isinstance(digest, str)
+            or not re.fullmatch(r'[a-f0-9]{64}', digest)
+            or hashlib.sha256(data).hexdigest() != digest):
+        raise ValueError('package digest or size invalid')
+    trusted_ancestors(base.parent)
+    trusted_ancestors(launcher.parent)
+    if os.path.lexists(base) or os.path.lexists(launcher):
+        raise FileExistsError('producer installation already exists')
+    with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as archive:
+        members = archive.getmembers()
+        if len(members) > 2000 or sum(m.size for m in members) > 60000000:
+            raise ValueError('package exceeds limits')
+        seen = set()
+        for member in members:
+            path = PurePosixPath(member.name)
+            name = str(path)
+            if (path.is_absolute() or '..' in path.parts or not path.parts
+                    or name != member.name.rstrip('/') or name in seen
+                    or not (member.isfile() or member.isdir())
+                    or not (name == 'launcher' or path.parts[0] == 'logbook')
+                    or (name == 'launcher' and not member.isfile())):
+                raise ValueError('unsafe package entry')
+            seen.add(name)
+        if not REQUIRED.issubset({str(PurePosixPath(m.name)) for m in members if m.isfile()}):
+            raise ValueError('required producer files missing')
+        created_base = False
+        created_launcher = False
+        try:
+            base.mkdir(mode=0o755)
+            created_base = True
+            lib = base/'lib'
+            lib.mkdir(mode=0o755)
+            for member in members:
+                if member.name == 'launcher':
+                    continue
+                path = lib.joinpath(*PurePosixPath(member.name).parts)
+                if member.isdir():
+                    path.mkdir(mode=0o755, parents=True, exist_ok=True)
+                else:
+                    path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+                    source = archive.extractfile(member)
+                    if source is None:
+                        raise ValueError('missing package content')
+                    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    os.fchmod(fd, 0o644)
+                    with os.fdopen(fd, 'wb') as output:
+                        shutil.copyfileobj(source, output)
+                        output.flush()
+                        os.fsync(output.fileno())
+            for current, _, _ in os.walk(base):
+                os.chmod(current, 0o755)
+            private = base/'private'
+            private.mkdir(mode=0o700)
+            os.chmod(private, 0o700)
+            os.chown(private, producer_uid, producer_gid)
+            for current, _, _ in os.walk(base, topdown=False):
+                sync_dir(Path(current))
+            source = archive.extractfile('launcher')
+            if source is None:
+                raise ValueError('missing producer launcher')
+            fd = os.open(launcher, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o755)
+            created_launcher = True
+            os.fchmod(fd, 0o755)
+            with os.fdopen(fd, 'wb') as output:
+                shutil.copyfileobj(source, output)
+                output.flush()
+                os.fsync(output.fileno())
+            sync_dir(launcher.parent)
+            sync_dir(base.parent)
+        except Exception:
+            if created_launcher:
+                launcher.unlink()
+            if created_base:
+                shutil.rmtree(base)
+            raise
+
+
+def main():
+    if os.geteuid() != 0 or len(sys.argv) != 2:
+        raise SystemExit('root and reviewed package SHA-256 required')
+    account = pwd.getpwnam('logbook-plan-producer')
+    if account.pw_uid == 0:
+        raise SystemExit('a separate non-root producer account is required')
+    install(sys.stdin.buffer.read(30000001), sys.argv[1], BASE, LAUNCHER,
+            account.pw_uid, account.pw_gid)
+    print('PRODUCER_INSTALLED_INACTIVE')
+
+
+if __name__ == '__main__':
+    main()
