@@ -12,6 +12,24 @@ from logbook.operator_plan import prepare_job_plan
 
 
 class OperatorPlanTests(unittest.TestCase):
+    def test_missing_referenced_transcript_does_not_produce_partial_plan(self):
+        from tests.test_memory_graph import _seed_memory_fixture
+        from logbook.ledger import open_ledger
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _seed_memory_fixture(root)
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                job = ledger.get_by_id(1)
+            finally:
+                ledger.close()
+            transcript = Path(job.diarization_path or job.transcript_path)
+            transcript.unlink()
+            with self.assertRaisesRegex(ValueError, 'transcript'):
+                prepare_job_plan(config, 1, root/'plan.json')
+            self.assertFalse((root/'plan.json').exists())
+
     def test_copies_ledger_and_writes_private_non_overwriting_plan(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -19,6 +37,8 @@ class OperatorPlanTests(unittest.TestCase):
             with sqlite3.connect(ledger) as db:
                 db.execute('CREATE TABLE sample(value TEXT)')
                 db.execute("INSERT INTO sample VALUES ('snapshot')")
+                db.execute('CREATE TABLE recording_jobs(id INTEGER, diarization_path TEXT, transcript_path TEXT)')
+                db.execute('INSERT INTO recording_jobs VALUES (123, NULL, NULL)')
             node = MemoryNode('logbook:job:000123', ('LogbookJob',), {})
             plan = MemoryGraphPlan((node,), (), 'now')
             def build(snapshot_config, job_id):
@@ -54,6 +74,7 @@ class OperatorPlanTests(unittest.TestCase):
             ledger = root/'ledger.db'
             with sqlite3.connect(ledger) as db:
                 db.execute('CREATE TABLE sample(value TEXT)')
+                db.execute('CREATE TABLE recording_jobs(id INTEGER, diarization_path TEXT, transcript_path TEXT)')
             empty = MemoryGraphPlan((), (), 'now')
             large = MemoryGraphPlan((MemoryNode('logbook:job:000123', ('LogbookJob',),
                                                 {'payload': 'x'*5000001}),), (), 'now')

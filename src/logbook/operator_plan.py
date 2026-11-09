@@ -24,6 +24,14 @@ def prepare_job_plan(config: AppConfig, job_id: int, destination: Path) -> tuple
             with sqlite3.connect(snapshot) as target:
                 source.backup(target)
         plan = build_memory_graph_plan(dataclasses.replace(config, sqlite_path=snapshot), job_id=job_id)
+        with sqlite3.connect(snapshot) as ledger:
+            row = ledger.execute('SELECT diarization_path, transcript_path FROM recording_jobs WHERE id = ?',
+                                 (job_id,)).fetchone()
+        if row and (row[0] or row[1]) and not any(
+            node.properties.get('source_kind') == 'transcript_segment'
+            and node.properties.get('job_id') == job_id for node in plan.nodes
+        ):
+            raise ValueError('referenced transcript missing from repair plan')
     if not plan.nodes:
         raise ValueError('job not found in ledger')
     data = (json.dumps(dataclasses.asdict(plan), sort_keys=True) + '\n').encode()

@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Reject repair plans that omit a transcript referenced by the ledger.
+
 - Bind transcript and insight evidence fingerprints to the same file contents used to build the graph plan.
 
 - Add a checked, non-overwriting installer for an inactive plan producer; it grants no permissions and is not deployed.
