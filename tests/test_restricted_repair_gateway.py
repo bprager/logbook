@@ -15,6 +15,8 @@ class RestrictedRepairGatewayTests(TestCase):
         ])
         self.assertEqual(permitted_command('sudo -n /usr/local/libexec/logbook-repair-dispatcher named-status'),
                          ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', 'named-status'])
+        self.assertEqual(permitted_command('sudo -n /usr/local/libexec/logbook-repair-dispatcher named-check'),
+                         ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', 'named-check'])
 
     def test_rejects_shell_and_unapproved_or_mismatched_targets(self):
         base = '/var/lib/logbook-graph-guard/bundles/'

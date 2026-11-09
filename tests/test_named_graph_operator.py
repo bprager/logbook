@@ -139,6 +139,19 @@ class NamedGraphOperatorTests(TestCase):
         with self.assertRaisesRegex(ValueError,'unit'):
             release_named_processing_guard(config,Mock(request=request))
 
+    def test_named_check_requires_proof_and_positive_result(self):
+        from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
+        remote=NamedGraphMaintenance('host',Path('/key'),Path('/entry'),{})
+        with self.assertRaisesRegex(ValueError, 'proof required'):
+            remote.check({'nodes':[]})
+        remote.plan_proof = {'proof':'fixture'}
+        with patch.object(remote, 'invoke', return_value='CHECK_OK') as invoke:
+            remote.check({'nodes':[]})
+            self.assertEqual(invoke.call_args.args[0], 'named-check')
+        with patch.object(remote, 'invoke', return_value='REJECTED'), \
+             self.assertRaisesRegex(ConnectionError, 'check rejected'):
+            remote.check({'nodes':[]})
+
     def test_named_stage_rejects_missing_producer_proof_before_disarming(self):
         request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
@@ -156,6 +169,35 @@ class NamedGraphOperatorTests(TestCase):
             remote_main()
         record.assert_not_called()
         guard.return_value.disarm.assert_not_called()
+
+    def test_named_check_is_read_only_and_checks_schema_before_guard(self):
+        request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard',
+                 'job_id':7,'plan_data':{'nodes':[]},'plan_proof':{}}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
+             patch('logbook.graph_maintenance_remote.DockerLaunch'), \
+             patch('logbook.graph_maintenance_remote.verify_bundle_marker'), \
+             patch('logbook.graph_maintenance_remote.authorize_repair'), \
+             patch('logbook.graph_maintenance_remote.verify_plan'), \
+             patch('logbook.graph_maintenance_remote.record_named_graph_storage') as record, \
+             patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard, \
+             patch('logbook.graph_maintenance_remote.stage_plan') as stage, \
+             patch('sys.argv',['remote','named-check']), patch('sys.stdin',io.StringIO(json.dumps(request))), \
+             patch('sys.stdout',new_callable=io.StringIO) as output:
+            remote_main()
+            self.assertEqual(output.getvalue(),'CHECK_OK\n')
+            self.assertIn('logbook.repair_schema_preflight', recovery.return_value.run.call_args.args[0])
+            record.assert_not_called()
+            guard.return_value.disarm.assert_not_called()
+            stage.assert_not_called()
+            recovery.return_value.run.side_effect = ValueError('missing constraints')
+            with patch('sys.argv',['remote','named-stage']), patch('sys.stdin',io.StringIO(json.dumps(request))), \
+                 self.assertRaisesRegex(ValueError, 'missing constraints'):
+                remote_main()
+            record.assert_not_called()
+            guard.return_value.disarm.assert_not_called()
+            stage.assert_not_called()
 
     def test_named_stage_checks_standing_policy_before_disarming_and_staging(self):
         request={'container_id':'a'*64,'pid':1,'port':7697,'unit':'unit','private_dir':'/private',

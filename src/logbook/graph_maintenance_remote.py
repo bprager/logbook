@@ -43,7 +43,7 @@ def confirmed_normal_outcome(request: dict) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-stage", "named-preflight", "named-launch"}:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-check", "named-stage", "named-preflight", "named-launch"}:
         raise ValueError("expected launch or status")
     request = json.load(sys.stdin)
     recovery = DockerRecovery(request["container_id"], request["pid"],
@@ -56,12 +56,20 @@ def main() -> None:
             raise ValueError('named graph recovery state required')
         _validate_named(request)
         action = sys.argv[1]
-        if action == 'named-stage':
+        if action in {'named-check', 'named-stage'}:
             launcher.verify_target()
             verify_bundle_marker(request, Path(__file__).resolve().parent.parent)
             authorize_repair(request, request['plan_data'], Path(request['boot_guard_dir']))
             verify_plan(request['plan_data'], request['job_id'], request.get('plan_proof'),
                         Path(request['boot_guard_dir'])/'plan.allowed_signers')
+            bundle = Path(__file__).resolve().parent.parent
+            recovery.run(['/usr/bin/nsenter', '-t', str(request['pid']), '-n', '/usr/bin/env',
+                          f'PYTHONPATH={bundle}', '/usr/bin/python3', '-m',
+                          'logbook.repair_schema_preflight', str(request['port'])],
+                         json.dumps(request['plan_data']), timeout=30)
+            if action == 'named-check':
+                print('CHECK_OK')
+                return
             record_named_graph_storage(request, recovery)
             MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).disarm()
             stage_plan(request, Path(__file__).resolve().parent.parent)

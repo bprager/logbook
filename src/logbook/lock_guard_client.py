@@ -44,6 +44,7 @@ def coordinate_named_handoff(remote: NamedGraphMaintenance, refresh: Callable[[]
     try:
         expect('LOCKED')
         plan = refresh()
+        remote.check(plan)
         encoded = json.dumps(remote.request)
         if len(encoded.encode()) > 8191 or '\n' in encoded:
             raise ValueError('repair request exceeds limit')

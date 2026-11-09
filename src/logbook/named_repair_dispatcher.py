@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 GUARD = Path('/var/lib/logbook-graph-guard')
-ACTIONS = {'named-stage','named-preflight','named-launch','named-status','named-outcome','named-offline','named-authorize'}
+ACTIONS = {'named-check','named-stage','named-preflight','named-launch','named-status','named-outcome','named-offline','named-authorize'}
 FIELDS = {'profile','boot_guard_service','boot_guard_dir','port','unit','private_dir','journal','worker',
           'recovery_worker','recovery_file','container_id','pid','seconds','job_id','revision','bundle_sha256','plan_sha256'}
 
@@ -32,7 +32,7 @@ def trusted_path(path: Path, *, directory: bool, private: bool = False) -> None:
 def validate_request_shape(action: str, request: dict) -> Path:
     if action not in ACTIONS or not isinstance(request,dict):
         raise ValueError('unsupported repair action')
-    expected = FIELDS | ({'plan_data','plan_proof'} if action == 'named-stage' else set())
+    expected = FIELDS | ({'plan_data','plan_proof'} if action in {'named-check','named-stage'} else set())
     if set(request) != expected:
         raise ValueError('unexpected repair request fields')
     unit = request['unit']

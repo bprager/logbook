@@ -8,7 +8,7 @@ import shlex
 
 INSTALLER = '/usr/local/libexec/logbook-repair-bundle-installer'
 DISPATCHER = '/usr/local/libexec/logbook-repair-dispatcher'
-ACTIONS = frozenset({'named-stage', 'named-preflight', 'named-launch', 'named-status',
+ACTIONS = frozenset({'named-check', 'named-stage', 'named-preflight', 'named-launch', 'named-status',
                      'named-outcome', 'named-offline', 'named-authorize'})
 
 

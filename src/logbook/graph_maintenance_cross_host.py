@@ -31,7 +31,7 @@ class SshMaintenance:
         return shlex.join(['sudo', '-n', '/usr/bin/python3', str(self.entrypoint), action])
 
     def invoke(self, action: str, payload: dict | None = None) -> str:
-        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-stage", "named-preflight", "named-launch"}:
+        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-check", "named-stage", "named-preflight", "named-launch"}:
             raise ValueError("invalid remote action")
         command = self._command(action)
         try:
@@ -80,7 +80,7 @@ class NamedGraphMaintenance(SshMaintenance):
     """Bounded named graph launch and recovery commands."""
 
     def _command(self, action: str) -> str:
-        if action not in {'named-stage','named-preflight','named-launch','named-status','named-outcome','named-offline','named-authorize'}:
+        if action not in {'named-check','named-stage','named-preflight','named-launch','named-status','named-outcome','named-offline','named-authorize'}:
             raise ValueError('invalid named action')
         return shlex.join(['sudo','-n','/usr/local/libexec/logbook-repair-dispatcher',action])
 
@@ -90,6 +90,13 @@ class NamedGraphMaintenance(SshMaintenance):
             raise ValueError('producer plan proof required')
         if self.invoke("named-stage", {**self.request, "plan_data": plan, "plan_proof": proof}) != "STAGED":
             raise ConnectionError("remote staging rejected")
+
+    def check(self, plan: dict) -> None:
+        proof = getattr(self, 'plan_proof', None)
+        if not isinstance(proof, dict):
+            raise ValueError('producer plan proof required')
+        if self.invoke('named-check', {**self.request, 'plan_data':plan, 'plan_proof':proof}) != 'CHECK_OK':
+            raise ConnectionError('remote repair check rejected')
 
     def preflight(self) -> None:
         if self.invoke("named-preflight") != "PREFLIGHT_OK":

@@ -186,6 +186,7 @@ hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout
         child = Mock(stdin=Input(), stdout=io.StringIO('LOCKED\nARMED\n'))
         child.wait.return_value = 0
         remote.stage.side_effect = lambda plan: events.append(('stage', plan))
+        remote.check.side_effect = lambda plan: events.append(('check', plan))
         remote.preflight.side_effect = lambda: events.append('preflight')
         remote.launch.side_effect = lambda: events.append('launch')
         def refresh():
@@ -194,8 +195,24 @@ hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout
         with patch('logbook.lock_guard_client.subprocess.Popen', return_value=child), \
              patch('logbook.lock_guard_client.select.select', return_value=([child.stdout], [], [])):
             coordinate_named_handoff(remote, refresh, timeout_seconds=1)
-        self.assertEqual(events, ['refresh', ('stage', {'nodes':[]}), 'preflight', 'launch'])
+        self.assertEqual(events, ['refresh', ('check', {'nodes':[]}), ('stage', {'nodes':[]}), 'preflight', 'launch'])
         self.assertEqual(json.loads(child.stdin.getvalue()), request)
+
+    def test_schema_rejection_never_arms_or_stages(self):
+        from logbook.lock_guard_client import coordinate_named_handoff, OPERATOR_KEY
+        from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
+        remote = Mock(spec=NamedGraphMaintenance, request={})
+        remote.host, remote.identity = 'logbook-repair@odin', OPERATOR_KEY
+        remote.check.side_effect = ValueError('missing constraints')
+        child = Mock(stdin=Mock(), stdout=io.StringIO('LOCKED\n'))
+        with patch('logbook.lock_guard_client.subprocess.Popen', return_value=child), \
+             patch('logbook.lock_guard_client.select.select', return_value=([child.stdout], [], [])), \
+             self.assertRaisesRegex(ValueError, 'missing constraints'):
+            coordinate_named_handoff(remote, lambda: {'nodes':[]}, timeout_seconds=1)
+        child.stdin.write.assert_not_called()
+        child.stdin.close.assert_called_once()
+        remote.stage.assert_not_called()
+        remote.launch.assert_not_called()
 
     def test_holder_keeps_locks_until_fixed_remote_confirms_recovery(self):
         import fcntl
