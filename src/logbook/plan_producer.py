@@ -10,8 +10,8 @@ from logbook.config import load_app_config
 from logbook.named_graph_approval import _private_bytes
 from logbook.plan_attestation import issue_plan
 
-CONFIG = Path('/Library/Application Support/LogbookPlanProducer/config.env')
-KEY = Path('/Library/Application Support/LogbookPlanProducer/producer-key')
+CONFIG = Path('/Library/Application Support/LogbookPlanProducer/private/config.env')
+KEY = Path('/Library/Application Support/LogbookPlanProducer/private/producer-key')
 COMMAND = ['/usr/bin/sudo', '-n', '-u', 'logbook-plan-producer',
            '/usr/local/libexec/logbook-plan-producer']
 
