@@ -1,6 +1,7 @@
 #!/usr/bin/python3 -I
 """Fixed launcher for a separately installed automatic plan producer."""
 import os
+import pwd
 import stat
 import sys
 from pathlib import Path
@@ -32,8 +33,13 @@ def main():
             check_trusted_file(Path(current)/filename)
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(CODE_ROOT))
-    from logbook.plan_producer import main as produce
-    produce()
+    if os.geteuid() == pwd.getpwnam('bernd').pw_uid:
+        from logbook.source_plan_broker import main as run
+    elif os.geteuid() == pwd.getpwnam('logbook-plan-producer').pw_uid:
+        from logbook.plan_producer import main as run
+    else:
+        raise ValueError('unexpected producer account')
+    run()
 
 
 if __name__ == '__main__':

@@ -19,11 +19,10 @@ def launcher_module():
 
 class ProducerLauncherTests(TestCase):
     def test_private_configuration_does_not_share_root_owned_code_directory(self):
-        from logbook.plan_producer import CONFIG, KEY
+        from logbook.plan_producer import KEY
         module = launcher_module()
-        self.assertEqual(CONFIG.parent, KEY.parent)
-        self.assertNotEqual(CONFIG.parent, module.CODE_ROOT.parent)
-        self.assertNotEqual(CONFIG.parent, module.CODE_ROOT)
+        self.assertNotEqual(KEY.parent, module.CODE_ROOT.parent)
+        self.assertNotEqual(KEY.parent, module.CODE_ROOT)
 
     def test_rejects_writable_symlinked_or_non_root_code(self):
         module = launcher_module()

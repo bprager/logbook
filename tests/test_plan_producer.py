@@ -11,6 +11,61 @@ from logbook.plan_attestation import verify_plan
 
 
 class PlanProducerTests(TestCase):
+    def test_source_handoff_validates_response_and_fixed_command(self):
+        from logbook.plan_producer import _request_source_plan
+
+        plan = {'nodes':[{'id':'logbook:job:000001'}], 'relationships':[], 'generated_at':'now'}
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(plan).encode())
+        with patch('logbook.plan_producer.subprocess.run', return_value=result) as invoke:
+            self.assertEqual(_request_source_plan(1), plan)
+            self.assertEqual(invoke.call_args.args[0], ['/usr/bin/sudo', '-n', '-u', 'bernd',
+                                                       '/usr/local/libexec/logbook-plan-producer'])
+            self.assertEqual(json.loads(invoke.call_args.kwargs['input']), {'job_id':1})
+        for bad in (b'bad', b'{}', json.dumps({**plan, 'nodes':[]}).encode(), b'x'*5000001):
+            with self.subTest(size=len(bad)), patch('logbook.plan_producer.subprocess.run',
+                                                   return_value=SimpleNamespace(returncode=0, stdout=bad)):
+                with self.assertRaises((ValueError, RuntimeError)):
+                    _request_source_plan(1)
+        with patch('logbook.plan_producer.subprocess.run', return_value=SimpleNamespace(returncode=1, stdout=b'')):
+            with self.assertRaises(RuntimeError):
+                _request_source_plan(1)
+
+    def test_source_configuration_must_be_root_controlled(self):
+        import stat
+        from logbook.source_plan_broker import trusted_config
+
+        path = Path('/protected/source.env')
+        def good(current):
+            mode = stat.S_IFREG if current == path else stat.S_IFDIR
+            return SimpleNamespace(st_uid=0, st_mode=mode|0o755)
+        with patch.object(Path, 'lstat', good):
+            trusted_config(path)
+        for mode, uid in [(stat.S_IFREG|0o666, 0), (stat.S_IFLNK|0o777, 0), (stat.S_IFREG|0o644, 501)]:
+            with self.subTest(mode=mode, uid=uid), patch.object(Path, 'lstat', return_value=SimpleNamespace(st_uid=uid, st_mode=mode)):
+                with self.assertRaisesRegex(ValueError, 'root controlled'):
+                    trusted_config(path)
+
+    def test_source_handoff_signs_real_ledger_plan_without_caller_plan(self):
+        from tests.test_memory_graph import _seed_memory_fixture
+        from logbook.source_plan_broker import source_plan
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = _seed_memory_fixture(root)
+            key = root/'producer'
+            subprocess.run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], check=True)
+            allowed = root/'allowed'
+            allowed.write_text('producer '+key.with_suffix('.pub').read_text())
+            allowed.chmod(0o600)
+            source = source_plan(config, b'{"job_id":1}')
+            with patch('logbook.plan_producer._request_source_plan', return_value=json.loads(source)):
+                response = json.loads(produce_request(None, key, b'{"job_id":1}'))
+            verify_plan(response['plan'], 1, response['proof'], allowed)
+            self.assertTrue(any(n['id']=='logbook:job:000001' for n in response['plan']['nodes']))
+            for raw in (b'{}', b'{"job_id":true}', b'{"job_id":1,"plan":{}}', b'x'*1025):
+                with self.subTest(raw=raw[:30]), self.assertRaises(ValueError):
+                    source_plan(config, raw)
+
     def test_real_ledger_producer_response_is_automatically_verified(self):
         from tests.test_memory_graph import _seed_memory_fixture
         with TemporaryDirectory() as temporary:
@@ -56,7 +111,7 @@ class PlanProducerTests(TestCase):
                 request_generated_plan(1)
         with patch('logbook.plan_producer.issue_plan', return_value=({'payload':'x'*5000001}, {})), \
              self.assertRaisesRegex(ValueError, 'too large'):
-            produce_request(None, Path('/unused'), b'{"job_id":1}')
+            produce_request(object(), Path('/unused'), b'{"job_id":1}')
 
     def test_preparation_delivers_real_generated_proof_to_repair_client(self):
         from tests.test_memory_graph import _seed_memory_fixture

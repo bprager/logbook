@@ -18,13 +18,19 @@ def _encoded(statement: dict) -> bytes:
 
 def issue_plan(config: object, job_id: int, signing_key: Path, *, now: int | None = None) -> tuple[dict, dict]:
     """Generate the plan from the configured ledger; never sign caller-supplied plans."""
-    _private_bytes(signing_key)
-    current = int(time.time()) if now is None else now
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         plan_path = root/'plan.json'
         prepare_job_plan(config, job_id, plan_path)
         plan = read_private_json(plan_path)
+    return plan, sign_generated_plan(plan, job_id, signing_key, now=now)
+
+
+def sign_generated_plan(plan: dict, job_id: int, signing_key: Path, *, now: int | None = None) -> dict:
+    _private_bytes(signing_key)
+    current = int(time.time()) if now is None else now
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
         statement = {'schema': 1, 'job_id': job_id, 'plan_sha256': plan_digest(plan),
                      'issued_at': current, 'expires_at': current + 300}
         statement_path = root/'statement.json'
@@ -34,7 +40,7 @@ def issue_plan(config: object, job_id: int, signing_key: Path, *, now: int | Non
                         '-f', str(signing_key), str(statement_path)], check=True,
                        capture_output=True, timeout=10)
         signature = (root/'statement.json.sig').read_text()
-    return plan, {'statement': statement, 'signature': signature}
+    return {'statement': statement, 'signature': signature}
 
 
 def verify_plan(plan: dict, job_id: int, proof: dict, allowed: Path, *, now: int | None = None) -> None:

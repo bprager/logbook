@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add a bounded source-account handoff for automatic signed repair plans.
+
 - Retry a closed WAL ledger snapshot with SQLite write-capable access when read-only backup cannot open its missing companion files.
 
 - Prepare repair plans from private copies of contained transcript and insight inputs.
