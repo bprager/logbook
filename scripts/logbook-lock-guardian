@@ -1,0 +1,43 @@
+#!/usr/bin/python3 -I
+"""Fixed launcher for the source-account lock and recovery holder."""
+import os
+import pwd
+import stat
+import sys
+from pathlib import Path
+
+CODE_ROOT = Path('/Library/Application Support/LogbookPlanProducer/lib')
+
+
+def check_trusted_directory(path):
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022):
+        raise ValueError('producer code directory is not root controlled')
+
+
+def check_trusted_file(path):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022):
+        raise ValueError('producer code file is not root controlled')
+
+
+def main():
+    for ancestor in (CODE_ROOT, *CODE_ROOT.parents):
+        check_trusted_directory(ancestor)
+    package = CODE_ROOT/'logbook'
+    check_trusted_directory(package)
+    for current, directories, files in os.walk(package, followlinks=False):
+        for directory in directories:
+            check_trusted_directory(Path(current)/directory)
+        for filename in files:
+            check_trusted_file(Path(current)/filename)
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(CODE_ROOT))
+    if os.geteuid() != pwd.getpwnam('bernd').pw_uid or len(sys.argv) != 1:
+        raise ValueError('unexpected guardian account or arguments')
+    from logbook.lock_guard_broker import main as run
+    run()
+
+
+if __name__ == '__main__':
+    main()

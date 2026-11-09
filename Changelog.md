@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Prepare an inactive restricted operator handoff for the existing processing locks and recovery guard.
+
 - Start the independent recovery monitor before requesting a graph repair.
 
 - Add a bounded source-account handoff for automatic signed repair plans.

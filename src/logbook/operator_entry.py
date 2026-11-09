@@ -62,7 +62,7 @@ def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> s
 
 
 
-def prepare_named(config: AppConfig, job_id: int, options: dict, state: Path) -> str:
+def prepare_named(config: AppConfig | None, job_id: int, options: dict, state: Path) -> str:
     """Prepare one bounded repair and its reviewable target; do not launch it."""
     private_directory(state.parent)
     token = uuid.uuid4().hex
@@ -104,7 +104,7 @@ def prepare_named(config: AppConfig, job_id: int, options: dict, state: Path) ->
     return 'prepared'
 
 
-def run_named(config: AppConfig, state: Path) -> str:
+def run_named(config: AppConfig | None, state: Path, *, restricted: bool = False) -> str:
     saved = read_private_json(state)
     remote = _named_remote(state)
     plan = saved['plan']
@@ -141,8 +141,14 @@ def run_named(config: AppConfig, state: Path) -> str:
         remote.plan_proof = proof
         return fresh
 
-    coordinate_leased_window(config, remote, timeout_seconds=remote.request['seconds']+270,
-                             stage_plan=recheck_ledger)
+    if restricted:
+        from logbook.lock_guard_client import coordinate_named_handoff
+        coordinate_named_handoff(remote, recheck_ledger, timeout_seconds=remote.request['seconds']+270)
+    else:
+        if config is None:
+            raise ValueError('processing configuration required')
+        coordinate_leased_window(config, remote, timeout_seconds=remote.request['seconds']+270,
+                                 stage_plan=recheck_ledger)
     return remote.outcome()
 
 
@@ -269,8 +275,12 @@ if __name__ == '__main__':  # pragma: no cover
     elif len(sys.argv) == 6 and sys.argv[1] == 'named-prepare':
         print(prepare_named(load_app_config(Path(sys.argv[2])), int(sys.argv[3]),
                             read_private_json(Path(sys.argv[4])), Path(sys.argv[5])))
+    elif len(sys.argv) == 5 and sys.argv[1] == 'named-prepare-restricted':
+        print(prepare_named(None, int(sys.argv[2]), read_private_json(Path(sys.argv[3])), Path(sys.argv[4])))
     elif len(sys.argv) == 4 and sys.argv[1] == 'named-run':
         print(run_named(load_app_config(Path(sys.argv[2])), Path(sys.argv[3])))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'named-run-restricted':
+        print(run_named(None, Path(sys.argv[2]), restricted=True))
     elif len(sys.argv) == 4 and sys.argv[1] == 'named-release':
         release_named_processing_guard(load_app_config(Path(sys.argv[2])), _named_remote(Path(sys.argv[3])))
         print('released')

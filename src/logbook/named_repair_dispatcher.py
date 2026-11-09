@@ -29,7 +29,7 @@ def trusted_path(path: Path, *, directory: bool, private: bool = False) -> None:
         raise ValueError('unexpected trusted path type')
 
 
-def validate_request(action: str, request: dict) -> Path:
+def validate_request_shape(action: str, request: dict) -> Path:
     if action not in ACTIONS or not isinstance(request,dict):
         raise ValueError('unsupported repair action')
     expected = FIELDS | ({'plan_data','plan_proof'} if action == 'named-stage' else set())
@@ -55,7 +55,13 @@ def validate_request(action: str, request: dict) -> Path:
                       'recovery_file':bundle/'logbook/graph_maintenance_recovery.py'}
     if any(request[k] != str(value) for k,value in expected_paths.items()):
         raise ValueError('repair paths outside allowed window')
-    entry = bundle/'logbook/graph_maintenance_remote.py'
+    return bundle/'logbook/graph_maintenance_remote.py'
+
+
+def validate_request(action: str, request: dict) -> Path:
+    entry = validate_request_shape(action, request)
+    bundle = entry.parent.parent
+    stage = Path(request['private_dir'])
     for path in (GUARD,bundle,stage,GUARD/'journals'):
         trusted_path(path,directory=True,private=True)
     for path in (entry,bundle/'.bundle-ready'):

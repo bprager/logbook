@@ -351,6 +351,11 @@ class NamedGraphOperatorTests(TestCase):
                 remote.return_value.outcome.return_value='retained'
                 self.assertEqual(run_named(Mock(),state),'retained')
                 self.assertEqual(coordinate.call_args.kwargs['stage_plan'](),{**plan, 'generated_at':'later'})
+                with patch('logbook.lock_guard_client.coordinate_named_handoff') as handoff:
+                    self.assertEqual(run_named(None, state, restricted=True), 'retained')
+                    handoff.assert_called_once()
+                with self.assertRaisesRegex(ValueError, 'processing configuration required'):
+                    run_named(None, state)
                 saved['plan']['nodes'].append({'id':'changed'})
                 state.write_text(json.dumps(saved))
                 state.chmod(0o600)
