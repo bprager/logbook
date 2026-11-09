@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Refresh candidate repair proof automatically under locks before staging and persist matching recovery state.
+
 - Add a fixed plan producer launcher that checks its installed code is root controlled before use; not deployed.
 
 - Require a pre-seeded unique fixture marker before graph integration tests modify a database.

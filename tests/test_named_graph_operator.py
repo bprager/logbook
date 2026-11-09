@@ -334,9 +334,6 @@ class NamedGraphOperatorTests(TestCase):
                      'container_id':'a'*64, 'pid':42, 'revision':'b'*40, 'wheel_dir':'/wheels',
                      'host':'graph', 'identity':'/key', 'seconds':30}
             plan={'nodes':[{'id':'one'}], 'relationships':[], 'generated_at':'first'}
-            def prepare(_config, _job, path):
-                path.write_text(json.dumps(plan))
-                path.chmod(0o600)
             with patch('logbook.operator_entry.verify_checkout'), \
                  patch('logbook.operator_entry.build_release_bundle',return_value=b'bundle'), \
                  patch('logbook.operator_entry.request_generated_plan',return_value=(plan,{'fixture':'proof'})), \
@@ -347,21 +344,87 @@ class NamedGraphOperatorTests(TestCase):
             self.assertEqual(saved['request']['job_id'],7)
             self.assertEqual(saved['plan_proof'], {'fixture':'proof'})
             self.assertEqual(saved['request']['boot_guard_service'],'memgraph.service')
-            def prepare_fresh(_config, _job, path):
-                path.write_text(json.dumps({**plan, 'generated_at': 'later'}))
-                path.chmod(0o600)
             with patch('logbook.operator_entry.coordinate_leased_window') as coordinate, \
-                 patch('logbook.operator_entry.prepare_job_plan',side_effect=prepare_fresh), \
+                 patch('logbook.operator_entry.request_generated_plan',return_value=({**plan, 'generated_at':'later'}, {'fresh':True})), \
                  patch('logbook.operator_entry.NamedGraphMaintenance') as remote:
                 remote.return_value.request=saved['request']
                 remote.return_value.outcome.return_value='retained'
                 self.assertEqual(run_named(Mock(),state),'retained')
-                self.assertEqual(coordinate.call_args.kwargs['stage_plan'](),plan)
+                self.assertEqual(coordinate.call_args.kwargs['stage_plan'](),{**plan, 'generated_at':'later'})
                 saved['plan']['nodes'].append({'id':'changed'})
                 state.write_text(json.dumps(saved))
                 state.chmod(0o600)
                 with self.assertRaisesRegex(ValueError,'plan mismatch'):
                     run_named(Mock(),state)
+
+    def test_named_run_refreshes_producer_proof_and_persists_recovery_state(self):
+        from logbook.named_graph_approval import plan_digest
+        from logbook.operator_entry import run_named
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            root.chmod(0o700)
+            plan = {'nodes':[{'id':'logbook:job:000007'}], 'relationships':[], 'generated_at':'old'}
+            fresh = {**plan, 'generated_at':'new'}
+            request = {'profile':'named-graph','boot_guard_service':'memgraph.service',
+                       'boot_guard_dir':'/var/lib/logbook-graph-guard','port':7697,'seconds':10,
+                       'unit':'logbook-graph-maintenance-'+'a'*32+'.service','job_id':7,
+                       'plan_sha256':plan_digest(plan)}
+            state=root/'state.json'
+            state.write_text(json.dumps({'host':'graph','identity':'/key','entrypoint':'/entry',
+                                         'request':request,'plan':plan,'plan_proof':{'old':True}}))
+            state.chmod(0o600)
+            def coordinate(_config, remote, *, timeout_seconds, stage_plan):
+                chosen = stage_plan()
+                self.assertEqual(chosen, fresh)
+                self.assertEqual(remote.plan_proof, {'new':True})
+                self.assertEqual(remote.request['plan_sha256'], plan_digest(fresh))
+                saved=json.loads(state.read_text())
+                self.assertEqual(saved['plan'], fresh)
+                self.assertEqual(saved['plan_proof'], {'new':True})
+                self.assertEqual(saved['request']['plan_sha256'], plan_digest(fresh))
+            with patch('logbook.operator_entry.NamedGraphMaintenance') as remote, \
+                 patch('logbook.operator_entry.request_generated_plan',return_value=(fresh,{'new':True})), \
+                 patch('logbook.operator_entry.coordinate_leased_window',side_effect=coordinate):
+                remote.return_value.request=request
+                remote.return_value.outcome.return_value='retained'
+                self.assertEqual(run_named(Mock(),state),'retained')
+
+    def test_refresh_failure_preserves_existing_recovery_state(self):
+        from logbook.named_graph_approval import plan_digest
+        from logbook.operator_entry import run_named
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            root.chmod(0o700)
+            plan={'nodes':[], 'relationships':[], 'generated_at':'old'}
+            fresh={**plan,'generated_at':'new'}
+            request={'profile':'named-graph','boot_guard_service':'memgraph.service',
+                     'boot_guard_dir':'/var/lib/logbook-graph-guard','port':7697,'seconds':10,
+                     'unit':'logbook-graph-maintenance-'+'a'*32+'.service','job_id':7,
+                     'plan_sha256':plan_digest(plan)}
+            state=root/'state.json'
+            state.write_text(json.dumps({'host':'graph','identity':'/key','entrypoint':'/entry',
+                                         'request':request,'plan':plan,'plan_proof':{'old':True}}))
+            state.chmod(0o600)
+            previous=state.read_bytes()
+            def coordinate(_config, _remote, *, timeout_seconds, stage_plan):
+                stage_plan()
+            with patch('logbook.operator_entry.NamedGraphMaintenance') as remote, \
+                 patch('logbook.operator_entry.request_generated_plan',return_value=(fresh,{'new':True})), \
+                 patch('logbook.operator_entry.coordinate_leased_window',side_effect=coordinate), \
+                 patch('logbook.operator_entry.os.replace',side_effect=OSError('simulated failure')), \
+                 self.assertRaisesRegex(OSError,'simulated failure'):
+                remote.return_value.request=request
+                run_named(Mock(),state)
+            self.assertEqual(state.read_bytes(),previous)
+            self.assertEqual(list(root.glob('.repair-state-*')),[])
+            self.assertFalse((root/'graph-maintenance.pending').exists())
+            with patch('logbook.operator_entry.NamedGraphMaintenance') as remote, \
+                 patch('logbook.operator_entry.request_generated_plan',return_value=(fresh,{'data':'x'*5000001})), \
+                 patch('logbook.operator_entry.coordinate_leased_window',side_effect=coordinate), \
+                 self.assertRaisesRegex(ValueError,'state exceeds'):
+                remote.return_value.request=request
+                run_named(Mock(),state)
+            self.assertEqual(state.read_bytes(),previous)
 
     def test_named_run_rechecks_ledger_under_locks_before_staging(self):
         from logbook.named_graph_approval import plan_digest
@@ -388,14 +451,14 @@ class NamedGraphOperatorTests(TestCase):
                     callback(3, 4)
                 finally:
                     lock_held = False
-            def prepare(_config, _job, path):
+            def prepare(job):
                 self.assertTrue(lock_held)
+                self.assertEqual(job, 7)
                 changed = {**plan, 'nodes': [{'id': 'logbook:job:000007',
                                                'properties': {'text': 'changed'}}]}
-                path.write_text(json.dumps(changed))
-                path.chmod(0o600)
+                return changed, {}
             with patch('logbook.operator_entry.NamedGraphMaintenance') as remote, \
-                 patch('logbook.operator_entry.prepare_job_plan', side_effect=prepare), \
+                 patch('logbook.operator_entry.request_generated_plan', side_effect=prepare), \
                  patch('logbook.graph_maintenance_cross_host.with_logbook_lock_descriptors', side_effect=locks), \
                  self.assertRaisesRegex(ValueError, 'ledger'):
                 remote.return_value.request = request

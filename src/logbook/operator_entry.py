@@ -19,7 +19,6 @@ from logbook.graph_maintenance_recovery import DockerRecovery
 from logbook.graph_maintenance_worker import private_directory, read_private_json
 from logbook.operator_bundle import build_revision_bundle, provision_bundle, provision_named_bundle, verify_checkout
 from logbook.operator_window import stage_plan_and_run
-from logbook.operator_plan import prepare_job_plan
 from logbook.plan_producer import request_generated_plan
 from logbook.named_graph_approval import FIELDS, _check, plan_digest
 
@@ -112,16 +111,35 @@ def run_named(config: AppConfig, state: Path) -> str:
     if not isinstance(plan, dict) or plan_digest(plan) != remote.request.get('plan_sha256'):
         raise ValueError('prepared plan mismatch')
     def recheck_ledger() -> dict:
-        with tempfile.TemporaryDirectory() as temporary:
-            path = Path(temporary)/'plan.json'
-            prepare_job_plan(config, remote.request['job_id'], path)
-            fresh = read_private_json(path)
+        fresh, proof = request_generated_plan(remote.request['job_id'])
         if (set(plan) != {'nodes', 'relationships', 'generated_at'}
                 or set(fresh) != set(plan)
                 or plan['nodes'] != fresh['nodes']
                 or plan['relationships'] != fresh['relationships']):
             raise ValueError('prepared plan no longer matches ledger')
-        return plan
+        request = {**remote.request, 'plan_sha256': plan_digest(fresh)}
+        updated = {**saved, 'request': request, 'plan': fresh, 'plan_proof': proof}
+        encoded = json.dumps(updated, sort_keys=True).encode()
+        if len(encoded) > 5000000:
+            raise ValueError('private state exceeds limit')
+        fd, temporary = tempfile.mkstemp(prefix='.repair-state-', dir=state.parent)
+        try:
+            with os.fdopen(fd, 'wb') as output:
+                output.write(encoded)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, state)
+            directory = os.open(state.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        remote.request = request
+        remote.plan_proof = proof
+        return fresh
 
     coordinate_leased_window(config, remote, timeout_seconds=remote.request['seconds']+270,
                              stage_plan=recheck_ledger)
