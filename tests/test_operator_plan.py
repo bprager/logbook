@@ -12,6 +12,71 @@ from logbook.operator_plan import prepare_job_plan
 
 
 class OperatorPlanTests(unittest.TestCase):
+    def test_closed_wal_fallback_uses_sqlite_backup_and_preserves_data(self):
+        from logbook.operator_plan import _backup_ledger
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root/'source.sqlite'
+            db = sqlite3.connect(source)
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('CREATE TABLE sample(value TEXT)')
+            db.execute("INSERT INTO sample VALUES ('saved')")
+            db.commit()
+            db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            db.close()
+            self.assertFalse(Path(str(source)+'-wal').exists())
+            real_connect = sqlite3.connect
+            modes = []
+
+            def connect(database, *args, **kwargs):
+                if isinstance(database, str) and '?mode=' in database:
+                    mode = database.rsplit('=', 1)[-1]
+                    modes.append(mode)
+                    if mode == 'ro':
+                        raise sqlite3.OperationalError('unable to open database file')
+                return real_connect(database, *args, **kwargs)
+
+            with patch('logbook.operator_plan.sqlite3.connect', side_effect=connect):
+                _backup_ledger(source, root/'snapshot.sqlite')
+            self.assertEqual(modes, ['ro', 'rw'])
+            with real_connect(root/'snapshot.sqlite') as copied:
+                self.assertEqual(copied.execute('SELECT value FROM sample').fetchone()[0], 'saved')
+            with real_connect(source) as original:
+                self.assertEqual(original.execute('SELECT value FROM sample').fetchone()[0], 'saved')
+
+    def test_wal_fallback_does_not_retry_other_errors_or_existing_sidecars(self):
+        from logbook.operator_plan import _backup_ledger
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root/'source.sqlite'
+            db = sqlite3.connect(source)
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('CREATE TABLE sample(value TEXT)')
+            db.commit()
+            db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            db.close()
+            real_connect = sqlite3.connect
+            for error, sidecar in [('database is malformed', False), ('unable to open database file', True)]:
+                modes = []
+                wal = Path(str(source)+'-wal')
+                if sidecar:
+                    wal.touch()
+
+                def connect(database, *args, **kwargs):
+                    if isinstance(database, str) and '?mode=' in database:
+                        modes.append(database.rsplit('=', 1)[-1])
+                        raise sqlite3.OperationalError(error)
+                    return real_connect(database, *args, **kwargs)
+
+                with self.subTest(error=error), patch('logbook.operator_plan.sqlite3.connect', side_effect=connect):
+                    with self.assertRaises(sqlite3.OperationalError):
+                        _backup_ledger(source, root/'snapshot.sqlite')
+                self.assertEqual(modes, ['ro'])
+                if sidecar:
+                    wal.unlink()
+
     def test_repair_artifact_copy_rejects_unsafe_changed_and_oversized_inputs(self):
         from logbook.operator_plan import _copy_artifact
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+from contextlib import closing
 import json
 import os
 import sqlite3
@@ -13,6 +14,26 @@ from pathlib import Path
 from logbook.config import AppConfig, load_app_config
 from logbook.graph_maintenance_worker import private_directory
 from logbook.memory_graph import build_memory_graph_plan
+
+
+def _backup_ledger(source_path: Path, snapshot: Path) -> None:
+    source_path = source_path.resolve()
+    with closing(sqlite3.connect(snapshot)) as target:
+        try:
+            with closing(sqlite3.connect(source_path.as_uri() + '?mode=ro', uri=True)) as source:
+                source.backup(target)
+        except sqlite3.OperationalError as error:
+            if str(error) != 'unable to open database file':
+                raise
+            with source_path.open('rb') as source_file:
+                header = source_file.read(20)
+            if (not header.startswith(b'SQLite format 3\x00') or header[18:20] != b'\x02\x02'
+                    or any(os.path.lexists(str(source_path) + suffix) for suffix in ('-wal', '-shm'))):
+                raise
+            # A closed WAL database can require SQLite to create its companion files.
+            # mode=rw never creates the database; SQLite's backup API only reads it.
+            with closing(sqlite3.connect(source_path.as_uri() + '?mode=rw', uri=True)) as source:
+                source.backup(target)
 
 
 def _copy_artifact(root: Path, relative: Path, destination: Path, *, optional: bool = False) -> bool:
@@ -53,9 +74,7 @@ def prepare_job_plan(config: AppConfig, job_id: int, destination: Path) -> tuple
     private_directory(destination.parent)
     with tempfile.TemporaryDirectory() as temporary:
         snapshot = Path(temporary) / 'ledger.sqlite'
-        with sqlite3.connect(config.sqlite_path.resolve().as_uri() + '?mode=ro', uri=True) as source:
-            with sqlite3.connect(snapshot) as target:
-                source.backup(target)
+        _backup_ledger(config.sqlite_path, snapshot)
         inputs = Path(temporary) / 'inputs'
         inputs.mkdir()
         with sqlite3.connect(snapshot) as ledger:
