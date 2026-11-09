@@ -1,7 +1,10 @@
 import fcntl
 import io
 import json
+import os
 import subprocess
+import sys
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -148,6 +151,61 @@ class CrossHostMaintenanceTests(unittest.TestCase):
                     coordinate_leased_window(config, remote, timeout_seconds=1)
             remote.launch.assert_called_once()
             child.terminate.assert_not_called()
+
+    def test_recovery_monitor_is_armed_before_remote_launch(self):
+        with TemporaryDirectory() as tmp:
+            config = SimpleNamespace(processing_root=Path(tmp))
+            remote = SshMaintenance("odin", Path("/key"), Path("/entry"),
+                                    {"unit": "logbook-graph-maintenance-" + "d" * 32 + ".service"})
+            remote.preflight = Mock()
+            remote.recovered = Mock(return_value=False)
+            child = Mock(stdin=io.StringIO(), stdout=io.StringIO("READY\n"))
+            child.wait.return_value = 0
+            remote.launch = Mock(side_effect=lambda: self.assertTrue(child.stdin.getvalue().endswith("CHECK\n")))
+            with patch("logbook.graph_maintenance_cross_host.subprocess.Popen", return_value=child), \
+                 patch("logbook.graph_maintenance_cross_host.select.select", return_value=([child.stdout], [], [])):
+                coordinate_leased_window(config, remote, timeout_seconds=1)
+
+    def test_killed_coordinator_leaves_locks_held_until_recovery(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ssh = root / "ssh"
+            ssh.write_text('#!/bin/sh\ncase "$*" in *outcome*) echo retained ;; *) '
+                           'if [ -f "$RECOVERY_FIXTURE" ]; then echo RECOVERED; '
+                           'else echo PENDING; fi ;; esac\n')
+            ssh.chmod(0o755)
+            env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}",
+                   "RECOVERY_FIXTURE": str(root / "recovered")}
+            script = '''
+import os, signal
+from pathlib import Path
+from types import SimpleNamespace
+from logbook.graph_maintenance_cross_host import SshMaintenance, coordinate_leased_window
+r = SshMaintenance("odin", Path("/key"), Path("/entry"),
+                   {"unit": "logbook-graph-maintenance-" + "e" * 32 + ".service"})
+r.preflight = lambda: None
+r.recovered = lambda: False
+r.launch = lambda: os.kill(os.getpid(), signal.SIGKILL)
+coordinate_leased_window(SimpleNamespace(processing_root=Path(os.environ["FIXTURE_ROOT"])), r, timeout_seconds=5)
+'''
+            env["FIXTURE_ROOT"] = str(root)
+            parent = subprocess.run([sys.executable, "-c", script], env=env, timeout=10,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.assertNotEqual(parent.returncode, 0)
+            with (root / "pipeline.lock").open("a") as contender:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                (root / "recovered").touch()
+                deadline = time.monotonic() + 10
+                while True:
+                    try:
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            self.fail("lease did not release after confirmed recovery")
+                        time.sleep(0.05)
+            require_clear_guard(root)
 
     def test_lease_refuses_old_or_invalid_window(self):
         with TemporaryDirectory() as tmp:

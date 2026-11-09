@@ -203,6 +203,9 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
             ready, _, _ = select.select([lease.stdout], [], [], 5)
             if not ready or lease.stdout.readline().strip() != "READY":
                 raise RuntimeError("independent lease did not start")
+            # The holder must begin checking before launch can reach the remote host.
+            lease.stdin.write("CHECK\n")
+            lease.stdin.flush()
         except Exception:
             lease.terminate()
             lease.wait(timeout=5)
@@ -220,7 +223,6 @@ def coordinate_leased_window(config: AppConfig, remote: SshMaintenance, *,
             raise
         except Exception as error:
             failure = error
-        lease.stdin.write("CHECK\n")
         lease.stdin.close()
         try:
             result = lease.wait(timeout=timeout_seconds)
