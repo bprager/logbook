@@ -126,7 +126,14 @@ class DockerLaunch:
         with os.fdopen(fd, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             self.deadline = time.monotonic() + self.seconds
-            launch(self)
+            original_run = self.recovery.run
+            def run_with_setup_lock(*args, **kwargs):
+                return original_run(*args, **kwargs, pass_fds=(lock.fileno(),))
+            self.recovery.run = run_with_setup_lock
+            try:
+                launch(self)
+            finally:
+                self.recovery.run = original_run
 
     def verify_target(self) -> None:
         result = self.recovery.run(["docker", "inspect", "--format",

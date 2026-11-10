@@ -62,6 +62,59 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
                     self.assertNotEqual(launch.result(), cancel.result())
                     self.assertEqual(launcher.cancelled(), cancel.result())
 
+    def test_interrupted_launcher_keeps_setup_lock_until_its_command_finishes(self):
+        import fcntl
+        import subprocess
+        import sys
+        import time
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = r"""
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from logbook.graph_maintenance_launcher import DockerLaunch
+from logbook.graph_maintenance_recovery import DockerRecovery
+root = Path(sys.argv[1])
+recovery = DockerRecovery('a'*64, 1, 7687, 'logbook-graph-maintenance-test.service')
+launcher = DockerLaunch(recovery, root, root/'worker', root/'recovery', 10)
+code = 'import pathlib,sys,time; p=pathlib.Path(sys.argv[1]); (p/"child-ready").touch();\nwhile not (p/"child-stop").exists(): time.sleep(0.02)'
+with patch.object(launcher, 'preflight'), patch('logbook.graph_maintenance_launcher.launch',
+        side_effect=lambda _: recovery.run([sys.executable, '-c', code, str(root)], timeout=30)):
+    launcher.run_window()
+"""
+            parent = subprocess.Popen([sys.executable,'-c',script,str(root)],
+                                      stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic()+10
+                while not (root/'child-ready').exists():
+                    if parent.poll() is not None:
+                        self.fail(f'launcher exited early: {parent.stderr.read().decode()}')
+                    if time.monotonic()>deadline:
+                        self.fail('fixture child did not start')
+                    time.sleep(0.02)
+                parent.kill()
+                parent.wait(timeout=5)
+                with (root/'setup.lock').open('r') as lock:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    (root/'child-stop').touch()
+                    deadline = time.monotonic()+5
+                    while True:
+                        try:
+                            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                            break
+                        except BlockingIOError:
+                            if time.monotonic()>deadline:
+                                self.fail('setup lock did not release')
+                            time.sleep(0.02)
+            finally:
+                (root/'child-stop').touch()
+                if parent.poll() is None:
+                    parent.kill()
+                    parent.wait()
+                parent.stderr.close()
+
     def test_guard_is_closed_only_after_recovery_timer_is_scheduled(self):
         recovery = Mock()
         recovery.unit = 'logbook-graph-maintenance-test.service'
