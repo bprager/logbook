@@ -24,6 +24,7 @@ production version remains 1.2.3.
 ### Fixed
 
 - Block ordinary processing and graph writes while a graph repair remains unresolved.
+- Isolate nested Git test commands from the commit hook environment.
 
 - Allow the existing backup and restore commands to use a restricted Odin rsync identity without remote shell or delete permissions.
 
