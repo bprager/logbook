@@ -71,6 +71,23 @@ def validate_request(action: str, request: dict) -> Path:
     return entry
 
 
+def reject_uncontained_policy() -> None:
+    """Do not execute a preinstalled separately authorized release as root."""
+    policy = GUARD/'standing-policy.json'
+    if not os.path.lexists(policy):
+        # Recovery of a previously installed original-format window must remain
+        # possible if the owner removes its policy during an incident.
+        return
+    trusted_path(policy, directory=False, private=True)
+    with policy.open('rb') as source:
+        content = source.read(100001)
+    if len(content) > 100000:
+        raise ValueError('policy too large')
+    document = json.loads(content)
+    if not isinstance(document, dict) or type(document.get('schema')) is not int or document['schema'] != 1:
+        raise ValueError('separate release authority is disabled')
+
+
 def main() -> None:  # pragma: no cover
     if os.geteuid() != 0 or len(sys.argv) != 2:
         raise SystemExit('root and one named action required')
@@ -78,6 +95,7 @@ def main() -> None:  # pragma: no cover
     if len(raw) > 5000000:
         raise SystemExit('repair request too large')
     request = json.loads(raw)
+    reject_uncontained_policy()
     entry = validate_request(sys.argv[1],request)
     result = subprocess.run(['/usr/bin/python3','-I',str(entry),sys.argv[1]],input=raw,
                             env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'},

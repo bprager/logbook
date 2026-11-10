@@ -6,6 +6,45 @@ from logbook.named_repair_dispatcher import validate_request
 
 
 class NamedRepairDispatcherTests(TestCase):
+    def test_dispatch_policy_guard_preserves_original_recovery_and_rejects_bad_policy(self):
+        from tempfile import TemporaryDirectory
+        from logbook.named_repair_dispatcher import reject_uncontained_policy
+        with TemporaryDirectory() as tmp, patch('logbook.named_repair_dispatcher.GUARD', Path(tmp)):
+            policy = Path(tmp)/'standing-policy.json'
+            reject_uncontained_policy()
+            policy.write_text('{"schema": 1}')
+            policy.chmod(0o600)
+            with patch('logbook.named_repair_dispatcher.trusted_path'):
+                reject_uncontained_policy()
+                policy.write_text('{}')
+                with self.assertRaisesRegex(ValueError, 'disabled'):
+                    reject_uncontained_policy()
+                policy.write_text(' '*100001)
+                with self.assertRaisesRegex(ValueError, 'too large'):
+                    reject_uncontained_policy()
+
+    def test_preinstalled_uncontained_release_never_reaches_dispatch(self):
+        import io
+        import json
+        import sys
+        from tempfile import TemporaryDirectory
+        from logbook.named_repair_dispatcher import main
+        with TemporaryDirectory() as tmp:
+            guard = Path(tmp)
+            (guard/'standing-policy.json').write_text(json.dumps({'schema':2}))
+            request = self.request()
+            raw = json.dumps(request).encode()
+            stdin = io.TextIOWrapper(io.BytesIO(raw), encoding='utf-8')
+            with patch('logbook.named_repair_dispatcher.GUARD', guard), \
+                 patch('logbook.named_repair_dispatcher.os.geteuid', return_value=0), \
+                 patch('logbook.named_repair_dispatcher.trusted_path'), \
+                 patch('logbook.named_repair_dispatcher.validate_request'), \
+                 patch('logbook.named_repair_dispatcher.subprocess.run') as run, \
+                 patch.object(sys, 'stdin', stdin), patch.object(sys, 'argv', ['dispatcher', 'named-status']):
+                with self.assertRaisesRegex(ValueError, 'separate release authority is disabled'):
+                    main()
+                run.assert_not_called()
+
     def request(self):
         token='a'*32
         guard=Path('/var/lib/logbook-graph-guard')
