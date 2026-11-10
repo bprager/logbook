@@ -31,6 +31,7 @@ jobs:
         env:
           REPAIR_RELEASE_KEY: ${{ secrets.LOGBOOK_REPAIR_SIGNING_KEY }}
           REPAIR_REVISION: ${{ github.event.pull_request.merge_commit_sha }}
+          REPAIR_SEQUENCE: ${{ github.run_number }}
         run: |
           set -eu
           test -n "$REPAIR_RELEASE_KEY"
@@ -39,7 +40,7 @@ jobs:
           unset REPAIR_RELEASE_KEY
           trap 'rm -f "$RUNNER_TEMP/repair-signing-key"' EXIT
           PYTHONPATH=src python3 -m logbook.repair_release_publisher "$REPAIR_REVISION" \
-            "$RUNNER_TEMP/repair-wheels" "$RUNNER_TEMP/repair-signing-key" "$RUNNER_TEMP/repair-release"
+            "$RUNNER_TEMP/repair-wheels" "$RUNNER_TEMP/repair-signing-key" "$RUNNER_TEMP/repair-release" "$REPAIR_SEQUENCE"
       - name: Publish the signed candidate
         env:
           REPAIR_REVISION: ${{ github.event.pull_request.merge_commit_sha }}

@@ -11,6 +11,52 @@ from logbook.operator_entry import named_graph_recovery, release_named_processin
 
 
 class NamedGraphOperatorTests(TestCase):
+    def test_release_package_reader_rejects_unsafe_or_changed_files(self):
+        import os
+        from types import SimpleNamespace
+        from logbook.operator_entry import read_release_bundle
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root/'release'
+            data.write_bytes(b'fixture')
+            self.assertEqual(read_release_bundle(data),b'fixture')
+            with self.assertRaisesRegex(ValueError,'absolute'):
+                read_release_bundle(Path('relative'))
+            data.write_bytes(b'')
+            with self.assertRaisesRegex(ValueError,'bounded'):
+                read_release_bundle(data)
+            data.write_bytes(b'fixture')
+            info = os.stat(data)
+            with patch('logbook.operator_entry.os.fstat',return_value=SimpleNamespace(st_mode=info.st_mode,st_size=8)):
+                with self.assertRaisesRegex(ValueError,'changed'):
+                    read_release_bundle(data)
+            link = root/'link'
+            link.symlink_to(data)
+            with self.assertRaises(OSError):
+                read_release_bundle(link)
+
+    def test_installed_operator_can_prepare_from_existing_signed_release_package(self):
+        from logbook.operator_entry import prepare_named
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root/'state'
+            package = root/'release.tar.gz'
+            package.write_bytes(b'signed release fixture')
+            options = {'remote_parent':'/var/lib/logbook-graph-guard/bundles', 'journal_dir':'/var/lib/logbook-graph-guard/journals',
+                       'container_id':'a'*64, 'pid':42, 'revision':'b'*40, 'release_bundle':str(package),
+                       'host':'graph', 'identity':'/key', 'seconds':30, 'protected_executor':True}
+            plan = {'nodes':[], 'relationships':[], 'generated_at':'now'}
+            with patch('logbook.operator_entry.verify_checkout') as checkout, \
+                 patch('logbook.operator_entry.build_release_bundle') as build, \
+                 patch('logbook.operator_entry.request_generated_plan', return_value=(plan, {})), \
+                 patch('logbook.operator_entry.provision_named_bundle') as provision:
+                with self.assertRaisesRegex(ValueError,'full release revision'):
+                    prepare_named(None, 7, {**options,'revision':'bad'}, state)
+                prepare_named(None, 7, options, state)
+                checkout.assert_not_called()
+                build.assert_not_called()
+                self.assertEqual(provision.call_args.args[-1], b'signed release fixture')
+
     def test_staged_protected_worker_and_recovery_use_fixed_executor(self):
         from logbook.graph_maintenance_stage import stage_plan
         with TemporaryDirectory() as tmp:

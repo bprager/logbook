@@ -4,6 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import stat
 import sys
 import tempfile
 import time
@@ -25,6 +27,20 @@ from logbook.named_graph_approval import FIELDS, _check, plan_digest
 
 def build_release_bundle(revision: str, wheel_dir: Path) -> bytes:
     return build_revision_bundle(Path(__file__).resolve().parents[2], revision, wheel_dir)
+
+
+def read_release_bundle(path: Path) -> bytes:
+    if not path.is_absolute():
+        raise ValueError('absolute release package required')
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or not 1 <= info.st_size <= 30000000:
+            raise ValueError('bounded release package required')
+        data = source.read(30000001)
+    if len(data) != info.st_size:
+        raise ValueError('release package changed')
+    return data
 
 
 def run_fixture(config: AppConfig, job_id: int, options: dict, state: Path) -> str:
@@ -73,8 +89,13 @@ def prepare_named(config: AppConfig | None, job_id: int, options: dict, state: P
     unit = 'logbook-graph-maintenance-'+token+'.service'
     DockerRecovery(options['container_id'], options['pid'], 7697, unit)
     revision = options['revision']
-    verify_checkout(Path(__file__).resolve().parents[2], revision)
-    payload = build_release_bundle(revision, Path(options['wheel_dir']))
+    if not isinstance(revision, str) or not re.fullmatch(r'[a-f0-9]{40}', revision):
+        raise ValueError('full release revision required')
+    if 'release_bundle' in options:
+        payload = read_release_bundle(Path(options['release_bundle']))
+    else:
+        verify_checkout(Path(__file__).resolve().parents[2], revision)
+        payload = build_release_bundle(revision, Path(options['wheel_dir']))
     plan, proof = request_generated_plan(job_id)
     executor = Path('/var/lib/logbook-graph-guard/executor') if options.get('protected_executor') is True else bundle
     request = {'profile':'named-graph', 'container_id':options['container_id'], 'pid':options['pid'],

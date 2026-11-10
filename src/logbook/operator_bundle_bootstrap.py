@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import io
 import json
 import os
@@ -12,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
@@ -91,9 +93,21 @@ def _private_file(path: Path) -> bytes:
         return source.read()
 
 
+def current_release_directory(guard: Path) -> Path:
+    pointer = guard/'release.current'
+    if not os.path.lexists(pointer):
+        return guard
+    content = _private_file(pointer)
+    if not re.fullmatch(rb'[1-9][0-9]{0,18}\n', content):
+        raise ValueError('invalid release pointer')
+    directory = guard/'releases'/content.decode().strip()
+    trusted_parent(directory/'check')
+    return directory
+
+
 def approved_release(guard: Path, release_dir: Path | None = None) -> dict:
     """Read a separately signed release from the protected guard directory."""
-    release_dir = guard if release_dir is None else release_dir
+    release_dir = current_release_directory(guard) if release_dir is None else release_dir
     info = release_dir.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
         raise ValueError('private release directory required')
@@ -109,12 +123,18 @@ def approved_release(guard: Path, release_dir: Path | None = None) -> dict:
         raise ValueError('release signature invalid')
     try:
         release = json.loads(content)
-        if (not isinstance(release, dict) or set(release) != {'schema', 'revision', 'bundle_sha256'}
-                or type(release['schema']) is not int or release['schema'] != 1
+        if (not isinstance(release, dict) or type(release.get('schema')) is not int or release['schema'] not in (1, 2)
+                or set(release) != ({'schema', 'revision', 'bundle_sha256'} if release['schema'] == 1
+                                    else {'schema', 'revision', 'bundle_sha256', 'sequence'})
+                or (release['schema'] == 2 and (type(release['sequence']) is not int
+                                                or not 1 <= release['sequence'] <= 9223372036854775807))
                 or not isinstance(release['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}', release['revision'])
                 or not isinstance(release['bundle_sha256'], str)
                 or not re.fullmatch(r'[a-f0-9]{64}', release['bundle_sha256'])):
             raise ValueError('invalid release')
+        if (release_dir.parent == guard/'releases' and release_dir.name.isdigit()
+                and str(release.get('sequence')) != release_dir.name):
+            raise ValueError('release generation mismatch')
         return release
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid release') from error
@@ -181,6 +201,80 @@ def verify_protected_executor(guard: Path) -> None:
         raise ValueError('protected dispatcher mismatch')
 
 
+def receive_release(guard: Path, manifest: bytes, signature: bytes) -> str:
+    """Atomically select a newer signed release without changing repair policy."""
+    if (not isinstance(manifest, bytes) or not 1 <= len(manifest) <= 100000
+            or not isinstance(signature, bytes) or not 1 <= len(signature) <= 10000):
+        raise ValueError('bounded release metadata required')
+    verify_protected_executor(guard)
+    parent = guard/'releases'
+    parent.mkdir(mode=0o700, exist_ok=True)
+    trusted_parent(parent/'check')
+    info = parent.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+        raise ValueError('private releases directory required')
+    lock = guard/'release-update.lock'
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    with os.fdopen(fd, 'r+b') as lock_file:
+        info = os.fstat(lock_file.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise ValueError('private release lock required')
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        incoming = Path(tempfile.mkdtemp(prefix='.incoming-', dir=parent))
+        try:
+            for name, data in (('release.json', manifest), ('release.json.sig', signature)):
+                fd = os.open(incoming/name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, 'wb') as output:
+                    output.write(data)
+                    output.flush()
+                    os.fsync(output.fileno())
+            release = approved_release(guard, incoming)
+            if release['schema'] != 2:
+                raise ValueError('ordered release required')
+            current_dir = current_release_directory(guard)
+            if current_dir != guard:
+                previous = approved_release(guard, current_dir)
+                if release['sequence'] <= previous['sequence']:
+                    if release == previous:
+                        return 'UNCHANGED'
+                    raise ValueError('release is stale or conflicts')
+            destination = parent/str(release['sequence'])
+            if destination.exists():
+                if approved_release(guard, destination) != release:
+                    raise ValueError('release generation conflicts')
+            else:
+                os.rename(incoming, destination)
+                sync_directory(parent)
+            fd, temporary = tempfile.mkstemp(prefix='.release-current-', dir=guard)
+            try:
+                with os.fdopen(fd, 'w', encoding='ascii') as output:
+                    output.write(str(release['sequence'])+'\n')
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, guard/'release.current')
+                sync_directory(guard)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            return 'UPDATED'
+        finally:
+            if incoming.exists():
+                shutil.rmtree(incoming)
+
+
+def receive_release_request(guard: Path, raw: bytes) -> str:
+    if not isinstance(raw, bytes) or len(raw) > 200000:
+        raise ValueError('bounded release request required')
+    try:
+        request = json.loads(raw)
+        if (not isinstance(request, dict) or set(request) != {'manifest', 'signature'}
+                or not isinstance(request['manifest'], str) or not isinstance(request['signature'], str)):
+            raise ValueError('invalid release request')
+        return receive_release(guard, request['manifest'].encode(), request['signature'].encode())
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('invalid release request') from error
+
+
 def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: Path) -> None:
     """Install only a standing-policy-approved package at a constrained location."""
     trusted_parent(guard/'bundles'/'check')
@@ -213,7 +307,8 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
             raise ValueError('standing policy does not approve bundle')
         if policy['schema'] == 2:
             verify_protected_executor(guard)
-        release = policy if policy['schema'] == 1 else approved_release(guard)
+        release_dir = guard if policy['schema'] == 1 else current_release_directory(guard)
+        release = policy if policy['schema'] == 1 else approved_release(guard, release_dir)
         if (not isinstance(release['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}', release['revision'])
                 or not isinstance(release['bundle_sha256'], str)
                 or not re.fullmatch(r'[a-f0-9]{64}', release['bundle_sha256'])
@@ -228,7 +323,7 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
         installed = True
         if policy['schema'] == 2:
             for name in ('release.json', 'release.json.sig'):
-                content = _private_file(guard/name)
+                content = _private_file(release_dir/name)
                 fd = os.open(destination/name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 with os.fdopen(fd, 'wb') as output:
                     output.write(content)
@@ -246,6 +341,11 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
 
 
 def main() -> None:  # pragma: no cover
+    if Path(sys.argv[0]).name == 'logbook-repair-release-receiver':
+        if os.geteuid() != 0 or len(sys.argv) != 1:
+            raise SystemExit('root and no arguments required')
+        print(receive_release_request(Path('/var/lib/logbook-graph-guard'), sys.stdin.buffer.read(200001)))
+        return
     if Path(sys.argv[0]).name == 'logbook-protected-executor-installer':
         if os.geteuid() != 0 or len(sys.argv) != 1:
             raise SystemExit('root and no arguments required')

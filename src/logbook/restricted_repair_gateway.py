@@ -8,6 +8,7 @@ import shlex
 
 INSTALLER = '/usr/local/libexec/logbook-repair-bundle-installer'
 DISPATCHER = '/usr/local/libexec/logbook-repair-dispatcher'
+RECEIVER = '/usr/local/libexec/logbook-repair-release-receiver'
 ACTIONS = frozenset({'named-check', 'named-stage', 'named-preflight', 'named-launch', 'named-status',
                      'named-outcome', 'named-offline', 'named-authorize'})
 
@@ -19,6 +20,8 @@ def permitted_command(command: str) -> list[str]:
         args = shlex.split(command)
     except ValueError as error:
         raise ValueError('invalid repair command') from error
+    if args == ['sudo', '-n', RECEIVER]:
+        return ['/usr/bin/sudo', '-n', RECEIVER]
     if len(args) == 4 and args[:3] == ['sudo', '-n', DISPATCHER] and args[3] in ACTIONS:
         return ['/usr/bin/sudo', '-n', DISPATCHER, args[3]]
     if len(args) == 5 and args[:3] == ['sudo', '-n', INSTALLER]:

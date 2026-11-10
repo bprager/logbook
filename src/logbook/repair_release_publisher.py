@@ -12,9 +12,10 @@ from pathlib import Path
 from logbook.operator_bundle import build_revision_bundle
 
 
-def publish_release(data: bytes, revision: str, key: Path, destination: Path) -> None:
+def publish_release(data: bytes, revision: str, key: Path, destination: Path, *, sequence: int) -> None:
     if (not isinstance(revision, str) or not re.fullmatch(r'[a-f0-9]{40}', revision)
-            or not isinstance(data, bytes) or not data or len(data) > 30000000):
+            or not isinstance(data, bytes) or not data or len(data) > 30000000
+            or type(sequence) is not int or not 1 <= sequence <= 9223372036854775807):
         raise ValueError('bounded package and full revision required')
     destination.mkdir(mode=0o700)
     try:
@@ -22,7 +23,7 @@ def publish_release(data: bytes, revision: str, key: Path, destination: Path) ->
         manifest = destination/'release.json'
         payload.write_bytes(data)
         payload.chmod(0o600)
-        manifest.write_text(json.dumps({'schema':1, 'revision':revision,
+        manifest.write_text(json.dumps({'schema':2, 'revision':revision, 'sequence':sequence,
                                         'bundle_sha256':hashlib.sha256(data).hexdigest()},
                                        sort_keys=True, separators=(',', ':'))+'\n')
         manifest.chmod(0o600)
@@ -35,12 +36,12 @@ def publish_release(data: bytes, revision: str, key: Path, destination: Path) ->
 
 
 def main() -> None:  # pragma: no cover
-    if len(sys.argv) != 5:
-        raise SystemExit('expected revision, wheel directory, signing key, output directory')
-    revision, wheels, key, output = sys.argv[1:]
+    if len(sys.argv) != 6:
+        raise SystemExit('expected revision, wheel directory, signing key, output directory and sequence')
+    revision, wheels, key, output, sequence = sys.argv[1:]
     repo = Path(__file__).resolve().parents[2]
     data = build_revision_bundle(repo, revision, Path(wheels))
-    publish_release(data, revision, Path(key), Path(output))
+    publish_release(data, revision, Path(key), Path(output), sequence=int(sequence))
     print('RELEASE_CREATED')
 
 

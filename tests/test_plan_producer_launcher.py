@@ -18,6 +18,25 @@ def launcher_module():
 
 
 class ProducerLauncherTests(TestCase):
+    def test_release_delivery_service_uses_restricted_account(self):
+        import plistlib
+        path = Path(__file__).resolve().parents[1]/'deploy/local.logbook.repair-release.plist'
+        service = plistlib.loads(path.read_bytes())
+        self.assertEqual(service['UserName'],'logbook-repair-operator')
+        self.assertEqual(service['ProgramArguments'],['/usr/local/libexec/logbook-plan-producer'])
+        self.assertEqual(service['StartInterval'],300)
+
+    def test_restricted_operator_launches_release_delivery(self):
+        module = launcher_module()
+        users = {'bernd':1,'logbook-plan-producer':2,'logbook-repair-operator':3}
+        with patch.object(module,'check_trusted_directory'), patch.object(module,'check_trusted_file'), \
+             patch.object(module.os,'walk',return_value=[]), patch.object(module.os,'geteuid',return_value=3), \
+             patch.object(module.pwd,'getpwnam',side_effect=lambda name: SimpleNamespace(pw_uid=users[name])), \
+             patch('logbook.repair_release_delivery.main') as run, patch.object(module.sys,'path',list(module.sys.path)), \
+             patch.object(module.sys,'dont_write_bytecode',False):
+            module.main()
+            run.assert_called_once_with()
+
     def test_private_configuration_does_not_share_root_owned_code_directory(self):
         from logbook.plan_producer import KEY
         module = launcher_module()

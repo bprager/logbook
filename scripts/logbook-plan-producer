@@ -37,6 +37,8 @@ def main():
         from logbook.source_plan_broker import main as run
     elif os.geteuid() == pwd.getpwnam('logbook-plan-producer').pw_uid:
         from logbook.plan_producer import main as run
+    elif os.geteuid() == pwd.getpwnam('logbook-repair-operator').pw_uid:
+        from logbook.repair_release_delivery import main as run
     else:
         raise ValueError('unexpected producer account')
     run()

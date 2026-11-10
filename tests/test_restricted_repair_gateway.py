@@ -17,6 +17,8 @@ class RestrictedRepairGatewayTests(TestCase):
                          ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', 'named-status'])
         self.assertEqual(permitted_command('sudo -n /usr/local/libexec/logbook-repair-dispatcher named-check'),
                          ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', 'named-check'])
+        self.assertEqual(permitted_command('sudo -n /usr/local/libexec/logbook-repair-release-receiver'),
+                         ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-release-receiver'])
 
     def test_rejects_shell_and_unapproved_or_mismatched_targets(self):
         base = '/var/lib/logbook-graph-guard/bundles/'
@@ -25,6 +27,7 @@ class RestrictedRepairGatewayTests(TestCase):
             'sudo -n /usr/local/libexec/logbook-repair-dispatcher named-status; touch /tmp/unsafe',
             'sudo -n /usr/local/libexec/logbook-repair-dispatcher named-unknown',
             'sudo -n /usr/local/libexec/logbook-repair-dispatcher named-status extra',
+            'sudo -n /usr/local/libexec/logbook-repair-release-receiver extra',
             'sudo -n /usr/local/libexec/logbook-repair-bundle-installer '
             + base + 'bundle-' + 'a'*32 + ' ' + base + 'window-' + 'b'*32,
             'sudo -n /usr/local/libexec/logbook-repair-bundle-installer /tmp/bundle '
