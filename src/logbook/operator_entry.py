@@ -76,10 +76,11 @@ def prepare_named(config: AppConfig | None, job_id: int, options: dict, state: P
     verify_checkout(Path(__file__).resolve().parents[2], revision)
     payload = build_release_bundle(revision, Path(options['wheel_dir']))
     plan, proof = request_generated_plan(job_id)
+    executor = Path('/var/lib/logbook-graph-guard/executor') if options.get('protected_executor') is True else bundle
     request = {'profile':'named-graph', 'container_id':options['container_id'], 'pid':options['pid'],
                'port':7697, 'unit':unit, 'private_dir':str(staging),
                'journal':str(Path(options['journal_dir'])/f'{token}.json'),
-               'worker':str(staging/'worker'), 'recovery_file':str(bundle/'logbook/graph_maintenance_recovery.py'),
+               'worker':str(staging/'worker'), 'recovery_file':str(executor/'logbook/graph_maintenance_recovery.py'),
                'recovery_worker':str(staging/'restore'), 'seconds':options['seconds'],
                'boot_guard_dir':'/var/lib/logbook-graph-guard', 'boot_guard_service':'memgraph.service',
                'job_id':job_id, 'revision':revision, 'bundle_sha256':hashlib.sha256(payload).hexdigest(),

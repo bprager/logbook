@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -21,6 +22,21 @@ from logbook.named_graph_approval import verify_bundle_marker  # noqa: E402
 from logbook.standing_graph_policy import authorize_repair  # noqa: E402
 from logbook.plan_attestation import verify_plan  # noqa: E402
 from logbook.graph_maintenance_worker import completion_matches, completion_value, read_private_json  # noqa: E402
+
+
+def verify_execution_marker(request: dict) -> Path:
+    """Verify release identity while retaining the code of the fixed executor."""
+    executor = Path(__file__).resolve().parent.parent
+    guard = Path(request['boot_guard_dir'])
+    if executor == guard/'executor':
+        match = re.fullmatch(r'logbook-graph-maintenance-([a-f0-9]{32})\.service', request['unit'])
+        if match is None:
+            raise ValueError('invalid protected unit')
+        release = guard/'bundles'/('bundle-'+match.group(1))
+        verify_bundle_marker(request, executor, release)
+    else:
+        verify_bundle_marker(request, executor)
+    return executor
 
 
 def confirmed_normal_outcome(request: dict) -> str:
@@ -58,11 +74,10 @@ def main() -> None:
         action = sys.argv[1]
         if action in {'named-check', 'named-stage'}:
             launcher.verify_target()
-            verify_bundle_marker(request, Path(__file__).resolve().parent.parent)
+            bundle = verify_execution_marker(request)
             authorize_repair(request, request['plan_data'], Path(request['boot_guard_dir']))
             verify_plan(request['plan_data'], request['job_id'], request.get('plan_proof'),
                         Path(request['boot_guard_dir'])/'plan.allowed_signers')
-            bundle = Path(__file__).resolve().parent.parent
             recovery.run(['/usr/bin/nsenter', '-t', str(request['pid']), '-n', '/usr/bin/env',
                           f'PYTHONPATH={bundle}', '/usr/bin/python3', '-m',
                           'logbook.repair_schema_preflight', str(request['port'])],
@@ -72,10 +87,10 @@ def main() -> None:
                 return
             record_named_graph_storage(request, recovery)
             MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).disarm()
-            stage_plan(request, Path(__file__).resolve().parent.parent)
+            stage_plan(request, bundle)
             print('STAGED')
         elif action in {'named-preflight', 'named-launch'}:
-            verify_bundle_marker(request, Path(__file__).resolve().parent.parent)
+            verify_execution_marker(request)
             plan = read_private_json(Path(request['private_dir']) / 'plan.json')
             authorize_repair(request, plan, Path(request['boot_guard_dir']))
             proof = read_private_json(Path(request['private_dir']) / 'plan-proof.json')

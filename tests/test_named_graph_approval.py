@@ -94,6 +94,25 @@ class NamedGraphApprovalTests(TestCase):
             with self.assertRaisesRegex(ValueError,'marker'):
                 verify_bundle_marker(request,bundle)
 
+    def test_protected_executor_uses_release_marker_without_trusting_release_code(self):
+        from logbook.named_graph_approval import verify_bundle_marker
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            executor = root/'executor'
+            release = root/'bundle'
+            executor.mkdir(mode=0o700)
+            release.mkdir(mode=0o700)
+            marker = release/'.bundle-ready'
+            marker.write_text('a'*64+'\n')
+            marker.chmod(0o600)
+            request = {'recovery_file':str(executor/'logbook/graph_maintenance_recovery.py'), 'bundle_sha256':'a'*64}
+            verify_bundle_marker(request, executor, release)
+            with self.assertRaisesRegex(ValueError, 'bundle path'):
+                verify_bundle_marker({**request, 'recovery_file':str(release/'logbook/graph_maintenance_recovery.py')}, executor, release)
+            marker.write_text('b'*64+'\n')
+            with self.assertRaisesRegex(ValueError, 'marker'):
+                verify_bundle_marker(request, executor, release)
+
     def test_invalid_target_record_and_staged_plan_are_rejected(self):
         from logbook.named_graph_approval import _check, plan_digest
         with TemporaryDirectory() as tmp:

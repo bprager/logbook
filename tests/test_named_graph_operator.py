@@ -11,6 +11,49 @@ from logbook.operator_entry import named_graph_recovery, release_named_processin
 
 
 class NamedGraphOperatorTests(TestCase):
+    def test_staged_protected_worker_and_recovery_use_fixed_executor(self):
+        from logbook.graph_maintenance_stage import stage_plan
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stage = root/'window'
+            executor = root/'executor'
+            journals = root/'journals'
+            for directory in (stage, executor, journals):
+                directory.mkdir(mode=0o700)
+            request = {'private_dir':str(stage), 'journal':str(journals/'job.json'),
+                       'worker':str(stage/'worker'), 'recovery_worker':str(stage/'restore'),
+                       'recovery_file':str(executor/'logbook/graph_maintenance_recovery.py'),
+                       'container_id':'a'*64, 'pid':42, 'port':7697, 'unit':'unit',
+                       'plan_data':{'nodes':[], 'relationships':[], 'generated_at':'now'},
+                       'profile':'named-graph', 'plan_proof':{}}
+            stage_plan(request, executor)
+            for name in ('worker', 'restore'):
+                self.assertIn('PYTHONPATH='+str(executor), (stage/name).read_text())
+    def test_prepare_named_selects_fixed_recovery_for_protected_execution(self):
+        from logbook.operator_entry import prepare_named
+        with TemporaryDirectory() as tmp:
+            state = Path(tmp)/'state'
+            options = {'remote_parent':'/var/lib/logbook-graph-guard/bundles', 'journal_dir':'/var/lib/logbook-graph-guard/journals',
+                       'container_id':'a'*64, 'pid':42, 'revision':'b'*40, 'wheel_dir':'/wheels',
+                       'host':'graph', 'identity':'/key', 'seconds':30, 'protected_executor':True}
+            plan = {'nodes':[], 'relationships':[], 'generated_at':'now'}
+            with patch('logbook.operator_entry.verify_checkout'), \
+                 patch('logbook.operator_entry.build_release_bundle', return_value=b'bundle'), \
+                 patch('logbook.operator_entry.request_generated_plan', return_value=(plan, {})), \
+                 patch('logbook.operator_entry.provision_named_bundle'):
+                prepare_named(None, 7, options, state)
+            request = json.loads(state.read_text())['request']
+            self.assertEqual(request['recovery_file'], '/var/lib/logbook-graph-guard/executor/logbook/graph_maintenance_recovery.py')
+    def test_protected_execution_verifies_release_but_uses_fixed_code(self):
+        from logbook.graph_maintenance_remote import verify_execution_marker
+        token = 'a'*32
+        request = {'boot_guard_dir':'/guard', 'unit':'logbook-graph-maintenance-'+token+'.service'}
+        with patch('logbook.graph_maintenance_remote.__file__', '/guard/executor/logbook/graph_maintenance_remote.py'), \
+             patch('logbook.graph_maintenance_remote.verify_bundle_marker') as verify:
+            self.assertEqual(verify_execution_marker(request), Path('/guard/executor'))
+            verify.assert_called_once_with(request, Path('/guard/executor'), Path('/guard/bundles/bundle-'+token))
+            with self.assertRaises(ValueError):
+                verify_execution_marker({**request, 'unit':'../invalid'})
     def test_remote_named_recovery_requires_named_profile(self):
         request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',

@@ -108,11 +108,13 @@ def validate_consumed_approval(request: dict, stage: Path, *, now: int | None = 
                            Path(request['boot_guard_dir']))
 
 
-def verify_bundle_marker(request: dict, bundle: Path) -> None:
+def verify_bundle_marker(request: dict, bundle: Path, release: Path | None = None) -> None:
     private_directory(bundle)
+    release = bundle if release is None else release
+    private_directory(release)
     if Path(request['recovery_file']) != bundle/'logbook/graph_maintenance_recovery.py':
         raise ValueError('bundle path mismatch')
-    fd = os.open(bundle/'.bundle-ready', os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    fd = os.open(release/'.bundle-ready', os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
     with os.fdopen(fd, 'r', encoding='utf-8') as source:
         info = os.fstat(source.fileno())
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
