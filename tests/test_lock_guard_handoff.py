@@ -185,6 +185,9 @@ hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout
         remote.identity = Path('/Library/Application Support/LogbookRepairOperator/private/odin-repair')
         events = []
         class Input(io.StringIO):
+            def write(self, value):
+                events.append('arm')
+                return super().write(value)
             def close(self):
                 pass
         child = Mock(stdin=Input(), stdout=io.StringIO('LOCKED\nARMED\n'))
@@ -199,8 +202,53 @@ hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout
         with patch('logbook.lock_guard_client.subprocess.Popen', return_value=child), \
              patch('logbook.lock_guard_client.select.select', return_value=([child.stdout], [], [])):
             coordinate_named_handoff(remote, refresh, timeout_seconds=1)
-        self.assertEqual(events, ['refresh', ('check', {'nodes':[]}), ('stage', {'nodes':[]}), 'preflight', 'launch'])
+        self.assertEqual(events, ['refresh', ('check', {'nodes':[]}), ('stage', {'nodes':[]}), 'preflight', 'arm', 'launch'])
         self.assertEqual(json.loads(child.stdin.getvalue()), request)
+
+    def test_staging_failure_never_arms_source_guard(self):
+        from logbook.lock_guard_client import coordinate_named_handoff, OPERATOR_KEY
+        from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
+        remote = Mock(spec=NamedGraphMaintenance,request={})
+        remote.host,remote.identity = 'logbook-repair@odin',OPERATOR_KEY
+        remote.stage.side_effect = ConnectionError('stage failed')
+        class Input(io.StringIO):
+            def close(self): pass
+        child = Mock(stdin=Input(),stdout=io.StringIO('LOCKED\nARMED\n'))
+        with patch('logbook.lock_guard_client.subprocess.Popen',return_value=child), \
+             patch('logbook.lock_guard_client.select.select',return_value=([child.stdout],[],[])):
+            with self.assertRaisesRegex(ConnectionError,'stage failed'):
+                coordinate_named_handoff(remote,lambda:{'nodes':[]},timeout_seconds=1)
+        self.assertEqual(child.stdin.getvalue(),'')
+        remote.launch.assert_not_called()
+
+    def test_staging_failure_releases_real_source_locks(self):
+        import fcntl
+        from logbook.lock_guard_client import coordinate_named_handoff, OPERATOR_KEY
+        from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = Path(__file__).resolve().parents[1]/'src'
+            code = ('import sys; from pathlib import Path; from types import SimpleNamespace; '
+                    f'sys.path.insert(0,{str(source)!r}); '
+                    'from logbook.lock_guard_broker import hold_window; '
+                    f'hold_window(SimpleNamespace(processing_root=Path({str(root)!r})),lambda r:None,sys.stdin,sys.stdout)')
+            remote = Mock(spec=NamedGraphMaintenance,request={})
+            remote.host,remote.identity = 'logbook-repair@odin',OPERATOR_KEY
+            remote.stage.side_effect = ConnectionError('stage failed')
+            processes = []
+            original = subprocess.Popen
+            def start(*args,**kwargs):
+                process = original([sys.executable,'-c',code],**kwargs)
+                processes.append(process)
+                return process
+            with patch('logbook.lock_guard_client.subprocess.Popen',side_effect=start):
+                with self.assertRaisesRegex(ConnectionError,'stage failed'):
+                    coordinate_named_handoff(remote,lambda:{'nodes':[]},timeout_seconds=3)
+            self.assertNotEqual(processes[0].wait(timeout=5),0)
+            self.assertFalse((root/'graph-maintenance.pending').exists())
+            for name in ('pipeline.lock','graph-write.lock'):
+                with (root/name).open('a') as lock:
+                    fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
 
     def test_schema_rejection_never_arms_or_stages(self):
         from logbook.lock_guard_client import coordinate_named_handoff, OPERATOR_KEY

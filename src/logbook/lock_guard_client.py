@@ -48,11 +48,11 @@ def coordinate_named_handoff(remote: NamedGraphMaintenance, refresh: Callable[[]
         encoded = json.dumps(remote.request)
         if len(encoded.encode()) > 8191 or '\n' in encoded:
             raise ValueError('repair request exceeds limit')
+        remote.stage(plan)
+        remote.preflight()
         child.stdin.write(encoded + '\n')
         child.stdin.flush()
         expect('ARMED')
-        remote.stage(plan)
-        remote.preflight()
         failure = None
         try:
             remote.launch()

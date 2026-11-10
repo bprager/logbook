@@ -307,7 +307,8 @@ class NamedGraphOperatorTests(TestCase):
             launcher.return_value.verify_target.side_effect=lambda:events.append('target')
             guard.return_value.disarm.side_effect=lambda:events.append('guard')
             remote_main()
-            self.assertEqual(events,['target','policy','record','guard','stage'])
+            self.assertEqual(events,['target','policy','record','stage'])
+            guard.return_value.disarm.assert_not_called()
             recovery.assert_called_once()
 
     def test_named_preflight_and_launch_recheck_staged_plan_and_policy(self):

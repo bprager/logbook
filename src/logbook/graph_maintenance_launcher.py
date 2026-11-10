@@ -74,6 +74,7 @@ class DockerLaunch:
         self.lock_path = private_dir / "setup.lock"
         self.timer = recovery.unit.removesuffix(".service") + "-recovery"
         self.deadline = 0.0
+        self.after_schedule: Callable[[], None] | None = None
 
     def preflight(self) -> None:
         """Check target and trusted files without creating a worker or fence."""
@@ -135,6 +136,8 @@ class DockerLaunch:
                            "--on-active=" + str(self.seconds) + "s",
                            "--timer-property=AccuracySec=1ms", "--property=RemainAfterExit=yes",
                            "--property=TimeoutStartSec=240s", *self._recovery_command()])
+        if self.after_schedule is not None:
+            self.after_schedule()
 
     def retry_recovery(self) -> None:
         """Start a new recovery service only after the original worker was stopped."""

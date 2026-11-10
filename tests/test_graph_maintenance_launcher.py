@@ -9,6 +9,16 @@ from logbook.graph_maintenance_recovery import DockerRecovery
 
 
 class GraphMaintenanceLauncherTests(unittest.TestCase):
+    def test_guard_is_closed_only_after_recovery_timer_is_scheduled(self):
+        recovery = Mock()
+        recovery.unit = 'logbook-graph-maintenance-test.service'
+        events = []
+        recovery.run.side_effect = lambda *args, **kwargs: events.append('timer')
+        launcher = DockerLaunch(recovery,Path('/tmp/window'),Path('/tmp/worker'),Path('/tmp/recovery'),10)
+        launcher.after_schedule = lambda: events.append('guard')
+        launcher.schedule_recovery()
+        self.assertEqual(events,['timer','guard'])
+
     def test_recovery_is_scheduled_before_fence_or_worker(self):
         operations = Mock()
         launch(operations)

@@ -86,7 +86,6 @@ def main() -> None:
                 print('CHECK_OK')
                 return
             record_named_graph_storage(request, recovery)
-            MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).disarm()
             stage_plan(request, bundle)
             print('STAGED')
         elif action in {'named-preflight', 'named-launch'}:
@@ -99,6 +98,7 @@ def main() -> None:
                 launcher.preflight()
                 print('PREFLIGHT_OK')
             else:
+                launcher.after_schedule = lambda: MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).disarm()
                 try:
                     launcher.run_window()
                 except StartupRejected:
