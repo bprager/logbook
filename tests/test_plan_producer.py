@@ -11,6 +11,45 @@ from logbook.plan_attestation import verify_plan
 
 
 class PlanProducerTests(TestCase):
+    def test_bounded_job_discovery_exposes_only_identifiers(self):
+        import sqlite3
+        from logbook.source_plan_broker import source_plan
+        from logbook.plan_producer import request_job_ids
+        with TemporaryDirectory() as temporary:
+            db = Path(temporary)/'ledger.sqlite'
+            with sqlite3.connect(db) as connection:
+                connection.execute('CREATE TABLE recording_jobs (id INTEGER PRIMARY KEY, private TEXT)')
+                connection.executemany('INSERT INTO recording_jobs VALUES (?,?)',[(1,'secret'),(2,'secret'),(4,'secret')])
+            config = SimpleNamespace(sqlite_path=db)
+            source = source_plan(config,b'{"after":1,"limit":2}')
+            self.assertEqual(json.loads(source),{'job_ids':[2,4]})
+            self.assertEqual(json.loads(produce_request(config,Path('/unused'),b'{"after":1,"limit":2}')),
+                             {'job_ids':[2,4]})
+            with patch('logbook.plan_producer._request_source_ids',return_value=[2,4]):
+                response = produce_request(None,Path('/unused'),b'{"after":1,"limit":2}')
+            self.assertNotIn(b'secret',response)
+            with patch('logbook.plan_producer.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=response)):
+                self.assertEqual(request_job_ids(1,2),[2,4])
+            for raw in (b'{"after":true,"limit":2}',b'{"after":0,"limit":101}',b'{"after":0,"limit":1,"extra":1}'):
+                with self.assertRaises(ValueError):
+                    source_plan(config,raw)
+
+    def test_job_discovery_rejects_invalid_requests_and_responses(self):
+        from logbook.plan_producer import _request_source_ids, parse_index_request, request_job_ids, validate_job_ids
+        for raw in (b'bad',b'x'*1025,b'{}',b'{"after":-1,"limit":1}',b'{"after":0,"limit":0}'):
+            with self.assertRaises(ValueError):
+                parse_index_request(raw)
+        for raw in (b'bad',b'x'*5001,b'{}',b'{"job_ids":[1,1]}',b'{"job_ids":[true]}',b'{"job_ids":[2,1]}'):
+            with self.assertRaises(ValueError):
+                validate_job_ids(raw,0,2)
+        with patch('logbook.plan_producer.subprocess.run',return_value=SimpleNamespace(returncode=1,stdout=b'')):
+            with self.assertRaises(RuntimeError):
+                _request_source_ids(0,2)
+            with self.assertRaises(RuntimeError):
+                request_job_ids(0,2)
+        with patch('logbook.plan_producer.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=b'{"job_ids":[1,2]}')):
+            self.assertEqual(_request_source_ids(0,2),[1,2])
+
     def test_source_handoff_validates_response_and_fixed_command(self):
         from logbook.plan_producer import _request_source_plan
 

@@ -14,6 +14,63 @@ COMMAND = ['/usr/bin/sudo', '-n', '-u', 'logbook-plan-producer',
 SOURCE_COMMAND = ['/usr/bin/sudo', '-n', '-u', 'bernd', '/usr/local/libexec/logbook-plan-producer']
 
 
+def parse_index_request(raw: bytes) -> tuple[int, int]:
+    if len(raw) > 1024:
+        raise ValueError('producer request too large')
+    try:
+        request = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('invalid producer request') from error
+    if (not isinstance(request, dict) or set(request) != {'after', 'limit'}
+            or type(request['after']) is not int or not 0 <= request['after'] <= 9223372036854775807
+            or type(request['limit']) is not int or not 1 <= request['limit'] <= 100):
+        raise ValueError('bounded job index required')
+    return request['after'],request['limit']
+
+
+def is_index_request(raw: bytes) -> bool:
+    try:
+        request = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return isinstance(request,dict) and set(request) == {'after','limit'}
+
+
+def validate_job_ids(raw: bytes, after: int, limit: int) -> list[int]:
+    if len(raw) > 5000:
+        raise ValueError('job index response too large')
+    try:
+        response = json.loads(raw)
+        if (not isinstance(response,dict) or set(response) != {'job_ids'}
+                or not isinstance(response['job_ids'],list) or len(response['job_ids']) > limit):
+            raise ValueError('invalid job index')
+        ids = response['job_ids']
+        if (any(type(value) is not int or not after < value <= 9223372036854775807 for value in ids)
+                or ids != sorted(set(ids))):
+            raise ValueError('invalid job index')
+        return ids
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('invalid job index') from error
+
+
+def _request_source_ids(after: int, limit: int) -> list[int]:
+    result = subprocess.run(SOURCE_COMMAND,input=json.dumps({'after':after,'limit':limit}).encode(),
+                            capture_output=True,timeout=60,check=False,
+                            env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
+    if result.returncode:
+        raise RuntimeError('source job index unavailable')
+    return validate_job_ids(result.stdout,after,limit)
+
+
+def request_job_ids(after: int = 0, limit: int = 100) -> list[int]:
+    request = json.dumps({'after':after,'limit':limit}).encode()
+    parse_index_request(request)
+    result = subprocess.run(COMMAND,input=request,capture_output=True,timeout=60,check=False)
+    if result.returncode:
+        raise RuntimeError('producer job index unavailable')
+    return validate_job_ids(result.stdout,after,limit)
+
+
 def parse_job_request(raw: bytes) -> int:
     if len(raw) > 1024:
         raise ValueError('producer request too large')
@@ -47,6 +104,14 @@ def _request_source_plan(job_id: int) -> dict:
 
 
 def produce_request(config: object, key: Path, raw: bytes) -> bytes:
+    if is_index_request(raw):
+        after,limit = parse_index_request(raw)
+        if config is None:
+            ids = _request_source_ids(after,limit)
+        else:
+            from logbook.source_plan_broker import source_job_ids
+            ids = source_job_ids(config,after,limit)
+        return json.dumps({'job_ids':ids},sort_keys=True).encode()
     job_id = parse_job_request(raw)
     if config is None:
         plan = _request_source_plan(job_id)

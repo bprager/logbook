@@ -119,6 +119,18 @@ def main() -> None:  # pragma: no cover
     if len(raw) > 5000000:
         raise SystemExit('repair request too large')
     request = json.loads(raw)
+    if sys.argv[1] == 'named-discover':
+        if (len(raw) > 4096 or not isinstance(request,dict) or set(request) != {'job_ids'}
+                or not isinstance(request['job_ids'],list) or not 1 <= len(request['job_ids']) <= 100
+                or any(type(value) is not int or not 1 <= value <= 9223372036854775807 for value in request['job_ids'])
+                or request['job_ids'] != sorted(set(request['job_ids']))):
+            raise ValueError('bounded job IDs required')
+        entry = protected_executor().parent/'graph_repair_discovery.py'
+        trusted_path(entry,directory=False,private=True)
+        result = subprocess.run(['/usr/bin/python3','-I',str(entry)],input=raw,
+                                env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'},
+                                cwd='/',timeout=60,check=False)
+        raise SystemExit(result.returncode)
     protected = (isinstance(request, dict) and request.get('recovery_file')
                  == str(GUARD/'executor'/'logbook'/'graph_maintenance_recovery.py'))
     reject_uncontained_policy(protected=protected)

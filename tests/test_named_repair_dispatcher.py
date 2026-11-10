@@ -6,6 +6,29 @@ from logbook.named_repair_dispatcher import validate_request
 
 
 class NamedRepairDispatcherTests(TestCase):
+    def test_discovery_dispatch_is_fixed_read_only_entry_and_bounded(self):
+        import io
+        import json
+        import sys
+        from types import SimpleNamespace
+        from logbook.named_repair_dispatcher import main
+        executor = Path('/var/lib/logbook-graph-guard/executor/logbook/graph_maintenance_remote.py')
+        for request in ({'job_ids':[1,2]}, {'job_ids':[1],'extra':True}, {'job_ids':list(range(1,102))}):
+            stdin = io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()), encoding='utf-8')
+            with patch('logbook.named_repair_dispatcher.os.geteuid',return_value=0), \
+                 patch('logbook.named_repair_dispatcher.protected_executor',return_value=executor), \
+                 patch('logbook.named_repair_dispatcher.trusted_path'), \
+                 patch('logbook.named_repair_dispatcher.subprocess.run',return_value=SimpleNamespace(returncode=0)) as run, \
+                 patch.object(sys,'stdin',stdin), patch.object(sys,'argv',['dispatcher','named-discover']):
+                if set(request)=={'job_ids'} and len(request['job_ids'])<=100:
+                    with self.assertRaises(SystemExit):
+                        main()
+                    self.assertEqual(run.call_args.args[0][2],str(executor.parent/'graph_repair_discovery.py'))
+                else:
+                    with self.assertRaises(ValueError):
+                        main()
+                    run.assert_not_called()
+
     def test_dispatch_executes_fixed_fixture_not_release_fixture(self):
         import io
         import json

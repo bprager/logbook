@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import pwd
+import sqlite3
 import stat
 import sys
 import tempfile
@@ -11,14 +12,27 @@ from pathlib import Path
 
 from logbook.config import load_app_config
 from logbook.graph_maintenance_worker import read_private_json
-from logbook.operator_plan import prepare_job_plan
-from logbook.plan_producer import parse_job_request
+from logbook.operator_plan import _backup_ledger, prepare_job_plan
+from logbook.plan_producer import is_index_request, parse_index_request, parse_job_request
 
 SOURCE_CONFIG = Path('/Library/Application Support/LogbookPlanProducer/source.env')
 SOURCE_ROOT = Path('/Users/bernd/VoiceIngest')
 
 
+def source_job_ids(config: object, after: int, limit: int) -> list[int]:
+    with tempfile.TemporaryDirectory() as temporary:
+        snapshot = Path(temporary)/'ledger.sqlite'
+        _backup_ledger(config.sqlite_path,snapshot)
+        with sqlite3.connect(snapshot) as connection:
+            rows = connection.execute('SELECT id FROM recording_jobs WHERE id > ? ORDER BY id LIMIT ?',
+                                      (after,limit)).fetchall()
+    return [row[0] for row in rows]
+
+
 def source_plan(config: object, raw: bytes) -> bytes:
+    if is_index_request(raw):
+        after,limit = parse_index_request(raw)
+        return json.dumps({'job_ids':source_job_ids(config,after,limit)},sort_keys=True).encode()
     job_id = parse_job_request(raw)
     with tempfile.TemporaryDirectory() as temporary:
         path = Path(temporary)/'plan.json'

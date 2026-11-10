@@ -17,6 +17,8 @@ class RestrictedRepairGatewayTests(TestCase):
                          ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', 'named-status'])
         self.assertEqual(permitted_command('sudo -n /usr/local/libexec/logbook-repair-dispatcher named-check'),
                          ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', 'named-check'])
+        self.assertEqual(permitted_command('sudo -n /usr/local/libexec/logbook-repair-dispatcher named-discover'),
+                         ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', 'named-discover'])
         self.assertEqual(permitted_command('sudo -n /usr/local/libexec/logbook-repair-release-receiver'),
                          ['/usr/bin/sudo', '-n', '/usr/local/libexec/logbook-repair-release-receiver'])
 
