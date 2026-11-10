@@ -55,6 +55,7 @@ type Stats = {
 type Snapshot = {
   generated_at: string
   latest_finished_at: string | null
+  services?: { state: string; services: Record<string, { healthy: boolean | null; attempts: number; exhausted: boolean; detail?: string }> }
   health: Health
   current_run: Record<string, unknown> | null
   active_stage: Record<string, unknown> | null
@@ -105,7 +106,7 @@ export default function App() {
   const stage = snapshot?.active_stage
   const progressPercent = numeric(stage?.progress_percent)
   const running = snapshot?.current_run !== null && snapshot?.current_run !== undefined
-  const failureCount = snapshot?.recent_failures.length ?? 0
+  const failureCount = snapshot?.recent_failures.filter((item) => !["recovered", "recorder_absent"].includes(item.status)).length ?? 0
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -120,7 +121,7 @@ export default function App() {
               {failureCount > 0 ? (
                 <Badge variant="destructive">{failureCount} failures</Badge>
               ) : (
-                <Badge variant="outline">no recent failures</Badge>
+                <Badge variant="outline">no unresolved failures</Badge>
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -162,6 +163,11 @@ export default function App() {
           <HealthCard label="SQLite" value={snapshot?.health.sqlite} />
           <HealthCard label="Odin" value={snapshot?.health.odin} />
           <HealthCard label="Graph" value={snapshot?.health.memgraph} />
+          <HealthCard label="Recovery monitor" value={snapshot?.services?.state} />
+          {Object.entries(snapshot?.services?.services ?? {}).map(([name, service]) => (
+            <HealthCard key={name} label={`${name} · ${service.attempts}/3 restarts`}
+              value={service.exhausted ? "ALARM: retries exhausted" : service.detail === "starting" ? "starting" : service.healthy ? "ok" : "unavailable"} />
+          ))}
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
@@ -293,7 +299,7 @@ function FailureTable({ items }: { items: Failure[] }) {
           key={item.job_id}
         >
           <span className="flex items-center gap-2">
-            <XCircle className="h-4 w-4 text-destructive" />
+            {["recovered", "recorder_absent"].includes(item.status) ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4 text-destructive" />}
             #{item.job_id}
           </span>
           <span className="truncate">{item.status}</span>

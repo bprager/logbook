@@ -1,5 +1,302 @@
 # Status
 
+## Permanent recorder-helper signing — 2026-10-22
+
+Added optional permanent certificate signing to `launchd-render`. The identity is
+remembered for future rebuilds; an existing certificate-signed app cannot silently
+fall back to ad-hoc signing when its marker is missing. Builds are staged and
+verified before replacement. Failed builds retain the installed helper and its
+working identity; a failed restoration leaves a recovery copy outside temporary
+cleanup. Full quality gate passes: 304 tests and 100% changed-line coverage.
+Independent review found no remaining blocking issues.
+
+Created and authorized code-signing-only trust for `Logbook Local Signing` in
+Mimir's login keychain. Verified one valid identity, fingerprint
+`E92D88974170921362110915C4CADD72385CA252`, expiring October 19, 2036. Background
+signing returned `errSecInternalComponent`, including after the operator enabled
+all-application access to the key. Running the prepared installer in the operator's
+Terminal succeeded at 20:44 UTC. The installed app passes strict verification
+with access to the saved certificate trust settings. Two binaries with different
+SHA-256 hashes have identical certificate-based designated requirements; the
+identity marker is installed. Backup and verification evidence are under
+`~/VoiceIngest/services/signing/install-20261022T204441Z`.
+
+The loaded mount agent points to the signed app at its original path. Its source
+still uses the validated `a3c3044` release; service settings and audio are unchanged.
+The operator confirmed that reconnecting no longer produces the removable-volume
+permission popup. The live permission-persistence check is complete.
+All-application private-key access is broader than necessary;
+code signing needs only `/usr/bin/codesign`.
+
+## Watch failure history and absent-recorder triggers — 2026-10-22
+
+The reported 21:02 Odin connection failure recovered through the supervised queue:
+job 254 was published at 21:03. Mounted-recorder runs subsequently succeeded at
+21:27 and 22:01. The observer previously displayed every failed attempt in its
+24-hour window without recovery status. It now labels later successful retries
+from the same command and host as recovered, requiring publication evidence for
+job-specific failures. Genuine unresolved failures sort first; the failures-only
+filter excludes recovered attempts and expected recorder disconnection notices.
+Failure counts explicitly describe historical attempts; original SQLite run
+records remain unchanged.
+
+The native onsite helper now exits successfully without starting Python when
+the Sony mount is absent. `StartOnMount` also fires for unrelated disks. A mounted
+Sony with a missing/unreadable recordings folder still runs validation and reports
+errors; the remote Mac helper retains its offline-buffer retry behavior. Existing
+missing-folder attempts are informational only while the mount itself is absent,
+and become failures again if it is present but its folder is still missing.
+
+Job 254 inherited the same incorrect recorder year. Applied the already confirmed
+2026 correction with ledger/note backups and an audit record, preserving audio.
+The October 21 daily log now contains both the 07:48 and 14:20 entries, published
+in vault commit `a83a6fe`.
+
+Validation: full quality gate passes with 299 tests and 100% changed-line coverage.
+Independent review found no important issues. The live local snapshot shows the
+quoted connection failure as recovered, disconnected-recorder attempts as
+informational, all supervised services healthy, and no unfinished recordings.
+Restart an already-running watch process to load the updated observer code.
+
+## Recorder storage and busy-worker recovery — 2026-10-21
+
+Follow-up investigation found the Sony visible on USB but exposing no disk or
+mounted volume. Reconnecting restored `IC RECORDER` and the existing mount helper
+automatically copied four new recordings (jobs 250–253). Their filenames and
+filesystem dates say October 20–21, 2025. The operator confirmed these belong to
+2026; audited corrections now place two entries on October 20 and one entry plus
+the meeting on October 21. Original recordings remain untouched.
+
+Live processing exposed a separate worker fault: synchronous transcription inside
+the async upload handler blocked health requests, triggering supervisor restarts.
+A regression test reproduced the health timeout. Transcription now runs in a
+thread with an async lock preserving serial GPU work. The targeted patch was
+backed up and applied on Odin, preserving its existing WAV conversion changes.
+Full quality gate passes: 295 tests, type checks, lint, web build, and 100% changed
+line coverage. Recorder validation warnings now reach monitor copy-failure detail;
+a regression test verifies the missing-folder explanation and path redaction.
+
+Deployed worker health fix from `5fc327f`; verified live health during speaker
+labeling, subsequent successful publication, and all four supervised services
+healthy with zero exhausted budgets. Recorder helper now imports a frozen
+`services/releases/5fc327fdae37a2dd87471f8bdbba962a25a40aa8` snapshot; supervisor
+receiver/API/queue retain their previous validated snapshot.
+
+Vault commits `0561705` and `1236a18` publish the corrected notes and remove two
+identical inbox duplicates. Vault HEAD matches remote main at `1236a18`. Original
+and copied audio checksums were verified during correction; ledger backup and
+original generated notes are in `services/year-correction-20261021T194536Z`.
+Memgraph MCP corrected four job dates, 296 evidence dates, and seven note
+references after direct graph sync could not connect. Obsidian visibly displays
+the corrected October 21 meeting with three named speaker labels; 15 closing
+segments remain unassigned, and all 211 transcript segments are preserved.
+
+A repeat recorder run was interrupted when its volume disappeared during
+hashing. Fresh replay idempotency remains physically unverified; the corrected
+vault has one daily log per date and one inbox/meeting note per recovered job.
+Earlier failed-run history is retained. Set the recorder's year to 2026 before
+new recordings; source filenames and filesystem dates were not rewritten.
+
+## Ingestion service recovery — 2026-10-21
+
+Development was on `main` while production expected the remote-ingestion branch;
+the supervisor repeatedly failed to import its missing module. Restored deployed
+revision `50de098`, reset only the queue recovery budget and isolated production
+source in `~/VoiceIngest/services/releases/50de0984acf3a389134ef34b108fae77dbb68348`.
+Installed/generated supervisor settings and the onsite recorder helper now use
+that snapshot. Existing `.venv` and `.env` remain required in the project path.
+
+Verified receiver/API health, all four supervised components healthy, zero
+exhausted budgets, successful scheduled queue runs, no incomplete ledger jobs and
+no unpublished remote deliveries. Receiver/API and queue remained functional with
+development switched to `main`. Full quality gate passed with 293 tests. Audio
+retained; Sony absent, so a fresh physical-recorder import was not exercised.
+See `docs/service-recovery.md` for deployment and rollback details.
+
+## Persistent upload recovery and latest recording — 2026-10-11
+
+Production receiver restored on enrolled Mac port 18791, using the existing
+credential hashes, backed-up production ledger and retained `remote-intake`.
+The Mac reported receipt; job 232 (October 11, 12:30, 3,261,670 bytes) arrived.
+Real Odin transcription, log routing, October 11 daily consolidation, vault
+publication and graph synchronization succeeded. Verified both note files against
+vault HEAD and remote main `f1c6db2b4ba0b152ec9e0886b59a3bf10925f73e`; retained audio
+SHA-256 matches. Existing unrelated vault `Home.md` edit was left untouched.
+
+Installed `local.logbook.supervisor` as a boot-time system LaunchDaemon running
+as `bernd`. It owns receiver, status API and periodic queue children, with three
+persisted repair attempts per incident, startup grace, ten-minute healthy reset
+and explicit reset command. Old user jobs are disabled; retention deletion is
+also disabled across login/reboot. OpenClaw services were not changed.
+
+Live receiver stop/recovery passed: PID 76979 was deliberately stopped and a
+replacement answered health checks after the next supervisor pass. State, audit
+history, read-only observer API, curses, web UI and metrics show service status
+and budgets. Node exporter now reads private supervision textfiles; the Logbook
+API stays loopback-only. Prometheus/Grafana rules and Logbook Operations dashboard
+are installed on Odin. Its systemd worker also has a three-start/15-minute limit,
+60-second restart delay and user lingering enabled. Seven Prometheus rule tests
+passed. Existing `home-email` delivery test returned HTTP 200, receiver status
+`ok`, notified at 2026-10-11T20:41:19Z. A real exhausted-recovery alarm fired.
+
+**Remaining blocker:** background Python on mimir cannot reach Odin's LAN API
+(`No route to host`), although foreground Python and a system curl daemon can.
+The new recording was therefore processed through the foreground pipeline.
+No network/privacy controls were bypassed. Asked the user to check Python/Logbook
+Local Network permission on mimir; awaiting that answer. The supervisor keeps
+uploads available and alarms on the failed dependency after bounded recovery.
+Do not claim unattended transcription is verified until service-context access
+and a subsequent processing pass succeed. The remote SSH alias/identity is fixed
+and strict host-key verification retained; existing network privacy settings
+remain unchanged.
+
+Validation: full quality gate passed with 293 tests and 100% changed-line
+coverage; Prometheus rule tests passed. Browser and real curses inspection
+confirmed recovery status, attempt counts and latest job 232 publication.
+No recordings deleted and no release tagged. See `docs/service-recovery.md`.
+
+## Upload retry and measured watch progress — 2026-10-11
+
+Live Mac watch now initiates an immediate upload pass from retained recordings,
+without scanning or requiring Sony. Later passes honor the persisted retry times;
+the shared agent lock prevents overlapping uploads/eject. Scheduled launchd
+uploads already run independently of recorder connection. `--once` remains
+read-only, and mimir production watch behavior is unchanged.
+
+The background worker reports server-confirmed bytes per recording, connecting,
+receipt waiting, lock contention, and retry countdown. Quit stops at request
+boundaries without waiting for a slow network; retained files and server offsets
+support resumption. No source audio deleted, services changed, or release tagged.
+
+Verification: 278 tests passed through the full quality gate, 99% feature-branch
+changed-line coverage; upload-watch, remote controls, and remote TUI at 100%.
+A real curses terminal with an isolated simulated receiver displayed 22%, 44%,
+78%, 100%/waiting for receipt, then one received recording and its success time.
+Sony mount was absent, source remained intact, and q restored the terminal.
+Tests cover resume offsets, immediate retry overriding prior backoff, later
+backoff, concurrent uploader lock, missing buffer, and quitting during a request.
+This validates watch behavior; it does not verify a new production transfer from
+the MacBook or install the previously deferred persistent receiver.
+
+## Watch eject and activity history — 2026-10-11
+
+Remote curses watch now binds `e` to the existing volume/checksum/agent-lock
+guarded eject. Displays verification progress and persistent result feedback;
+diskutil output is captured so it cannot corrupt the screen. Removed the separate
+`scripts/remote-eject` wrapper; the low-level CLI command remains. Mimir keeps its
+existing dashboard eject control and dated recent-job/failure display.
+
+Mac `agent_status` now retains last-success/last-failure timestamps for new
+snapshots, upload receipts/failures, scan failures and watch eject outcomes.
+Display uses local timezone; legacy absent timestamps remain unknown. Read-only
+refresh never migrates or writes the buffer, and repeated snapshots/receipts do
+not fabricate new successful activity. No recording deletion or service changes.
+Full quality gate passed: 271 tests, 99% feature-branch changed-line coverage,
+100% coverage of remote dashboard/controls. Real-terminal verification showed
+the activity date/time and guarded refusal feedback. Successful physical eject
+was simulated; no live recorder was ejected. Update the actual uploader checkout
+as well as a separate watch checkout to begin collecting activity times.
+
+## Curses remote watch — 2026-10-11
+
+Live `scripts/remote-watch` now defaults to curses on both mimir and the Mac
+agent. `--once` stays plain; `--ui compact` explicitly selects scrolling output.
+Remote dashboard displays receipt counts/progress, pending size, retries and
+historical errors/scans, handles resize and quits with q/Escape/Ctrl-C.
+Verified actual terminal rendering and q exit on live mimir and a synthetic
+28-recording Mac buffer. Monitoring remains read-only. Global TUI-first
+preference saved in Memgraph and synchronized to `~/.ai/preferences/global.json`.
+Full quality gate passed: 264 tests, 99% feature-branch changed-line coverage,
+and 100% statement/branch coverage for the new remote dashboard module.
+
+## Portable watch — 2026-10-11
+
+`scripts/remote-watch` works on mimir (including SSH sessions) and the traveling
+Mac. Explicit `--env`/`--config` wins, followed by `LOGBOOK_REMOTE_CONFIG`, existing
+pilot agent settings, then checkout `.env`. Source imports and the default env
+are anchored to the checkout, while explicit relative paths retain caller meaning.
+Verified against live mimir status and a real synthetic Mac outbox; watch leaves
+the outbox and source unchanged. No processing, service or retention changes.
+Full quality gate passed: 257 tests, lint/type checks, observer build and 99%
+feature-branch changed-line coverage.
+
+## Production remote-audio acceptance passed — 2026-10-10 (Pacific)
+
+User authorized production transcription/publication verification and repairs,
+with no recording deletion or release tag. Backed up production and verified
+restore (216 jobs); matched all 27 pilot checksums, skipped 22 existing jobs,
+and imported five new jobs 227–231 through durable intake with import audits.
+Real Odin transcription, Obsidian publication and graph synchronization passed.
+Vault `9ebc274` has one canonical log for each of October 9–10, three entries per
+date, ordered by time. Repeated processing did no duplicate work; all audio remains.
+
+Fixed current Memgraph `read-only` error recognition and inaccurate successful-job
+counts, with failing-then-passing regression tests. Reconciled deleted dead letter
+137 as discarded with the prior Obsidian deletion commits recorded in its audit.
+Final vault check: 218 synchronized eligible jobs, zero blocked.
+Full quality gate passed: 250 tests, 99% feature-branch changed-line coverage,
+Python/Markdown checks and observer build. Final live services are healthy with
+zero pending uploads or graph jobs; the earlier failure remains in audit history.
+
+Cleanup LaunchAgent was unloaded; retain audio. Production version stays 1.2.3.
+No persistent production remote receiver/worker was installed; pilot receiver is
+stopped. Next: physical second-Mac/login/roaming acceptance and explicit audio
+backup/retention policy before unattended rollout. Full evidence is in
+`docs/remote-acceptance.md`. Earlier pause statements below are historical.
+
+## Physical outage recovery passed — 2026-10-10
+
+The first Mac retained a new recording during an isolated receiver outage,
+then automatically delivered its 918,800-byte snapshot after receiver restart
+while Sony stayed unplugged. There are 27 unique pilot recordings/receipts;
+all checksums/sizes and ledger integrity passed, with zero pending uploads.
+Wi-Fi and the operator's SSH/tmux session remained available. No production
+processing or deletion. Physical login/reboot, Wi-Fi roaming, second-Mac setup
+and the retention decision remain outstanding.
+
+## First Mac automatic fresh-recording check — 2026-10-10
+
+After the operator recorded a new test and reconnected Sony, the managed pilot
+automatically advanced from 25 to 26 unique recordings. All 26 server-side
+sizes/checksums and ledger integrity passed; no pending uploads or device errors.
+No production processing or deletion. Offline/unplugged recovery and login/reboot
+remain the next physical checks, followed by second-Mac acceptance.
+
+## Automatic SSH packaging — 2026-10-10
+
+Optional `ssh_host`/`ssh_remote_port` settings generate a dedicated tunnel
+LaunchAgent, also available through `package-tunnel`. Hardened configuration
+propagates to jump hosts without modifying existing SSH settings. Native SSH
+inspection, an isolated real launchd restart/forwarding drill and all 237 tests
+pass (99% changed-line coverage). Physical Mac login/network recovery is next;
+production activation and recorder deletion remain unapproved.
+
+## First physical remote pilot — 2026-10-10
+
+Tene-MacBook-Air successfully built the signed app and buffered 25 Sony files.
+An isolated manual SSH pilot through `jump-mimir`/fenrir delivered 25 unique
+recordings (121,418,203 bytes). Server-side sizes, SHA-256 and SQLite integrity
+passed; all 25 receipts completed. Pilot receiver stopped; audio retained.
+Production was unchanged. Automatic SSH lifecycle, signed-app transfer,
+reboot/login recovery, second-Mac acceptance and retention decisions remain.
+See `docs/remote-acceptance.md`; earlier pending-host statements are historical.
+
+## Remote ingestion implementation — 2026-10-09
+
+Feature branch `feature/remote-sony-ingestion` implements LGB-044 through LGB-047.
+Durable central receipts, two-Mac offline buffering, mount-independent processing,
+guarded source association and redacted status are covered by automated tests.
+The full quality gate and independent recovery review are part of acceptance.
+No deployment, live credential changes, recording deletion or v1.3.0 tag.
+Follow-up authorized: proceed with field-testing preparation and the retention
+decision. An isolated real-HTTP pilot passed with two restarted agent processes,
+offline buffers and one central job; production was untouched. Physical tests
+still need both MacBook hostnames and recorder access. The conservative pilot
+retention proposal is awaiting a response. See `docs/remote-acceptance.md` and
+`docs/remote-installation.md`.
+
+Earlier operational evidence follows; it is historical context.
+
 ## October 5 diary-routing repair
 
 Restored jobs 213/214 (September 30 and October 2), verified canonical content and

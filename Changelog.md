@@ -15,12 +15,230 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve the existing mimir/Odin/Obsidian processing path and direct-mimir one-week guarded recorder pruning; remote MacBooks never delete Sony recordings.
 - Add backlog LGB-044 through LGB-047 and `docs/remote-ingestion.md` for design, security, acceptance and rollout.
 
-**Planning entry only:** No remote agent or server endpoint is implemented, no release is tagged, and current production version remains 1.2.3.
+**Release not promoted:** Remote ingestion is implemented on the feature branch
+and described under Unreleased. No production deployment or tag; current
+production version remains 1.2.3.
 
 ## [Unreleased]
 
 ### Fixed
 
+- Check required graph uniqueness constraints before arming a named repair guard.
+
+- Allow the restricted repair operator to release a matching guard only after confirmed recovery.
+
+- Prepare an inactive restricted operator handoff for the existing processing locks and recovery guard.
+
+- Start the independent recovery monitor before requesting a graph repair.
+
+- Add a bounded source-account handoff for automatic signed repair plans.
+
+- Retry a closed WAL ledger snapshot with SQLite write-capable access when read-only backup cannot open its missing companion files.
+
+- Prepare repair plans from private copies of contained transcript and insight inputs.
+
+- Reject repair plans that omit a transcript referenced by the ledger.
+
+- Bind transcript and insight evidence fingerprints to the same file contents used to build the graph plan.
+
+- Add a checked, non-overwriting installer for an inactive plan producer; it grants no permissions and is not deployed.
+
+- Refresh candidate repair proof automatically under locks before staging and persist matching recovery state.
+
+- Add a fixed plan producer launcher that checks its installed code is root controlled before use; not deployed.
+
+- Require a pre-seeded unique fixture marker before graph integration tests modify a database.
+
+- Connect candidate named repair preparation to a fixed automated plan producer; separate installation and authority qualification remain outstanding.
+
+- Require the candidate producer proof before named repair staging, preflight and launch; the producer remains unconnected and undeployed.
+
+- Prepare automatic ledger-generated repair plan attestations; this candidate is not wired to production or independently protected.
+
+- Prepare a restricted SSH gateway that forwards only the existing named repair commands without a shell; not deployed.
+
+- Recheck prepared graph repairs against the current ledger under processing locks before staging; this candidate does not establish an independent security boundary.
+
+- Prepare a fixed named-repair dispatcher with constrained actions and root-controlled paths; the candidate is not deployed and still requires independent authority and recovery qualification.
+
+- Prepare a fixed named-repair bundle installer that checks a standing-policy signature and package digest instead of running installer code supplied by the operator; not deployed.
+
+- Exercise a signed standing policy across experimental repair staging and preflight, and reject a changed policy before launch; no live graph access is involved.
+
+- Bind the candidate standing repair policy to the exact repair bundle digest and produce repeatable bundles for the same reviewed revision and dependencies.
+
+- Connect the experimental named-graph runner to the standing-policy check before staging and before launch; this remains undeployed and requires independent trust-boundary qualification.
+
+- Add an unconnected candidate check for a signed standing graph-repair policy, allowing repeat checks without per-repair signatures; not a production authorization boundary.
+
+- Add bounded recovery-only operator commands for an already staged named graph window.
+
+- Connect named graph startup checks to the existing target-bound offline recovery code, without exposing a live operator entry.
+
+- Prepare a persistent startup guard for the named Memgraph service; not activated.
+
+- Add an experimental durable processing stop marker for fixture repair recovery.
+- Allow the existing backup and restore commands to use a restricted Odin rsync identity without remote shell or delete permissions.
+
+- Preserve verified completed fixture repair batches across a graph-host restart.
+
+- Reopen a recovered fixture graph and release its lease after target and health checks.
+
+- Add a fixture-only isolated rollback operation after a graph host restart.
+
+- Check that a guarded fixture service supervises its selected graph container.
+
+- Add an experimental fixture startup guard for interrupted graph maintenance.
+
+- Package fixture repair dependencies from checksum-pinned distribution wheels.
+
+- Check the fixture coordinator checkout and use the selected bundle bootstrap.
+
+- Build experimental repair source from a selected Git commit and record the package digest.
+
+- Expose guarded retry and confirmed outcome status for fixture repair runs.
+
+- Reject unsafe ancestor directories when installing experimental graph repair bundles.
+
+- Add an experimental single-batch graph repair path that saves a durable
+  recovery identifier before applying a bounded create-only repair.
+
+- Add an experimental independent lock holder that outlives the graph
+  maintenance coordinator until remote recovery is confirmed.
+
+- Add experimental cross-host maintenance coordination that checks recovery
+  over a fresh connection while holding both Logbook locks.
+
+- Fence IPv4 and IPv6 together during experimental graph maintenance, drain
+  pre-existing transactions, and provide a wrapper for both Logbook locks.
+
+- Add an experimental fenced graph-maintenance launcher with a gated worker
+  and independent, setup-serialized recovery timer; it is not enabled live.
+
+- Add fail-closed recovery for a fenced graph maintenance worker, stopping the
+  worker and draining transactions before outside access is restored.
+
+- Require a held local graph writer lock throughout guarded repair and rollback.
+
+- Coordinate Logbook's graph sync and repair commands with a shared local
+  write lock; an occupied lock returns an error for retry.
+
+- Keep unreviewed recordings and recordings with missing final notes out of
+  audio cleanup, even after their retention period has elapsed.
+
+- Support a permanent local signing certificate for the Sony mount helper and
+  remember it for later rebuilds, preserving its macOS permission identity.
+  Verify each signed replacement before installing it; keep the existing helper
+  if compilation, signing or verification fails.
+- Mark recovered pipeline attempts in watch history and keep the failure filter
+  focused on unresolved problems. Preserve the original failure records and
+  distinguish historical attempt totals from current job failures.
+- Ignore unrelated mount events when the onsite Sony volume is absent, while
+  retaining errors for a connected recorder whose recordings cannot be read.
+
+- Keep Odin health checks responsive during transcription and speaker labeling,
+  preventing the supervisor from restarting a busy worker. Preserve one-at-a-time
+  GPU processing.
+- Preserve recorder validation warnings in monitor copy failures, so an absent
+  or unreadable recorder folder has an explanation instead of only an exit code.
+
+- Restore ingestion after the development checkout lost the deployed service
+  modules. Pin the live supervisor and recorder helper to a validated source
+  snapshot so development branch changes cannot remove their code; restore the
+  queue recovery allowance and verify service health and completed processing.
+
+- Keep recorder and recovery commands usable without loading the supervisor's
+  HTTP client. Repair Mimir's legacy onsite mount helper to use the project
+  environment, and document recovery without changing remote ingestion.
+- Recognize both Memgraph storage-conflict spellings so production graph retries
+  recover, and report only successful jobs in the graph synchronization count.
+
+### Verified
+
+- Transcribed five retained remote recordings on production Odin, published and
+  verified the October 9–10 Obsidian logs, and completed their graph updates.
+  Repeated processing produced no duplicates. Preserved all pilot audio, paused
+  scheduled cleanup, and reconciled a previously deleted dead-letter note through
+  the audit trail. See `docs/remote-acceptance.md` for evidence and remaining rollout
+  checks. No release tag or version promotion.
+
+### Changed
+
+- Add an experimental, create-only graph repair batch and conflict-detecting
+  transactional rollback for isolated evaluation. It is not enabled in the CLI
+  or approved for the live graph; uniqueness and endpoint locking need broader
+  concurrent-writer and rollout verification. Validate repair IDs and types
+  against the existing canonical graph plan before allowing batch creation. Group
+  graph operations and allow relationship-only batches for efficient repair.
+
+- Add boot-time, unprivileged supervision for the receiver, API and queue worker,
+  with bounded Odin recovery, persistent three-attempt budgets, startup grace,
+  recovery history and explicit resets. Keep cleanup disabled and audio retained.
+- Expose recovery status in observer snapshots, terminal/web watch and metrics;
+  integrate the existing node exporter, Prometheus, Grafana and email alarm route.
+  Include tested rules for exhausted recovery, stopped monitoring and stalled
+  publication, plus a Logbook Operations dashboard.
+- Opening live Mac remote watch retries retained uploads even with Sony unplugged;
+  subsequent retries honor persisted backoff and share the scheduled agent's lock.
+  The dashboard shows measured upload bytes, receipt waiting and retry countdown.
+  Quitting safely leaves unfinished uploads resumable; `--once` remains read-only.
+- Remote watch supports guarded eject with `e`, with progress and persistent
+  result feedback. Removed the separate `scripts/remote-eject` wrapper.
+- Mac buffer history records the last successful and failed activity and displays
+  local dates/times, preserving failure history after recovery. Existing buffers
+  without timestamps show `Not recorded` until new activity occurs.
+
+- Live remote watch now uses an in-place curses dashboard on Mac agents and the
+  existing production curses dashboard on mimir. Includes receipt progress,
+  pending size, retry/error details, resize handling and q/Escape/Ctrl-C exit.
+  `--once` and explicit `--ui compact` remain available for text output.
+
+- `scripts/remote-watch` now selects the local Mac upload buffer or mimir's
+  production watcher from available configuration. Supports explicit `--config`
+  and `--env` selection and invocation from outside the checkout.
+
+- Remote app builds select the native Mac compiler architecture explicitly, fixing
+  Intel-shell/Apple-Silicon tool mismatches. Compile and verify the signed app in
+  a staging directory before replacing an existing package.
+
+- Remote Mac agent runs without a Dock icon while retaining mount/login triggers
+  and automatic offline retries. Existing signed packages need rebuilding.
+
+### Added
+
+- Remote terminal watch and guarded eject commands. Eject verifies source and
+  retained buffer checksums under the agent lock, works offline, and refuses
+  missing, damaged or changing copies without deleting recorder audio.
+
+- Short-command installer for the already-enrolled, separate Mac pilot, avoiding
+  long pasted setup blocks and refusing to overwrite installed services.
+- Optional automatic SSH tunnel through an existing jump-host alias, with login
+  startup, connection health checks and launchd recovery. Package generation does
+  not activate services; offline recording buffers remain independent.
+- Verified the first traveling MacBook's signed recorder read and isolated SSH
+  upload pilot: 25 recordings, matching server checksums, no incomplete uploads.
+- Recorded an isolated real-HTTP remote ingestion pilot: two offline agent
+  processes recovered into one verified central job, with both buffers retained.
+- Redacted remote-device, upload and retry status through the existing observer,
+  bounded upload sessions/request deadlines, credential revocation and audit counters.
+- Persistent downstream retry state for remote vault and Memgraph synchronization.
+- Installation templates, recovery guidance and a physical acceptance checklist.
+- Mount-independent queued processing through the existing pipeline, with a shared
+  worker lock and UUID-verified recorder association for remote-origin retention.
+- Portable Mac agent with persistent offline buffering, read-only Sony access,
+  resumable retries and a separately signed mount/login/interval launch package.
+- Separate private remote ingestion API with device credential revocation, bounded
+  resumable uploads, durable receipts, and central SHA-256 job deduplication.
+  No production deployment or version promotion.
+
+### Fixed
+
+- Fix macOS app signing by keeping generated C source in Resources instead of
+  the executable directory. Rebuilding repairs previously generated packages;
+  a real macOS signing regression check covers fresh and repeated builds.
+- Fix clean installation failing because the observer files were included twice
+  in the Python package. Add a package-build regression check to the quality gate.
+- Preserve finalized job state when previously pruned audio is rediscovered on Sony.
 - Recognize the observed spoken-prefix transcription variants "a lock entry" and
   "locked entry" as diary entries, without broad fuzzy matching.
 - Add `manage-dead-letters --skip-entity-linking` for a selected-date repair that

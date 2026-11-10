@@ -1,0 +1,59 @@
+name: Sign repair release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: logbook-repair-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    environment: logbook-repair-release
+    steps:
+      - name: Check out the merged revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+      - name: Fetch pinned dependencies
+        run: >-
+          python3 -m pip download --no-deps --only-binary=:all:
+          --dest "$RUNNER_TEMP/repair-wheels" neo4j==5.28.4 pytz==2026.2
+      - name: Build and sign the exact release
+        env:
+          REPAIR_RELEASE_KEY: ${{ secrets.LOGBOOK_REPAIR_SIGNING_KEY }}
+          REPAIR_REVISION: ${{ github.event.pull_request.merge_commit_sha }}
+          REPAIR_SEQUENCE: ${{ github.run_number }}
+        run: |
+          set -eu
+          test -n "$REPAIR_RELEASE_KEY"
+          umask 077
+          printf '%s\n' "$REPAIR_RELEASE_KEY" > "$RUNNER_TEMP/repair-signing-key"
+          unset REPAIR_RELEASE_KEY
+          trap 'rm -f "$RUNNER_TEMP/repair-signing-key"' EXIT
+          PYTHONPATH=src python3 -m logbook.repair_release_publisher "$REPAIR_REVISION" \
+            "$RUNNER_TEMP/repair-wheels" "$RUNNER_TEMP/repair-signing-key" "$RUNNER_TEMP/repair-release" "$REPAIR_SEQUENCE"
+      - name: Publish the signed candidate
+        env:
+          REPAIR_REVISION: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -eu
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$REPAIR_REVISION"
+          previous="$(git ls-remote origin refs/heads/repair-release-candidates | cut -f1)"
+          git switch -c repair-candidate "$REPAIR_REVISION"
+          test ! -e .logbook-repair
+          mkdir .logbook-repair
+          cp "$RUNNER_TEMP/repair-release/"* .logbook-repair/
+          git add .logbook-repair
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com \
+            commit -m 'Publish signed repair candidate'
+          git push --force-with-lease="refs/heads/repair-release-candidates:$previous" \
+            origin HEAD:refs/heads/repair-release-candidates

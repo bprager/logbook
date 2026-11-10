@@ -1,0 +1,318 @@
+# Persistent service recovery
+
+Logbook's production receiver, API and queue processor run under a boot-time
+`local.logbook.supervisor` LaunchDaemon. The daemon and children run as `bernd`,
+not root, and do not depend on a desktop login. The receiver keeps the enrolled
+Mac's existing port 18791 and device registry, but uses the production ledger.
+The old user-level API/receiver/queue jobs are disabled to prevent duplicate
+listeners. OpenClaw ownership and runtime are unaffected.
+
+## November 5 retention safeguard
+
+The supervised API uses isolated release `4e3041d53a9cd348766dfa5e9617bcab865ad1b9`, based on the previous `50de0984acf3a389134ef34b108fae77dbb68348` with only the retention guard changed. The old release and prior supervisor plists are retained under `~/VoiceIngest/services/retention-guard-rollback-20261105`. The onsite mount helper remains pinned to its existing release. Scheduled cleanup remains disabled.
+
+A read-only live plan blocked both copies of jobs 226, 246, and 271 pending review; the first two also had missing notes. Verified owner-only copies are under `~/VoiceIngest/protected-audio/unreviewed-20261105`. No cleanup or automatic reclassification was performed. The first restart attempt did not restore the API within a 30-second check and the previous release was restored; after the affected recovery counters were reset using the documented procedure, the release was activated and the API returned healthy. Allow the supervisor recovery interval when evaluating startup.
+
+## Recovery policy
+
+GPU work must not block the worker's HTTP event loop. A busy worker still needs
+to answer health checks; otherwise the supervisor can restart useful processing.
+The October 21 repair runs transcription and speaker labeling in a thread while
+an async lock preserves serial GPU work. Verify health during an actual long job,
+not only while idle. The recorder helper now uses frozen revision `5fc327f`; the
+supervisor's receiver/API/queue still use the validated `50de098` snapshot below.
+
+The supervisor checks services once per minute. Receiver/API checks require an
+HTTP health response; the receiver checks its ledger and credential registry.
+A newly started process has 90 seconds to become ready. Startup grace is not
+reported as confirmed readiness. The queue runs once per minute after a previous
+successful run finishes, with a 30-minute maximum runtime. Its normal idle exit
+is healthy. Failed runs consume the same recovery budget as failed services.
+
+Each incident permits three restart attempts, at least 60 seconds apart. Attempts
+are saved before starting the repair and survive supervisor restarts. After the
+third attempt fails, the service remains stopped or unhealthy, with a latched
+alarm. Ten minutes of continuous health replenishes the budget. Launchd keeps the
+supervisor itself running with a 60-second crash throttle; external monitoring
+alarms on a missing/stale supervisor rather than trusting its own health claim.
+
+Odin is probed through its existing health endpoint. Repairs use a fixed SSH
+command for `logbook-odin-worker.service`, with strict host-key checking,
+noninteractive authentication and a connection timeout. The existing SSH alias
+selects its identity; the configured worker address selects the destination.
+Network failure must not trigger changes to firewall or macOS privacy settings.
+Odin also limits native systemd restarts to three starts per 15 minutes, with
+a one-minute delay. These local crash retries are separate from the supervisor's
+three remote repair attempts; repeated failure remains bounded at both layers.
+
+Runtime files live under `~/VoiceIngest/services`:
+
+- `supervisor-state.json`: readiness, recovery attempts and exhausted budgets.
+- `events.jsonl`: state transitions, dates and recovery actions.
+- `logs/`: service output; child logs rotate on restart after 5 MiB.
+- `metrics/logbook.prom`: atomically replaced, path-safe status metrics.
+- `production-package/`: generated service settings and LaunchDaemon definition.
+
+The watch screen and `/observer/snapshot` show recovery status. The API's existing
+`/metrics` also includes these metrics. Mimir's existing node exporter reads the
+textfile directory so Odin can monitor recovery even when the Logbook API fails.
+The recording API remains on loopback; no unauthenticated recording routes are
+opened to the LAN. All audio is retained; retention cleanup remains disabled.
+
+## Alarms
+
+Watch's failure list is attempt history, not a list of currently broken services.
+A later successful run from the same command and host marks an earlier failure
+as recovered. Job-specific failures additionally require a finalized job with
+newer vault publication evidence. The failures-only filter excludes recovered
+attempts; original failure rows remain available in the all view and ledger.
+Missing-folder history is informational while the Sony mount itself is absent,
+but remains an error if the mount is present or cannot be checked. Unrelated
+disk mounts no longer start the onsite import while the Sony is disconnected.
+Remote Mac agents still retry their offline buffers without a connected recorder.
+
+Deployment definitions are in `deployment/monitoring`. Prometheus on Odin checks:
+
+- Three recovery attempts exhausted.
+- An essential service unhealthy for five minutes.
+- Supervisor heartbeat older than three minutes, sustained for one minute.
+- Mimir's metrics endpoint unreachable for three minutes.
+- Missing supervision metrics for three minutes.
+- An unreadable publication ledger for three minutes.
+- A received recording unpublished for over 30 minutes, sustained for five minutes.
+
+Grafana evaluates the firing alerts each minute and sends them through the
+existing `home-email` route. The existing policy groups notifications, waits
+30 seconds initially, and repeats ongoing incidents every 12 hours. Recovery
+messages follow the existing route's settings. The Logbook Operations dashboard
+shows health, attempts, exhausted budgets, heartbeat age and publication delay.
+
+These external checks need Odin and its monitoring/mail services to be available.
+An always-running service cannot guarantee recovery while the host is powered
+off, its encrypted disk is locked, the network is unavailable, or access is denied.
+Those conditions require their underlying problem to be corrected.
+
+## Installation and maintenance
+
+### Production source isolation
+
+On October 21, the development checkout was on `main`, which did not contain
+`logbook.supervisor`, `logbook.remote_cli`, or `process-queued`. The installed
+supervisor still imported that checkout and repeatedly exited with
+`No module named logbook.supervisor`. Its last saved queue budget was exhausted.
+
+The deployed source is now a Git archive of commit
+`50de0984acf3a389134ef34b108fae77dbb68348`, stored under
+`~/VoiceIngest/services/releases/<commit>`. `DEPLOYED_COMMIT` records its revision.
+Both the installed and generated supervisor plists use that directory as their
+working directory and its `src` directory as `PYTHONPATH`. Children inherit it.
+The onsite mount app also uses this source directory. Credentials, the existing
+Python environment, device registry, ledger and recovery budgets remain external.
+Do not remove the project's `.venv` or `.env`; those paths are still in use.
+
+For an update, validate the selected revision first, export it into a new release
+directory, and point the supervisor and mount helper at that directory. Preserve
+the old source and configuration for rollback. Update both the installed and
+generated supervisor plist; a later package generation must not silently point
+production at the development checkout again. The helper's `--repo-root` must be
+the release directory, while `--env` and `--python-bin` retain their absolute
+production paths. Loading a new system plist requires administrator access.
+Wait for the old supervisor to stop before bootstrapping its replacement.
+
+After deployment, check fresh health responses, supervisor state and a completed
+scheduled queue run. Confirm source isolation by switching the development
+checkout to an older branch and verifying those checks again. On October 21,
+receiver/API checks and scheduled queue processing succeeded with development
+on `main`; all four supervised components were healthy with zero exhausted
+budgets, no unfinished ledger jobs and no unpublished remote deliveries.
+All 293 tests and the full quality gate passed. The Sony was disconnected, so
+a fresh physical-recorder import remains unverified until it is reconnected.
+
+Configuration backups are under `~/VoiceIngest/services/repair-20261021T181335Z`
+and `mount-helper-20261021T181623Z`; verify actual directory names before rollback.
+Restore the saved plist only after ensuring its referenced source is available.
+Source audio was not deleted during this recovery.
+
+### Onsite Sony mount helper
+
+The existing `LogbookMountRunner.app` must use the same project Python environment
+as the supervised services. A legacy helper compiled with Homebrew's global
+Python can stop before emitting pipeline telemetry when a dependency is added.
+Check its generated C source for the interpreter path; older bundles keep the
+source under `Contents/MacOS`, newer bundles under `Contents/Resources`.
+Back up the existing app before rebuilding it with the checkout's `.venv` Python:
+
+```bash
+.venv/bin/python -m logbook.cli launchd-render --env "$PWD/.env" \
+  --repo-root "$LOGBOOK_RELEASE_ROOT" --python-bin "$PWD/.venv/bin/python"
+launchctl kickstart "gui/$(id -u)/local.logbook.recorder.mount-probe"
+.venv/bin/python -m logbook.cli watch --env .env --once
+```
+
+Rendering refreshes the generated mount app and generated plist files. Set
+`LOGBOOK_RELEASE_ROOT` to the validated release directory above first. Rendering
+does not install or load those plists. Keep the installed remote services, supervisor,
+and retention settings intact. Verify the mount run reaches vault sync and a
+second run skips the same recordings. Keep live service imports on the validated
+release snapshot. A mutable development checkout is not a deployment directory.
+After restoring the deployed code, reset only the affected queue budget using
+the command below.
+
+### Preserve the mount helper's macOS permission identity
+
+An ad-hoc signature identifies one exact build. Recompiling that helper changes
+its identity and can cause another removable-volume permission prompt. Use one
+permanent local code-signing certificate, the same app path and the same bundle
+identifier for future builds. Keep the certificate and its private key in the
+login keychain; limit its trust to code signing. Do not grant general certificate
+trust or Full Disk Access as a substitute.
+
+After creating and trusting the certificate, find its SHA-1 identity with
+`security find-identity -v -p codesigning`. Pass that fingerprint once:
+
+```bash
+.venv/bin/python -m logbook.cli launchd-render --env "$PWD/.env" \
+  --repo-root "$LOGBOOK_RELEASE_ROOT" --python-bin "$PWD/.venv/bin/python" \
+  --signing-identity "$LOGBOOK_SIGNING_IDENTITY"
+```
+
+Set `LOGBOOK_SIGNING_IDENTITY` to the verified certificate fingerprint first.
+The renderer remembers it in `~/VoiceIngest/launchd/signing-identity` and reuses
+it when the option is omitted. Preserve that file and the keychain identity during
+updates. If signing fails, restore access to that same certificate instead of
+removing the marker or switching to ad-hoc signing. A replacement is compiled,
+signed and verified in a temporary directory before replacing the existing app.
+If installation and restoration both fail, the old app remains beside the
+destination as `LogbookMountRunner.app.previous`. Recover that backup before
+rebuilding again; the renderer refuses to overwrite an existing recovery copy.
+Rendering also refreshes generated plists; it does not install or load them.
+
+Verify with `codesign --verify --strict` and compare `codesign -d -r-` for two
+builds. Their designated requirements must match even when their code hashes
+differ. macOS can require one final removable-volume approval after migrating
+from the old ad-hoc signature. Reconnect the Sony twice to check persistence;
+automated signature checks alone do not prove that the permission is remembered.
+
+### Supervisor package
+
+Generate the unprivileged daemon package from the validated release directory,
+using the existing production Python and environment paths:
+
+```bash
+cd "$LOGBOOK_RELEASE_ROOT"
+PYTHONPATH="$LOGBOOK_RELEASE_ROOT/src" \
+  /Users/bernd/Projects/Logbook/.venv/bin/python -m logbook.service_install \
+  --env /Users/bernd/Projects/Logbook/.env \
+  --server-config ~/VoiceIngest/services/remote-server.json \
+  --output ~/VoiceIngest/services/production-package --odin-host odin
+```
+
+Before the first migration, back up the production ledger with SQLite's backup
+API. Preserve the device registry and validate that receiver and processor use
+the same ledger. Stop and disable the previous user-level API, receiver and queue
+jobs. Install the generated plist as root:wheel, mode 0644, in
+`/Library/LaunchDaemons`, then bootstrap it into the system domain. Never run two
+supervisors or leave the old user jobs enabled alongside this daemon.
+
+Configure the existing node exporter with
+`--collector.textfile.directory=/Users/bernd/VoiceIngest/services/metrics`.
+Its existing privileged service can read this private directory. Keep the
+supervisor and processing services unprivileged. Copy the monitoring definitions
+into the existing Prometheus rules and Grafana provisioning directories, validate
+with `promtool`, and reload provisioning. Do not add a LAN scrape of port 8788;
+the existing `mimir-node` scrape on 9100 supplies the supervision metrics.
+
+After fixing an exhausted service, explicitly reset only its budget:
+
+```bash
+.venv/bin/python -m logbook.supervisor \
+  --config ~/VoiceIngest/services/production-package/supervisor.json --reset receiver
+```
+
+Other component names are `api`, `queue`, and `odin`. A reset is consumed on the
+next one-minute check. Restarting the supervisor alone preserves the budgets.
+
+Verify with the full quality gate and the Prometheus rule test file before
+changing the policy. Confirm a real upload, transcription and published vault
+commit separately: an upload receipt proves durable delivery, not publication.
+
+### Experimental fixture repair recovery
+
+The undeployed graph repair prototype requires the full selected Git commit in
+the private options as `revision`. It archives Logbook source from that commit
+and records the revision and bundle digest in the private state file before
+starting a fixture run. The bootstrap comes from that bundle, and tracked and
+non-ignored untracked Logbook source is checked against the selected commit. Dependencies are read from the wheel directory named by `wheel_dir` in the private
+options. Obtain `neo4j==5.28.4` and `pytz==2026.2` as binary wheels; the
+package builder checks their SHA-256 digests against the values in the selected
+source before using them. For example, use `python -m pip download --no-deps
+--only-binary=:all: --dest WHEEL_DIRECTORY neo4j==5.28.4 pytz==2026.2`.
+The commit selection does not establish human review, and the coordinator's own
+Python environment is still local. If its protected recovery needs an operator retry, use
+that same file with `python -m logbook.operator_entry retry PRIVATE_STATE`.
+The response `retry-started` only confirms that the retry was launched. Check
+`python -m logbook.operator_entry status PRIVATE_STATE` until it reports a
+confirmed outcome; `pending` means recovery is not confirmed. Failed recovery
+remains fenced and the existing independent lock holder continues checking.
+
+These commands are for disposable fixture containers only. A container name
+check is not a production authorization boundary; do not use the prototype on
+the live graph. The state file, staged files and remote journal must remain
+available for recovery. Trust, host restart and cleanup boundaries remain open.
+
+The fixture operator also requires `boot_guard_dir` and `boot_guard_service` in
+its private options. The service must be an active `logbook-fixture-*.service`
+with a positive `ConditionPathExists` pointing to `start-allowed` in the private
+guard directory. Staging removes that file; a confirmed outcome restores it.
+A restart during a run keeps that fixture service stopped. The fixture service must
+supervise a Docker run process whose name, container ID and process ID match the target. Direct Docker starts and privileged changes remain outside this check. This is not a guard for the production graph.
+
+For fixture runs staged with this version, the private staging directory records
+the original named fixture volume, image, boot and target before writes. After a
+host restart, `python -m logbook.operator_entry offline PRIVATE_STATE` can use
+a temporary network-isolated container on that recorded volume to roll back an
+incomplete journaled batch. It refuses a running service, open startup guard,
+active volume user, changed target, invalid completion receipt or unconfirmed outcome.
+A completed batch is retained only after its target-bound receipt and graph records
+are verified; an incomplete batch is rolled back.
+The recovery container is stopped before the outcome is recorded.
+
+Offline recovery leaves startup permission absent and the processing lease held.
+After a recorded successful offline rollback, `python -m logbook.operator_entry
+authorize PRIVATE_STATE` checks the record and unused volume, restores fixture
+startup permission and starts the service. The lease holder releases its locks
+only after it independently confirms the restarted fixture service, container,
+volume, image and graph response. If confirmation fails, the lease remains held.
+For the experimental fixture path, the processing host also writes a durable
+`graph-maintenance.pending` marker under its processing root while both processing
+locks are held and before launching remote work. Updated processing and cooperating
+graph writers refuse work while it exists. The independent lease holder clears it
+only after confirmed recovery and a validated outcome. If the processing host or
+lease holder restarts, the marker remains: after the fixture is confirmed recovered,
+run `python -m logbook.operator_entry release ENV PRIVATE_STATE` on the processing
+host to recheck the same fixture and clear the matching marker while holding both
+locks. Unconfirmed recovery stays blocked. A failure before launch may also leave a
+marker requiring operator investigation.
+
+The processing root must be on storage that survives restart; temporary directories
+may be cleared at boot and do not provide this protection.
+
+The marker protects only updated cooperating code using the same processing root;
+older deployments, other graph clients, direct filesystem changes and privileged
+operators can bypass it. It does not restore the process lease or authorize
+production use. Install and verify the updated processing code before relying on it.
+
+### Named graph service guard candidate
+
+The repository contains a candidate positive-start condition for the named
+`memgraph.service` and its `memgraph-service` container. It is not installed
+or connected to production maintenance and does not authorize live graph
+repair. The checked directory and marker must be root-private and persistent.
+The named recovery helpers reuse the fixture outcome and offline recovery checks
+and require the exact named service, marker directory, port and recorded volume.
+Recovery-only operator commands `named-offline`, `named-authorize` and
+`named-status` accept an existing private named-window state; `named-release`
+rechecks recovery under both processing locks before removing the matching
+processing marker. No named-service staging or launch command is provided. The
+candidate is not installed in production. This does not exclude direct Docker
+starts or privileged writers.

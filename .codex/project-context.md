@@ -63,6 +63,11 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 
 ## Repo Practices
 
+- User preference: terminal monitoring tools should default to an in-place
+  curses TUI with a clear quit key, not scrolling status output. Keep explicit
+  one-shot/plain alternatives. Saved globally in Memgraph as
+  `monitoring-tui-default`; local mirror: `~/.ai/preferences/global.json`.
+
 - Keep generated audio, logs, databases, model caches, and secrets out of git.
 - Put implementation decisions in `.codex/decisions.md`.
 - Keep backlog dependencies in `.codex/backlog.md` and memgraph.
@@ -72,3 +77,12 @@ The system ingests audio from a Sony recorder connected to a Mac Mini, submits c
 - Use test fixtures for synthetic transcripts and tiny sample audio; do not commit personal recordings.
 - Install `.githooks/pre-commit` with `git config core.hooksPath .githooks`;
   run `scripts/quality-gate` before release commits.
+
+## Remote ingestion feature branch (2026-10-09)
+
+LGB-044 through LGB-047 are implemented on `feature/remote-sony-ingestion`.
+Remote agents, private API, durable receipts, offline buffers, periodic queued
+processing and source-specific retention are documented in
+`docs/remote-ingestion.md` and `docs/remote-installation.md`. Automated acceptance
+uses synthetic data. Physical two-Mac/TCC/VPN acceptance and the audio-backup
+policy remain required before approved deployment; current production is 1.2.3.

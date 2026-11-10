@@ -1,0 +1,107 @@
+{
+  "groups": [
+    {
+      "name": "logbook",
+      "rules": [
+        {
+          "alert": "LogbookRecoveryExhausted",
+          "expr": "label_replace(logbook_service_recovery_exhausted == 1, \"component\", \"$1\", \"service\", \"(.*)\")",
+          "for": "0m",
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "annotations": {
+            "summary": "Logbook service recovery exhausted three attempts",
+            "description": "Logbook service recovery exhausted three attempts",
+            "action": "Inspect service logs, fix the cause, then explicitly reset the recovery budget."
+          }
+        },
+        {
+          "alert": "LogbookServiceUnavailable",
+          "expr": "label_replace(logbook_service_healthy == 0, \"component\", \"$1\", \"service\", \"(.*)\")",
+          "for": "5m",
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "annotations": {
+            "summary": "An essential Logbook service is unavailable",
+            "description": "An essential Logbook service is unavailable",
+            "action": "Check recovery status and the affected service logs."
+          }
+        },
+        {
+          "alert": "LogbookSupervisorStale",
+          "expr": "time() - logbook_supervisor_heartbeat_timestamp_seconds > 180",
+          "for": "1m",
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "annotations": {
+            "summary": "Logbook recovery monitor stopped updating",
+            "description": "Logbook recovery monitor stopped updating",
+            "action": "Check the mimir boot-time supervisor and its error log."
+          }
+        },
+        {
+          "alert": "LogbookHostOrAPIDown",
+          "expr": "up{job=\"mimir-node\"} == 0 or absent(up{job=\"mimir-node\"})",
+          "for": "3m",
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "annotations": {
+            "summary": "Logbook monitoring endpoint cannot be reached",
+            "description": "Logbook monitoring endpoint cannot be reached",
+            "action": "Check mimir power, network and the boot-time supervisor."
+          }
+        },
+        {
+          "alert": "LogbookPublicationStalled",
+          "expr": "logbook_remote_unpublished_age_seconds > 1800",
+          "for": "5m",
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "annotations": {
+            "summary": "A received recording has waited over 30 minutes for publication",
+            "description": "A received recording has waited over 30 minutes for publication",
+            "action": "Inspect queue processing, Odin and vault synchronization; retained audio is safe."
+          }
+        },
+        {
+          "alert": "LogbookSupervisionMissing",
+          "expr": "absent(logbook_supervisor_heartbeat_timestamp_seconds{job=\"mimir-node\"})",
+          "for": "3m",
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "annotations": {
+            "summary": "Logbook supervision metrics are missing",
+            "description": "Logbook supervision metrics are missing",
+            "action": "Check the API version, metric scrape and supervisor installation."
+          }
+        },
+        {
+          "alert": "LogbookPublicationStateUnavailable",
+          "expr": "logbook_remote_unpublished_age_seconds < 0",
+          "for": "3m",
+          "labels": {
+            "service": "logbook",
+            "severity": "critical"
+          },
+          "annotations": {
+            "summary": "Logbook cannot inspect publication state",
+            "description": "The publication monitor cannot read the recording ledger.",
+            "action": "Check ledger access and the supervisor error log; do not assume the queue is empty."
+          }
+        }
+      ]
+    }
+  ]
+}

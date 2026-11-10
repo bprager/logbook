@@ -1,5 +1,25 @@
 # Backlog
 
+## November 5 graph repair safety
+
+An experimental bounded repair/rollback module has isolated graph tests. It is
+not enabled for live use. It now requires node uniqueness constraints and locks
+relationship endpoints during each transaction and validates canonical IDs and
+types. Grouped operations reduce repeated graph searches, and relationship-only
+batches can be reversed. Isolated tests cover the observed races, and all current
+planned nodes and relationships match the canonical format. Other writers are not forced to honor
+this format; constraint changes and live rollout remain unverified. Resolve these
+gaps and validate recovery before any repair. Preserve stale data.
+
+## November 5 audio cleanup protection
+
+Preserve unreviewed recordings until reviewed and block cleanup when the final
+note is missing. Scheduled cleanup remains disabled. Isolated release
+`4e3041d53a9cd348766dfa5e9617bcab865ad1b9` serves a live plan blocking all
+three unreviewed recordings; protected copies match their checksums. Next
+review the three recordings and restore missing notes deliberately. Separately
+investigate graph drift using an exact dry run before any graph writes.
+
 ## October 5 diary-routing repair
 
 Restored jobs 213/214 (September 30 and October 2), verified canonical content and
@@ -1182,7 +1202,9 @@ Design: [docs/remote-ingestion.md](../docs/remote-ingestion.md). These items are
 
 ### LGB-044 - Remote ingestion contract and ledger migration
 
-Status: Planned. Priority: P0. Dependencies: LGB-003, LGB-006, LGB-019.
+Status: Implemented on feature branch; release acceptance pending. Priority: P0. Dependencies: LGB-003, LGB-006, LGB-019.
+
+- Additive schema and authenticated resumable intake implemented; focused concurrent, crash/receipt, corruption and revocation tests pass.
 
 - Design authenticated private ingest API, atomic upload sessions, durable receipts, checksum-based server deduplication and migration of the existing SQLite ledger.
 - Keep server uniqueness authoritative across two Macs and direct mimir ingest, including already-pruned source audio.
@@ -1190,7 +1212,11 @@ Status: Planned. Priority: P0. Dependencies: LGB-003, LGB-006, LGB-019.
 
 ### LGB-045 - Portable macOS Sony ingestion agent
 
-Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-005, LGB-021.
+Status: Implemented on feature branch; first Mac signed read/manual SSH pilot passed. Automatic SSH packaging added; physical login/recovery and second-Mac acceptance pending. Priority: P0. Dependencies: LGB-044, LGB-005, LGB-021.
+
+- Persistent snapshots, resumable transfers, bounded retries and signed mount/login/interval app packaging tested with synthetic recordings.
+- Native-architecture compiler selection and staged signing protect remote package updates from Intel-shell/Apple-Silicon tool mismatches.
+- Remote-only background app packaging removes recurring Dock presence; read-only watch and checksum-guarded offline eject added. Rebuild the traveling Mac package to apply. Physical Dock/eject acceptance remains pending.
 
 - Package a stable macOS app identity with launchd mount detection, Sony validation, local SQLite outbox, atomic spool, resumable transfer and offline retry.
 - Support both MacBook Air machines with separate revocable credentials and no manual steps after installation.
@@ -1198,7 +1224,9 @@ Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-005, LGB-021.
 
 ### LGB-046 - Unified processing and source-specific retention
 
-Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-045, LGB-026.
+Status: Implemented on feature branch; production field acceptance pending. Priority: P0. Dependencies: LGB-044, LGB-045, LGB-026.
+
+- Mount-independent processing and shared pipeline lock added. Synthetic late-arrival, pruned-hash and UUID-bound remote source cleanup tests pass.
 
 - Feed remotely committed audio into existing mimir/Odin/Obsidian pipeline, preserving recorder timestamps and late-arrival rebuild.
 - Preserve existing guarded one-week cleanup on direct mimir recorder attachment only; validate checksum, finalized state and vault sync before pruning.
@@ -1206,7 +1234,11 @@ Status: Planned. Priority: P0. Dependencies: LGB-044, LGB-045, LGB-026.
 
 ### LGB-047 - Remote observability, security and release acceptance
 
-Status: Planned. Priority: P1. Dependencies: LGB-044, LGB-045, LGB-046, LGB-039.
+Status: Implementation and automated acceptance complete on feature branch; first traveling Mac SSH pilot passed with 25 verified recordings. Automatic lifecycle and second-Mac field acceptance pending; production release remains unapproved. Priority: P1. Dependencies: LGB-044, LGB-045, LGB-046, LGB-039.
+
+- Added redacted observer/device/upload/downstream status, bounded request/session limits and authentication audit. Synthetic two-Mac lost-receipt/restart, credential revocation, disk pressure, corruption, downstream outage and guarded retention checks pass.
+- Independent review identified duplicate-session quota and idle downstream retry gaps; regression tests and durable recovery fixes are included.
+- No production deployment, credential edits, recorder deletion or version/tag promotion.
 
 - Add redacted device/upload status, retries, storage pressure and authentication audit; document network/TCC setup and audio durability/backup decision.
 - Test concurrent Macs, lost receipts, corrupted chunks, restart, no network, disk full, credential revocation and existing cleanup regression.

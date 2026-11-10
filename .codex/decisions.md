@@ -2,6 +2,23 @@
 
 ## Accepted
 
+### D-020: Quiet remote retries and buffer-verified eject
+
+Keep remote mount/login triggers and minute-based retries, but package the remote
+signed app as an `LSUIElement` background agent. Mount-only triggering would strand
+buffered uploads after offline ejection. Remote watch is read-only. Explicit eject
+requires verified local copies under the agent lock, not network delivery or
+transcription; normal diskutil eject is never forced. This does not alter mimir
+pruning, and production activation remains paused at the user's request.
+
+### D-019: Support the existing SSH jump route for traveling Macs
+
+Use an optional loopback-only SSH LaunchAgent with strict host-key checking,
+noninteractive authentication, keepalives and restart throttling. SSH keys stay
+in the existing Mac SSH setup and are separate from upload bearer credentials.
+VPN is an alternative, not a prerequisite. Pilot and production receipts remain
+separate. Production activation still requires explicit approval.
+
 ### D-001: Logs are staged before final rendering
 
 All log entries are written to `10 - Logs/00 - Inbox` first. Final daily logs under `06 - Timestamps` are rendered later from staged entries and ledger state.
@@ -109,6 +126,22 @@ Reason: The current full-project source coverage baseline is below 96%, so a
 global gate would block useful work unless large legacy areas were excluded.
 A changed-line ratchet keeps the requirement enforceable for new Python changes
 without pretending historical coverage debt has already been paid down.
+
+### D-017: Remote intake is separate from OpenClaw actions
+
+Use a dedicated private upload service with per-device credentials, bounded
+resumable transfers and the existing canonical checksum ledger. An acknowledgment
+means durable central receipt, not completed transcription or a second backup.
+Commit receipt state before reclaiming duplicate transfer parts. Persist downstream
+vault and graph retry work independently of uploads.
+
+### D-018: Remote agents retain snapshots and never prune Sony
+
+Both MacBooks retain acknowledged snapshots until a separately approved retention
+policy is implemented. Existing saga backups remain non-audio. Production approval
+must choose an independent audio-backup policy and accept or eliminate the current
+risk window. Remote-origin Sony pruning requires later UUID-verified attachment
+to mimir plus all existing finalization, vault-sync, age, path and checksum gates.
 
 ## Open Questions
 

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$repo_root/.venv/bin/python" -m logbook.remote_cli package-agent \
+  --config "$HOME/Library/Application Support/LogbookRemotePilot/remote-agent.json" \
+  --output "$HOME/Applications/LogbookRemote/pilot-package" --repo "$repo_root" \
+  --signing-identity "${1:?Pass the existing code-signing identity fingerprint}"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import plistlib
 import re
 import subprocess
 from dataclasses import dataclass
@@ -184,3 +185,23 @@ def _timestamps_match(parsed_at: datetime | None, modified_at: datetime) -> bool
         and parsed_at.hour == modified_at.hour
         and parsed_at.minute == modified_at.minute
     )
+
+
+def validate_remote_recorder(config: RecorderConfig) -> Path:
+    """Stronger enrollment gate for associating remote jobs with local Sony audio."""
+    if not config.volume_uuid:
+        raise ValueError("recorder UUID enrollment required for remote-origin cleanup")
+    result = subprocess.run(
+        ["/usr/sbin/diskutil", "info", "-plist", str(config.mount_path)],
+        capture_output=True, check=True, timeout=15,
+    )
+    info = plistlib.loads(result.stdout)
+    if (info.get("VolumeUUID") != config.volume_uuid or
+            info.get("VolumeName") != config.volume_name or
+            info.get("MountPoint") != str(config.mount_path) or
+            info.get("Internal") is not False or info.get("BusProtocol") != "USB"):
+        raise ValueError("recorder identity mismatch")
+    folder = config.recordings_dir
+    if folder.resolve() != folder.absolute() or not folder.is_dir():
+        raise ValueError("recorder path invalid")
+    return folder

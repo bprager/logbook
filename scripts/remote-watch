@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="$repo_root/src${PYTHONPATH:+:$PYTHONPATH}"
+
+# Select by local configuration, not hostname: this also works over SSH.
+explicit_env=false
+explicit_config=false
+production_curses=true
+for arg in "$@"; do
+  case "$arg" in
+    --env|--env=*) explicit_env=true ;;
+    --config|--config=*) explicit_config=true ;;
+    --once|--json|--ui|--ui=*) production_curses=false ;;
+    -h|--help)
+      cat <<'HELP'
+Usage: scripts/remote-watch [--once] [--env FILE | --config FILE]
+
+On mimir: watches transcription and Obsidian publication using the checkout .env.
+On a MacBook: retries buffered uploads and watches delivery, even with Sony unplugged.
+A receipt confirms delivery, not transcription or publication.
+
+Selection: explicit --env/--config, then LOGBOOK_REMOTE_CONFIG, then the existing
+~/Library/Application Support/LogbookRemotePilot/remote-agent.json, then .env.
+Live watch uses curses with upload progress on the MacBook. Press e to eject safely.
+Quit with q, Escape or Ctrl-C. Recent activity times appear when recorded.
+--once prints one snapshot; --ui compact explicitly selects scrolling output.
+Additional options are passed to the selected watcher.
+HELP
+      exit 0 ;;
+  esac
+done
+
+if "$explicit_env" && "$explicit_config"; then
+  echo 'Choose either --env or --config, not both.' >&2
+  exit 2
+fi
+watch_production() {
+  if "$production_curses"; then
+    set -- --ui curses "$@"
+  fi
+  exec "$repo_root/.venv/bin/python" -m logbook.cli watch "$@"
+}
+
+if "$explicit_env"; then
+  watch_production "$@"
+elif "$explicit_config"; then
+  exec "$repo_root/.venv/bin/python" -m logbook.remote_cli watch "$@"
+fi
+
+agent_config="${LOGBOOK_REMOTE_CONFIG:-$HOME/Library/Application Support/LogbookRemotePilot/remote-agent.json}"
+if [[ -n "${LOGBOOK_REMOTE_CONFIG:-}" || -f "$agent_config" ]]; then
+  exec "$repo_root/.venv/bin/python" -m logbook.remote_cli watch --config "$agent_config" "$@"
+elif [[ -f "$repo_root/.env" ]]; then
+  watch_production --env "$repo_root/.env" "$@"
+fi
+
+echo 'No watch configuration found. Use --env FILE on mimir or --config FILE on the MacBook.' >&2
+exit 2

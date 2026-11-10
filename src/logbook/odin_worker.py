@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 import uuid
@@ -12,6 +13,7 @@ from typing import Protocol
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from starlette.concurrency import run_in_threadpool
 
 from logbook.config import OdinConfig
 from logbook.metrics import MetricSample, render_prometheus_metrics
@@ -57,6 +59,7 @@ def create_odin_worker_app(
     )
     worker = transcriber or FasterWhisperTranscriber(config.odin)
     jobs: dict[str, OdinTranscriptResult] = {}
+    transcription_lock = asyncio.Lock()
     audio_root = config.root / "audio"
     audio_root.mkdir(parents=True, exist_ok=True)
 
@@ -92,11 +95,13 @@ def create_odin_worker_app(
         odin_job_id = f"odin-{job_id}-{uuid.uuid4().hex[:12]}"
         audio_path = audio_root / f"{odin_job_id}-{form.audio.filename}"
         audio_path.write_bytes(form.audio.content)
-        result = worker.transcribe(
-            audio_path,
-            odin_job_id=odin_job_id,
-            diarize=form.fields.get("diarize", "false").lower() == "true",
-        )
+        async with transcription_lock:
+            result = await run_in_threadpool(
+                worker.transcribe,
+                audio_path,
+                odin_job_id=odin_job_id,
+                diarize=form.fields.get("diarize", "false").lower() == "true",
+            )
         jobs[odin_job_id] = result
         return {"odin_job_id": odin_job_id, "status": result.status}
 

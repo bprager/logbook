@@ -14,6 +14,7 @@ class RecorderConfig:
     mount_path: Path
     recordings_path: str
     device_path: str | None = None
+    volume_uuid: str | None = None
 
     @property
     def recordings_dir(self) -> Path:
@@ -89,6 +90,8 @@ class MemgraphConfig:
 class BackupConfig:
     root: str
     ssh_identity_file: str | None = None
+    restricted_rsync: bool = False
+    rsync_executable: str = "rsync"
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -147,6 +150,7 @@ def recorder_config_from_values(values: dict[str, str]) -> RecorderConfig:
         mount_path=Path(mount_path),
         recordings_path=recordings_path,
         device_path=device_path,
+        volume_uuid=values.get("SONY_RECORDER_VOLUME_UUID") or None,
     )
 
 
@@ -213,6 +217,8 @@ def backup_config_from_values(values: dict[str, str], processing_root: Path) -> 
     return BackupConfig(
         root=values.get("LOGBOOK_BACKUP_ROOT") or str(processing_root / "backups"),
         ssh_identity_file=_optional(values, "LOGBOOK_BACKUP_SSH_IDENTITY_FILE"),
+        restricted_rsync=_parse_bool(values.get("LOGBOOK_BACKUP_RESTRICTED_RSYNC", "false")),
+        rsync_executable=values.get("LOGBOOK_BACKUP_RSYNC_EXECUTABLE") or "rsync",
     )
 
 

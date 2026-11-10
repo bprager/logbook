@@ -34,6 +34,7 @@ require_command() {
 }
 
 require_python_module coverage "$python_bin -m pip install -e '.[dev]'"
+require_python_module hatchling "$python_bin -m pip install -e '.[dev]'"
 require_python_module diff_cover "$python_bin -m pip install -e '.[dev]'"
 require_python_module ruff "$python_bin -m pip install ruff"
 require_python_module mypy "$python_bin -m pip install -e '.[dev]'"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
@@ -15,6 +16,7 @@ from logbook.recorder import (
     RecorderValidation,
     discover_recordings,
     validate_recorder,
+    validate_remote_recorder,
 )
 
 
@@ -97,6 +99,24 @@ def copy_discovered_recordings(
             job = ledger.get_by_checksum(checksum)
             if job is None:
                 job = ledger.record_discovery(candidate, checksum, config.recorder.volume_name)
+
+            if job.source_device.startswith("remote:"):
+                try:
+                    folder = validate_remote_recorder(config.recorder)
+                    if candidate.path.parent != folder or candidate.path.is_symlink():
+                        raise ValueError("source path does not match enrolled recorder")
+                    ledger.associate_recorder(checksum, candidate.path, config.recorder.volume_uuid)
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    # Recognition is safe even when remote pruning enrollment is absent.
+                    pass
+
+            if job.status not in {"discovered", "copied"}:
+                copied_bytes += candidate.size_bytes
+                if progress_callback is not None:
+                    progress_callback(copied_bytes, total_bytes)
+                items.append(CopyItem(candidate, checksum, "skipped_known_copied",
+                                      Path(job.copied_path) if job.copied_path else None, job.id))
+                continue
 
             if job.copied_path:
                 copied_path = Path(job.copied_path)

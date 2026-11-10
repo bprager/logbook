@@ -1,0 +1,15 @@
+{
+  "root": "~/Library/Application Support/LogbookRemote",
+  "mount_path": "/Volumes/IC RECORDER",
+  "volume_name": "IC RECORDER",
+  "volume_uuid": "REPLACE_WITH_SONY_VOLUME_UUID",
+  "recordings_path": "REC_FILE/FOLDER01",
+  "timezone": "America/Los_Angeles",
+  "server_url": "http://100.64.0.10:8790",
+  "token_file": "./device.token",
+  "vpn_transport": true,
+  "stable_seconds": 5,
+  "reserve_bytes": 1073741824,
+  "max_bytes": 2147483648,
+  "chunk_bytes": 1048576
+}

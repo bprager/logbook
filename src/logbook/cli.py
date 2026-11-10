@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import select
@@ -11,6 +12,8 @@ import sys
 import termios
 import time
 import tty
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from urllib import request
 
@@ -26,6 +29,8 @@ from logbook.dead_letters import (
 )
 from logbook.diarization import diarize_meetings, diarize_meetings_with_fake_odin
 from logbook.entity_linker import link_daily_log_entities
+from logbook.graph_write_lock import GraphWriteLock
+from logbook.processing_restart_guard import require_clear_guard
 from logbook.insights import extract_insights
 from logbook.ingest import run_ingest_dry_run
 from logbook.launchd import render_launchd_package, write_launchd_package
@@ -50,6 +55,9 @@ from logbook.observer import (
 from logbook.preview import write_open_log_preview
 from logbook.recorder import RecorderAccessError, discover_recordings, validate_recorder
 from logbook.retention import execute_audio_cleanup, plan_audio_cleanup
+from logbook.remote_delivery import (
+    pending_remote_vault_sync, pending_remote_graph_jobs, record_graph_attempt,
+)
 from logbook.routing import route_transcripts
 from logbook.telemetry import SQLitePipelineReporter
 from logbook.transcription import transcribe_copied, transcribe_copied_with_fake_odin
@@ -90,6 +98,11 @@ def main(argv: list[str] | None = None) -> int:
         help="copy, transcribe, diarize, route, and sync mounted recorder files",
     )
     process_mount_parser.add_argument("--env", type=Path, default=Path(".env"))
+
+    queued_parser = subparsers.add_parser(
+        "process-queued", help="process durable ledger audio without accessing the recorder",
+    )
+    queued_parser.add_argument("--env", type=Path, default=Path(".env"))
 
     fake_transcribe_parser = subparsers.add_parser(
         "fake-transcribe-copied",
@@ -551,6 +564,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     launchd_render_parser.add_argument("--env", type=Path, default=Path(".env"))
     launchd_render_parser.add_argument(
+        "--signing-identity", default=None,
+        help="permanent code-signing certificate; remembered for future helper rebuilds",
+    )
+    launchd_render_parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -611,6 +628,8 @@ def main(argv: list[str] | None = None) -> int:
         return _copy_discovered(args.env)
     if args.command == "process-mounted-recorder":
         return _process_mounted_recorder(args.env)
+    if args.command == "process-queued":
+        return _process_mounted_recorder(args.env, copy_recorder=False)
     if args.command == "fake-transcribe-copied":
         return _fake_transcribe_copied(args.env)
     if args.command == "transcribe-copied":
@@ -659,13 +678,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "extract-insights":
         return _extract_insights(args.env, args.vault, args.writer, args.job_id)
     if args.command == "memory-graph-sync":
-        return _memory_graph_sync(args.env, args.job_id, execute=args.execute)
+        operation = partial(_memory_graph_sync, args.env, args.job_id, execute=args.execute)
+        return _with_graph_write_lock(args.env, operation) if args.execute else operation()
     if args.command == "memory-graph-query":
         return _memory_graph_query(args.env, args.query, args.job_id)
     if args.command == "memory-graph-health":
         return _memory_graph_health(args.env)
     if args.command == "memory-graph-repair":
-        return _memory_graph_repair(args.env, args.prune_stale, execute=args.execute)
+        operation = partial(_memory_graph_repair, args.env, args.prune_stale, execute=args.execute)
+        return _with_graph_write_lock(args.env, operation) if args.execute else operation()
     if args.command == "memory-action-resolve":
         return _memory_action_resolve(
             args.env,
@@ -700,7 +721,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cleanup-audio":
         return _cleanup_audio(args.env, execute=args.execute, include_recorder=args.include_recorder)
     if args.command == "launchd-render":
-        return _launchd_render(args.env, args.output_dir, args.repo_root, args.python_bin)
+        return _launchd_render(args.env, args.output_dir, args.repo_root, args.python_bin, args.signing_identity)
     if args.command == "backup-run":
         return _backup_run(args.env, args.backup_root, args.repo_root, execute=args.execute)
     if args.command == "backup-restore-drill":
@@ -847,7 +868,7 @@ def _copy_discovered(env_path: Path) -> int:
     return 1 if result.failed_count else 0
 
 
-def _process_mounted_recorder(env_path: Path) -> int:
+def _process_mounted_recorder(env_path: Path, *, copy_recorder: bool = True) -> int:
     try:
         config = load_app_config(env_path)
     except ConfigError as error:
@@ -858,41 +879,40 @@ def _process_mounted_recorder(env_path: Path) -> int:
         print("config_error: missing Obsidian configuration", file=sys.stderr)
         return 2
 
-    print("Process mounted recorder")
+    config.processing_root.mkdir(parents=True, exist_ok=True)
+    with (config.processing_root / "pipeline.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | (0 if copy_recorder else fcntl.LOCK_NB))
+        except BlockingIOError:
+            print("pipeline_busy=yes")
+            return 0
+        try:
+            require_clear_guard(config.processing_root)
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        result = _process_ingestion_pipeline(config, env_path, copy_recorder=copy_recorder)
+        pending_graph = pending_remote_graph_jobs(config)
+        if pending_graph:
+            _sync_memory_graph_for_jobs(config, pending_graph, env_path=env_path)
+        return result
+
+
+def _process_ingestion_pipeline(config, env_path, *, copy_recorder):
+    command = "process-mounted-recorder" if copy_recorder else "process-queued"
+    print(command)
     print(f"env_path={env_path}")
     print("delete_audio=no")
     print("delete_recorder_audio=no")
     reporter = SQLitePipelineReporter.start(
         config.sqlite_path,
-        command="process-mounted-recorder",
+        command=command,
         heartbeat_interval_seconds=15.0,
     )
     exit_code = 1
 
     try:
-        reporter.start_stage("copy")
-        copy_result = copy_discovered_recordings_with_retries(
-            config,
-            progress_callback=lambda current, total: (
-                reporter.advance_stage("copy", progress_current=current, progress_total=total)
-                if total
-                else None
-            ),
-        )
-        print(f"copy_attempt_count={copy_result.attempt_count}")
-        print(f"copy_copied_count={copy_result.copied_count}")
-        print(f"copy_skipped_count={copy_result.skipped_count}")
-        print(f"copy_failed_count={copy_result.failed_count}")
-        if copy_result.discovery_error:
-            print(f"warning={copy_result.discovery_error}")
-        for warning in copy_result.validation.warnings:
-            print(f"warning={warning}")
-        copy_stage_ok = copy_result.validation.operational and copy_result.failed_count == 0
-        reporter.finish_stage(
-            "copy",
-            event="succeeded" if copy_stage_ok else "failed",
-            safe_detail=copy_result.discovery_error,
-        )
+        copy_stage_ok, copied_count = _pipeline_copy(config, reporter, copy_recorder)
 
         try:
             reporter.start_stage("transcribe")
@@ -950,11 +970,12 @@ def _process_mounted_recorder(env_path: Path) -> int:
             reporter.start_stage("vault_sync")
             did_local_work = any(
                 (
-                    copy_result.copied_count,
+                    copied_count,
                     transcription_result.transcribed_count,
                     diarization_result.diarized_count,
                     pending_vault_changes,
                     pending_consolidation_count,
+                    pending_remote_vault_sync(config),
                 )
             )
             if not did_local_work:
@@ -998,6 +1019,35 @@ def _process_mounted_recorder(env_path: Path) -> int:
             status="succeeded" if exit_code == 0 else "failed",
             exit_code=exit_code,
         )
+
+
+def _pipeline_copy(config, reporter, copy_recorder):
+    if not copy_recorder:
+        return True, 0
+    reporter.start_stage("copy")
+    copy_result = copy_discovered_recordings_with_retries(
+        config,
+        progress_callback=lambda current, total: (
+            reporter.advance_stage("copy", progress_current=current, progress_total=total)
+            if total
+            else None
+        ),
+    )
+    print(f"copy_attempt_count={copy_result.attempt_count}")
+    print(f"copy_copied_count={copy_result.copied_count}")
+    print(f"copy_skipped_count={copy_result.skipped_count}")
+    print(f"copy_failed_count={copy_result.failed_count}")
+    if copy_result.discovery_error:
+        print(f"warning={copy_result.discovery_error}")
+    for warning in copy_result.validation.warnings:
+        print(f"warning={warning}")
+    copy_stage_ok = copy_result.validation.operational and copy_result.failed_count == 0
+    reporter.finish_stage(
+        "copy",
+        event="succeeded" if copy_stage_ok else "failed",
+        safe_detail=copy_result.discovery_error or "; ".join(copy_result.validation.warnings) or None,
+    )
+    return copy_stage_ok, copy_result.copied_count
 
 
 def _transcribe_copied_with_retries(
@@ -1253,20 +1303,23 @@ def _sync_memory_graph_for_jobs(
         except subprocess.TimeoutExpired:
             timed_out += 1
             print(f"memory_graph_sync=timed_out job_id={job_id}")
+            record_graph_attempt(config, job_id, False)
             continue
         if completed.returncode != 0:
             failed += 1
             warning = (completed.stderr or completed.stdout).strip().splitlines()
             detail = warning[-1] if warning else f"exit_code={completed.returncode}"
             print(f"memory_graph_sync=failed job_id={job_id} warning={detail}")
+            record_graph_attempt(config, job_id, False)
             continue
         nodes, relationships = _parse_memory_graph_sync_output(completed.stdout)
         written_nodes += nodes
         written_relationships += relationships
+        record_graph_attempt(config, job_id, True)
 
     status = "ok" if timed_out == 0 and failed == 0 else "partial"
     print(f"memory_graph_sync={status}")
-    print(f"memory_graph_jobs_synced={len(job_ids)}")
+    print(f"memory_graph_jobs_synced={len(job_ids) - timed_out - failed}")
     print(f"memory_graph_nodes_written={written_nodes}")
     print(f"memory_graph_relationships_written={written_relationships}")
     print(f"memory_graph_jobs_timed_out={timed_out}")
@@ -1943,6 +1996,23 @@ def _extract_insights(
     return 1 if result.failed_count else 0
 
 
+def _with_graph_write_lock(env_path: Path, operation: Callable[[], int]) -> int:
+    try:
+        config = load_app_config(env_path)
+        lock = GraphWriteLock(config.processing_root)
+        lock.__enter__()
+    except BlockingIOError:
+        print("graph_write_busy=yes", file=sys.stderr)
+        return 2
+    except (ConfigError, OSError, RuntimeError) as error:
+        print(f"graph_write_lock_error: {error}", file=sys.stderr)
+        return 2
+    try:
+        return operation()
+    finally:
+        lock.__exit__(None, None, None)
+
+
 def _memory_graph_sync(env_path: Path, job_id: int | None, execute: bool) -> int:
     try:
         config = load_app_config(env_path)
@@ -2556,6 +2626,7 @@ def _launchd_render(
     output_dir: Path | None,
     repo_root: Path,
     python_bin: str,
+    signing_identity: str | None = None,
 ) -> int:
     try:
         config = load_app_config(env_path)
@@ -2571,7 +2642,7 @@ def _launchd_render(
         repo_root=repo_root,
         python_bin=python_bin,
     )
-    paths = write_launchd_package(package)
+    paths = write_launchd_package(package, signing_identity=signing_identity)
 
     print("Render launchd package")
     print(f"env_path={env_path}")
@@ -2615,6 +2686,8 @@ def _backup_run(
             ssh_identity_file=(
                 config.backup.ssh_identity_file if config.backup is not None else None
             ),
+            restricted_rsync=(config.backup.restricted_rsync if config.backup else False),
+            rsync_executable=(config.backup.rsync_executable if config.backup else "rsync"),
         )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"backup_error: {error}", file=sys.stderr)
@@ -2652,6 +2725,7 @@ def _backup_restore_drill(env_path: Path, backup_location: str) -> int:
             ssh_identity_file=(
                 config.backup.ssh_identity_file if config.backup is not None else None
             ),
+            rsync_executable=(config.backup.rsync_executable if config.backup else "rsync"),
         )
     except (ConfigError, OSError, ValueError, sqlite3.Error, subprocess.CalledProcessError) as error:
         print(f"restore_drill_error: {error}", file=sys.stderr)

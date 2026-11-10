@@ -1,0 +1,145 @@
+{
+  "uid": "logbook-operations",
+  "title": "Logbook Operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Service health (1 = healthy)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermodr-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "logbook_service_healthy",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Recovery attempts (maximum 3)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermodr-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "logbook_service_recovery_attempts",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Recovery exhausted",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermodr-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "logbook_service_recovery_exhausted",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Supervisor heartbeat age",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermodr-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "time() - logbook_supervisor_heartbeat_timestamp_seconds",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Oldest unpublished remote recording (seconds)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermodr-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 6,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "logbook_remote_unpublished_age_seconds",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Monitoring reachability",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hermodr-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 6,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"mimir-node\"}",
+          "refId": "A",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    }
+  ]
+}

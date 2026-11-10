@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from logbook.backup import backup_ssh_command, run_backup, run_restore_drill
 from logbook.cli import main
@@ -29,6 +30,39 @@ class BackupTests(TestCase):
                 "IdentitiesOnly=yes",
             ],
         )
+
+    def test_restricted_backup_settings_are_opt_in(self) -> None:
+        from logbook.config import backup_config_from_values
+        default = backup_config_from_values({}, Path("/tmp"))
+        self.assertFalse(default.restricted_rsync)
+        self.assertEqual(default.rsync_executable, "rsync")
+        chosen = backup_config_from_values({"LOGBOOK_BACKUP_RESTRICTED_RSYNC":"true",
+                                            "LOGBOOK_BACKUP_RSYNC_EXECUTABLE":"/opt/homebrew/bin/rsync"}, Path("/tmp"))
+        self.assertTrue(chosen.restricted_rsync)
+        self.assertEqual(chosen.rsync_executable, "/opt/homebrew/bin/rsync")
+
+    def test_existing_remote_backup_and_restore_transport_is_preserved(self) -> None:
+        from logbook.backup import _copy_directory_from_remote, _copy_directory_to_remote
+        with TemporaryDirectory() as tmp, patch("logbook.backup.subprocess.run") as run:
+            _copy_directory_to_remote(Path(tmp), "odin:/root/backup", ssh_identity_file=None)
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual(commands[0][-1], "mkdir -p -- /root/backup")
+            self.assertIn("--delete", commands[1])
+            _copy_directory_from_remote("odin:/root/backup", Path(tmp)/"restore",
+                                        ssh_identity_file=None, rsync_executable="custom-rsync")
+            self.assertEqual(run.call_args.args[0][0], "custom-rsync")
+
+    def test_restricted_backup_does_not_request_shell_or_delete(self) -> None:
+        from logbook.backup import _copy_directory_to_remote
+        with patch("logbook.backup.subprocess.run") as run:
+            _copy_directory_to_remote(Path("/tmp/backup"), "odin:/backup-id",
+                                      ssh_identity_file="/tmp/key", restricted_rsync=True,
+                                      rsync_executable="/opt/homebrew/bin/rsync")
+        self.assertEqual(run.call_count, 1)
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "/opt/homebrew/bin/rsync")
+        self.assertNotIn("--delete", command)
+        self.assertEqual(command[-1], "odin:/backup-id/")
 
     def test_backup_cli_is_dry_run_first_and_restore_drill_reports_counts(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -133,7 +167,7 @@ class BackupTests(TestCase):
             self.assertEqual(drill.integrity_check, "ok")
             self.assertEqual(drill.job_count, 1)
             self.assertEqual(drill.expected_job_count, 1)
-            self.assertEqual(drill.schema_version, 1)
+            self.assertEqual(drill.schema_version, 2)
 
 
 def _seed_state(config: AppConfig, root: Path) -> None:

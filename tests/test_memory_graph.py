@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import fcntl
 import json
 import os
 import subprocess
@@ -19,6 +20,7 @@ from logbook.cli import main, _sync_memory_graph_for_jobs
 from logbook.config import (
     ApiConfig,
     AppConfig,
+    ConfigError,
     MemgraphConfig,
     OdinConfig,
     RecorderConfig,
@@ -40,6 +42,79 @@ from logbook.transcription import transcribe_copied_with_fake_odin
 
 
 class MemoryGraphTests(TestCase):
+    def test_artifact_fingerprints_match_the_contents_used_for_the_plan(self):
+        import hashlib
+
+        with TemporaryDirectory() as tmp:
+            config = _seed_memory_fixture(Path(tmp))
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                job = ledger.get_by_id(1)
+            finally:
+                ledger.close()
+            transcript = Path(job.diarization_path or job.transcript_path)
+            insights = config.processing_root / "insights" / "job-000001.insights.json"
+            originals = {path: path.read_bytes() for path in (transcript, insights)}
+            read_text = Path.read_text
+
+            def change_after_read(path, *args, **kwargs):
+                result = read_text(path, *args, **kwargs)
+                if path in originals:
+                    path.write_text('{"text":"changed", "action_items": []}')
+                return result
+
+            with patch.object(Path, "read_text", change_after_read):
+                plan = build_memory_graph_plan(config, job_id=1)
+            evidence = {
+                node.properties["source_kind"]: node.properties["artifact_checksum"]
+                for node in plan.nodes
+                if "SourceEvidence" in node.labels
+                and node.properties.get("source_kind") in {"transcript_segment", "insight_artifact"}
+            }
+            self.assertEqual(
+                evidence["transcript_segment"], hashlib.sha256(originals[transcript]).hexdigest()
+            )
+            self.assertEqual(
+                evidence["insight_artifact"], hashlib.sha256(originals[insights]).hexdigest()
+            )
+
+    def test_graph_writes_refuse_while_another_writer_holds_lock(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+            config.processing_root.mkdir(parents=True, exist_ok=True)
+            with (config.processing_root / "graph-write.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                for command in ("memory-graph-sync", "memory-graph-repair"):
+                    with self.subTest(command=command), patch(
+                        "logbook.cli.Neo4jMemgraphClient"
+                    ) as client, redirect_stdout(io.StringIO()):
+                        self.assertNotEqual(main([command, "--env", str(env_path), "--execute"]), 0)
+                        client.assert_not_called()
+
+    def test_graph_write_lock_is_held_during_operation_and_released_after_error(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_path = _write_env(root)
+            config = load_app_config(env_path)
+
+            def operation(*args, **kwargs):
+                with (config.processing_root / "graph-write.lock").open("a") as contender:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                raise RuntimeError("simulated graph failure")
+
+            with patch("logbook.cli._memory_graph_sync", side_effect=operation):
+                with self.assertRaisesRegex(RuntimeError, "simulated graph failure"):
+                    main(["memory-graph-sync", "--env", str(env_path), "--execute"])
+            with (config.processing_root / "graph-write.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_graph_write_rejects_unavailable_configuration(self) -> None:
+        with patch("logbook.cli.load_app_config", side_effect=ConfigError("unavailable")):
+            self.assertNotEqual(main(["memory-graph-sync", "--execute"]), 0)
+
     def test_mount_pipeline_memory_sync_timeout_is_nonfatal(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -68,6 +143,24 @@ class MemoryGraphTests(TestCase):
                 )
 
             self.assertIn("memory_graph_sync=timed_out job_id=58", output.getvalue())
+            self.assertIn("memory_graph_jobs_synced=0", output.getvalue())
+
+    def test_memory_sync_summary_counts_only_successful_jobs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            config = _seed_memory_fixture(Path(tmp))
+            config = replace(config, memgraph=MemgraphConfig(uri="bolt://memgraph.test:7687"))
+            output = io.StringIO()
+            results = [
+                subprocess.CompletedProcess([], 0, "nodes_written=2\nrelationships_written=1\n", ""),
+                subprocess.CompletedProcess([], 1, "", "storage unavailable"),
+                subprocess.TimeoutExpired([], timeout=1),
+            ]
+            with patch("logbook.cli.subprocess.run", side_effect=results), redirect_stdout(output):
+                _sync_memory_graph_for_jobs(config, (1, 2, 3), env_path=Path(".env"))
+            self.assertIn("memory_graph_jobs_synced=1\n", output.getvalue())
+            self.assertIn("memory_graph_jobs_failed=1\n", output.getvalue())
+            self.assertIn("memory_graph_jobs_timed_out=1\n", output.getvalue())
+            self.assertIn("memory_graph_nodes_written=2\n", output.getvalue())
 
     def test_builds_proof_carrying_graph_without_source_audio_paths(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -590,7 +683,7 @@ class FlakyIndexGraphClient(RecordingGraphClient):
         if cypher.startswith("CREATE INDEX"):
             self.index_attempts += 1
             if self.index_attempts == 1:
-                raise RuntimeError("Cannot get read only access to the storage")
+                raise RuntimeError("Cannot get read-only access to the storage. Try stopping other parallel queries.")
         super().run(cypher, parameters)
 
 

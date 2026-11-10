@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from logbook.supervisor import supervision_summary
+
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -71,6 +73,7 @@ def render_curses_frame(
         ),
         _line(f"Latest finished job  {format_observer_timestamp(visible.latest_finished_at)}", body_width),
         _line(_health_line(visible), body_width),
+        _line(supervision_summary(visible.services), body_width),
         _line(_recorder_line(recorder_status), body_width),
         _rule(width, "sep"),
     ]
@@ -80,7 +83,7 @@ def render_curses_frame(
     lines.append(_rule(width, "sep"))
     lines.extend(_section("Recent finished", _finished_lines(visible.recent_finished), body_width))
     lines.append(_rule(width, "sep"))
-    lines.extend(_section("Failures and review", _failure_lines(visible.recent_failures), body_width))
+    lines.extend(_section("Failures and review (attempt history)", _failure_lines(visible.recent_failures), body_width))
     lines.append(_rule(width, "sep"))
     lines.append(_line(_control_hint(recorder_status), body_width))
     lines.append(_rule(width, "bottom"))
@@ -132,6 +135,7 @@ def _compact_frame_lines(
     lines.extend([_line(_control_hint(recorder_status), body_width), _rule(width, "bottom")])
 
     optional = [
+        _line(supervision_summary(snapshot.services), body_width),
         _line(f"Latest finished job  {format_observer_timestamp(snapshot.latest_finished_at)}", body_width),
         _line(_recorder_line(recorder_status), body_width),
         _line(_stats_line(snapshot), body_width),
@@ -349,7 +353,7 @@ def _stats_line(snapshot: ObserverSnapshot) -> str:
     stats = snapshot.stats
     return (
         f"Stats {stats.window}  jobs {stats.jobs_seen}  success {stats.succeeded}  "
-        f"failed {stats.failed}  dead letters {stats.dead_letters}  "
+        f"failed {stats.failed} attempts  dead letters {stats.dead_letters}  "
         f"p50 {_format_duration(stats.p50_duration_seconds)}  p90 {_format_duration(stats.p90_duration_seconds)}"
     )
 
@@ -373,7 +377,7 @@ def _finished_lines(items: tuple[ObserverJobOutcome, ...]) -> list[str]:
 def _failure_lines(items: tuple[ObserverFailure, ...]) -> list[str]:
     return [
         (
-            f"fail {_format_timestamp(item.occurred_at)}  {_failure_subject(item):<6} "
+            f"{'past' if item.status == 'recovered' else ('info' if item.status == 'recorder_absent' else 'fail')} {_format_timestamp(item.occurred_at)}  {_failure_subject(item):<6} "
             f"{item.status:<18} {item.classification or '-':<12} {item.safe_detail}"
         )
         for item in items

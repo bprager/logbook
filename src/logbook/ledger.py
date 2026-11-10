@@ -9,7 +9,7 @@ from pathlib import Path
 from logbook.recorder import RecordingCandidate
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -286,6 +286,8 @@ class Ledger:
             )
             self._ensure_column("recording_jobs", "cleanup_last_attempt_at", "TEXT")
             self._ensure_column("recording_jobs", "cleanup_last_error", "TEXT")
+            from logbook.remote_store import migrate_remote
+            migrate_remote(self.connection)
             self.connection.execute(
                 """
                 INSERT OR IGNORE INTO schema_migrations (version, applied_at)
@@ -481,6 +483,17 @@ class Ledger:
             raise RuntimeError("recording discovery was not written")
         return job
 
+    def associate_recorder(self, checksum: str, path: Path, volume_uuid: str) -> None:
+        with self.connection:
+            self.connection.execute(
+                "INSERT OR REPLACE INTO recorder_associations VALUES (?,?,?,?)",
+                (checksum, str(path), volume_uuid, utc_now_iso()),
+            )
+            self.connection.execute(
+                "UPDATE recording_jobs SET source_path=? WHERE checksum_sha256=?",
+                (str(path), checksum),
+            )
+
     def copied_jobs(self) -> list[RecordingJob]:
         rows = self.connection.execute(
             """
@@ -629,7 +642,7 @@ class Ledger:
                     copied_path = ?,
                     copied_at = ?,
                     last_seen_at = ?
-                WHERE checksum_sha256 = ?
+                WHERE checksum_sha256 = ? AND status IN ('discovered', 'copied')
                 """,
                 (str(copied_path), copied_at, copied_at, checksum_sha256),
             )

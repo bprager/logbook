@@ -1,5 +1,29 @@
 # Lessons Learned
 
+## 2026-10-21: A Busy GPU Worker Must Still Answer Health Checks
+
+The async upload handler called synchronous transcription and speaker labeling
+directly. Long recordings blocked the HTTP event loop, so supervisor health
+checks timed out and restarted a worker that was still doing useful work.
+Run inference in a thread and keep an async lock around it to preserve serial
+GPU processing. Verify health responds while an inference request remains active.
+
+The same incident found the Sony present in the USB tree but exposing no storage
+disk. Reconnecting restored the disk and automatic import. A healthy empty queue
+does not prove recorder access: check discovery, mounted storage, and publication
+of an actual fresh recording. Save validation warnings in copy-stage telemetry.
+
+## 2026-10-21: Production Must Not Import A Mutable Development Checkout
+
+The installed supervisor imported the project's `src` directory. Switching that
+checkout to `main` removed the deployed remote-ingestion modules and caused
+repeated startup failures. Restore the deployed revision before resetting only
+the affected service's recovery budget. Pin the supervisor and mount helper to a
+versioned source snapshot; preserve external credentials, ledger and audio.
+Verify receiver/API health and a newly completed scheduled queue run while the
+development checkout is on the older branch. A disconnected recorder prevents
+physical-ingest validation; old mount failures do not prove transcription failed.
+
 This document captures operational lessons from live Logbook runs. Keep it current when a
 production incident, near miss, recovery, or release hardening step teaches something that future
 operators or Codex sessions should not have to rediscover.

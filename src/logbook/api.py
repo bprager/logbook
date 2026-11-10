@@ -19,6 +19,7 @@ from logbook.memory_graph import (
     query_memory_graph_plan,
 )
 from logbook.metrics import MetricSample, render_prometheus_metrics
+from logbook.supervisor import supervision_metrics, queue_pending_age
 from logbook.observer import build_observer_snapshot
 from logbook.retention import plan_audio_cleanup
 
@@ -226,6 +227,9 @@ class ObserverStatsResponse(BaseModel):
 
 
 class ObserverSnapshotResponse(BaseModel):
+    latest_finished_at: Optional[str] = None
+    remote_ingest: Optional[dict] = None
+    services: Optional[dict] = None
     generated_at: str
     health: ObserverHealthResponse
     current_run: Optional[dict]
@@ -796,6 +800,8 @@ def _render_logbook_metrics(config: AppConfig) -> str:
             ]
         )
 
+    samples.extend(supervision_metrics(config.processing_root))
+    samples.append(MetricSample('logbook_remote_unpublished_age_seconds', queue_pending_age(config.sqlite_path)))
     status_counts = Counter(job.status for job in jobs)
     samples.extend(
         [

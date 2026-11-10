@@ -27,6 +27,7 @@ from logbook.observer import (
     render_observer_snapshot,
     resolve_watch_theme,
     _failed_pipeline_runs,
+    filter_observer_snapshot,
 )
 from logbook.recorder import discover_recordings
 from logbook.telemetry import SQLitePipelineReporter
@@ -44,6 +45,90 @@ MB = 1024 * 1024
 
 
 class ObserverSnapshotTests(TestCase):
+    def test_missing_recorder_history_is_informational_only_while_volume_is_absent(self) -> None:
+        with TemporaryDirectory() as tmp:
+            config = load_app_config(_write_env(Path(tmp)))
+            config = replace(config, recorder=replace(config.recorder, mount_path=Path(tmp) / "Disconnected Sony"))
+            reporter = SQLitePipelineReporter.start(config.sqlite_path, command="process-mounted-recorder")
+            reporter.finish_stage("copy", event="failed", safe_detail=(
+                "recordings directory does not exist: " + str(config.recorder.recordings_dir)
+            ))
+            reporter.finish_run(status="failed", exit_code=1)
+            snapshot = build_observer_snapshot(config)
+            self.assertEqual(snapshot.recent_failures[0].status, "recorder_absent")
+            self.assertIn("info", render_curses_frame(snapshot, width=180, height=40).text())
+            self.assertIn("recorder currently disconnected", render_observer_snapshot(snapshot))
+            self.assertEqual(filter_observer_snapshot(snapshot, "failed").recent_failures, ())
+            config.recorder.mount_path.mkdir(parents=True)
+            snapshot = build_observer_snapshot(config)
+            self.assertEqual(snapshot.recent_failures[0].status, "failed")
+            with patch("logbook.observer.Path.stat", side_effect=PermissionError("denied")):
+                failures = _failed_pipeline_runs(config.sqlite_path, datetime.now(timezone.utc) - timedelta(hours=1), config)
+            self.assertEqual(failures[0].status, "failed")
+
+    def test_pipeline_recovery_requires_later_success_from_same_command_and_host(self) -> None:
+        with TemporaryDirectory() as tmp:
+            config = load_app_config(_write_env(Path(tmp)))
+            def run(command, host, start, end, status):
+                reporter = SQLitePipelineReporter.start(
+                    config.sqlite_path, command=command, host=host,
+                    now=lambda: datetime(2026, 5, 15, 12, start, tzinfo=timezone.utc),
+                )
+                reporter.finish_run(status=status, exit_code=0 if status == "succeeded" else 1,
+                                    now=lambda: datetime(2026, 5, 15, 12, end, tzinfo=timezone.utc))
+                return reporter.run_id
+
+            failed_id = run("process-mounted-recorder", "mimir", 0, 1, "failed")
+            run("process-queued", "mimir", 2, 3, "succeeded")
+            run("process-mounted-recorder", "other", 4, 5, "succeeded")
+            run("process-mounted-recorder", "mimir", 0, 6, "succeeded")
+            run("process-mounted-recorder", "mimir", 20, 21, "succeeded")
+            generated = datetime(2026, 5, 15, 12, 15, tzinfo=timezone.utc)
+            snapshot = build_observer_snapshot(config, generated_at=generated)
+            self.assertEqual(snapshot.recent_failures[0].status, "failed")
+            run("process-mounted-recorder", "mimir", 10, 11, "succeeded")
+            snapshot = build_observer_snapshot(config, generated_at=generated)
+            self.assertEqual(snapshot.recent_failures[0].status, "recovered")
+            self.assertEqual(snapshot.recent_failures[0].recovered_at, "2026-05-15T12:11:00+00:00")
+            self.assertEqual(snapshot.stats.failed, 1)  # Historical attempts remain auditable.
+            self.assertIn("past  run", render_observer_snapshot(snapshot))
+            self.assertIn("recovered", render_curses_frame(snapshot, width=180, height=40).text())
+            restored = observer_snapshot_from_dict(snapshot.to_dict())
+            self.assertIsNotNone(restored.recent_failures[0].recovered_at)
+            self.assertEqual(filter_observer_snapshot(snapshot, "failed").recent_failures, ())
+            run("process-mounted-recorder", "mimir", 12, 13, "failed")
+            snapshot = build_observer_snapshot(config, generated_at=generated)
+            self.assertEqual([item.status for item in snapshot.recent_failures], ["failed", "recovered"])
+            ledger = open_ledger(config.sqlite_path)
+            try:
+                row = ledger.connection.execute("SELECT status FROM pipeline_runs WHERE id=?", (failed_id,)).fetchone()
+                self.assertEqual(row[0], "failed")
+            finally:
+                ledger.close()
+
+    def test_successful_run_does_not_hide_an_unrecovered_job_failure(self) -> None:
+        with TemporaryDirectory() as tmp:
+            config = load_app_config(_write_env(Path(tmp)))
+            seeded = _seed_observer_fixture(config)
+            failed = SQLitePipelineReporter.start(
+                config.sqlite_path, command="process-mounted-recorder", host="mimir",
+                now=lambda: datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc),
+            )
+            failed.finish_stage("transcribe", event="failed", job_id=seeded["failed_id"],
+                                now=lambda: datetime(2026, 5, 15, 12, 1, tzinfo=timezone.utc))
+            failed.finish_run(status="failed", exit_code=1,
+                              now=lambda: datetime(2026, 5, 15, 12, 1, tzinfo=timezone.utc))
+            success = SQLitePipelineReporter.start(
+                config.sqlite_path, command="process-mounted-recorder", host="mimir",
+                now=lambda: datetime(2026, 5, 15, 12, 2, tzinfo=timezone.utc),
+            )
+            success.finish_run(status="succeeded", exit_code=0,
+                               now=lambda: datetime(2026, 5, 15, 12, 3, tzinfo=timezone.utc))
+            snapshot = build_observer_snapshot(config, generated_at=datetime(2026, 5, 15, 12, 4, tzinfo=timezone.utc))
+            pipeline = next(item for item in snapshot.recent_failures if item.source == "pipeline_run")
+            self.assertEqual(pipeline.status, "failed")
+            self.assertIsNone(pipeline.recovered_at)
+
     def test_snapshot_reports_recent_outcomes_and_stats_without_paths(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -1,0 +1,13 @@
+{
+  "root": "~/Library/Application Support/LogbookRemote",
+  "mount_path": "/Volumes/IC RECORDER",
+  "volume_name": "IC RECORDER",
+  "volume_uuid": "REPLACE_WITH_SONY_VOLUME_UUID",
+  "recordings_path": "REC_FILE/FOLDER01",
+  "timezone": "America/Los_Angeles",
+  "server_url": "http://127.0.0.1:18790",
+  "token_file": "./device.token",
+  "vpn_transport": false,
+  "ssh_host": "jump-mimir",
+  "ssh_remote_port": 8790
+}

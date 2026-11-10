@@ -25,6 +25,25 @@ from logbook.watch_web import (
 
 
 class StatusApiTests(TestCase):
+    def test_recovery_state_survives_api_response_model(self):
+        from logbook.supervisor import RecoveryState
+        from unittest.mock import Mock
+        with TemporaryDirectory() as tmp:
+            config = _app_config(Path(tmp))
+            _seed_status_fixture(config)
+            folder = config.processing_root / 'services'
+            folder.mkdir(parents=True, exist_ok=True)
+            state = RecoveryState(folder / 'supervisor-state.json')
+            state.observe('receiver', False, 100, Mock())
+            state.save(100)
+            client = TestClient(create_app(config))
+            result = client.get('/observer/snapshot').json()
+            self.assertEqual(result['services']['services']['receiver']['attempts'], 1)
+            self.assertIn('remote_ingest', result)
+            metrics = client.get('/metrics').text
+            self.assertIn('logbook_service_recovery_attempts{service="receiver"} 1', metrics)
+
+
     def test_openapi_and_swagger_ui_are_configured_for_logbook_api(self) -> None:
         with TemporaryDirectory() as tmp:
             app_config = _app_config(Path(tmp))
