@@ -1,7 +1,7 @@
 name: Sign repair release
 
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
     branches: [main]
 
@@ -23,6 +23,13 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
+      - name: Verify the merged revision is current main
+        env:
+          REPAIR_REVISION: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = "$REPAIR_REVISION"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$REPAIR_REVISION"
       - name: Fetch pinned dependencies
         run: >-
           python3 -m pip download --no-deps --only-binary=:all:
