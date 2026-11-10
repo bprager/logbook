@@ -7,6 +7,16 @@ from unittest import TestCase
 
 
 class RepairReleasePublisherTests(TestCase):
+    def test_release_workflow_only_signs_merged_current_main(self):
+        workflow=(Path(__file__).resolve().parents[1]/'.github/workflows/repair-release.yml').read_text()
+        self.assertIn('  pull_request_target:\n    types: [closed]\n    branches: [main]',workflow)
+        self.assertIn('if: github.event.pull_request.merged == true',workflow)
+        self.assertIn('ref: ${{ github.event.pull_request.merge_commit_sha }}',workflow)
+        verification=workflow.index('name: Verify the merged revision is current main')
+        signing=workflow.index('name: Build and sign the exact release')
+        self.assertLess(verification,signing)
+        self.assertIn('git ls-remote origin refs/heads/main',workflow[verification:signing])
+
     def test_publisher_creates_release_verified_by_existing_installer(self):
         from logbook.operator_bundle_bootstrap import approved_release
         from logbook.repair_release_publisher import publish_release
