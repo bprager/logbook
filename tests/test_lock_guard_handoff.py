@@ -110,6 +110,10 @@ hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout
         request = NamedRepairDispatcherTests().request()
         del request['plan_data'], request['plan_proof']
         remote = FixedRecovery(request)
+        protected = {**request, 'recovery_file':'/var/lib/logbook-graph-guard/executor/logbook/graph_maintenance_recovery.py'}
+        self.assertEqual(FixedRecovery(protected).request, protected)
+        with self.assertRaises(ValueError):
+            FixedRecovery({**protected, 'recovery_file':'/tmp/untrusted-recovery.py'})
         response = SimpleNamespace(returncode=0, stdout='RECOVERED\n')
         with patch('logbook.lock_guard_broker.subprocess.run', return_value=response) as call:
             self.assertTrue(remote.recovered())

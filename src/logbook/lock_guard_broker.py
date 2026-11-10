@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors
-from logbook.named_repair_dispatcher import validate_request_shape
+from logbook.named_repair_dispatcher import GUARD, validate_request_shape
 from logbook.processing_restart_guard import arm_guard, clear_guard, require_clear_guard
 from logbook.source_plan_broker import trusted_config
 
@@ -26,7 +26,9 @@ class FixedRecovery:
     """Only query the pinned Odin dispatcher; no caller-controlled connection."""
 
     def __init__(self, request: dict):
-        validate_request_shape('named-status', request)
+        protected = (isinstance(request, dict) and request.get('recovery_file')
+                     == str(GUARD/'executor'/'logbook'/'graph_maintenance_recovery.py'))
+        validate_request_shape('named-status', request, protected=protected)
         self.request = request
 
     def _invoke(self, action: str) -> str:

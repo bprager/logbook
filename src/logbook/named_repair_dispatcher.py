@@ -37,7 +37,7 @@ def protected_executor() -> Path:
         for name in directories + files:
             path = Path(current)/name
             info = path.lstat()
-            if (stat.S_ISLNK(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077
+            if (stat.S_ISLNK(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022
                     or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode))):
                 raise ValueError('untrusted executor content')
     package = root/'logbook'

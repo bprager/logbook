@@ -88,6 +88,11 @@ class NamedRepairDispatcherTests(TestCase):
                 path.chmod(0o600)
             with patch('logbook.named_repair_dispatcher.trusted_path'):
                 self.assertEqual(protected_executor(), package/'graph_maintenance_remote.py')
+                cache = package/'__pycache__'
+                cache.mkdir(mode=0o755)
+                (cache/'module.pyc').write_bytes(b'fixture')
+                (cache/'module.pyc').chmod(0o644)
+                self.assertEqual(protected_executor(), package/'graph_maintenance_remote.py')
                 outside = guard/'outside'
                 outside.write_text('untrusted')
                 (package/'link').symlink_to(outside)
