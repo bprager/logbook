@@ -58,7 +58,9 @@ class NamedBundleInstallerTests(TestCase):
                 with patch('logbook.operator_bundle_bootstrap.trusted_parent'):
                     with self.assertRaises(ValueError):
                         install_named_bundle(payload+b'changed', parent/('bundle-'+token), parent/('window-'+token), guard)
-                    install_named_bundle(payload, parent/('bundle-'+token), parent/('window-'+token), guard)
+                    with self.assertRaisesRegex(ValueError, 'separate release authority is disabled'):
+                        install_named_bundle(payload, parent/('bundle-'+token), parent/('window-'+token), guard)
+                self.assertFalse((parent/('bundle-'+token)).exists())
                 authorize_repair(request, plan, guard)
                 with self.assertRaises(ValueError):
                     authorize_repair({**request, 'revision':'c'*40}, plan, guard)
