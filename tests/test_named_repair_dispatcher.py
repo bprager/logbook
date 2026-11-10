@@ -102,6 +102,9 @@ class NamedRepairDispatcherTests(TestCase):
                 (package/'graph_maintenance_worker.py').chmod(0o666)
                 with self.assertRaisesRegex(ValueError, 'executor'):
                     protected_executor()
+                with patch('logbook.named_repair_dispatcher.os.walk', side_effect=lambda *a, **k: k['onerror'](OSError('walk failed'))):
+                    with self.assertRaisesRegex(OSError, 'walk failed'):
+                        protected_executor()
             self.assertEqual(os.geteuid(), package.stat().st_uid)
 
     def test_protected_request_uses_fixed_executor_not_release_code(self):

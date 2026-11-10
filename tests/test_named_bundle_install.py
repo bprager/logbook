@@ -13,6 +13,82 @@ from logbook.operator_bundle_bootstrap import install_named_bundle
 
 
 class NamedBundleInstallerTests(TestCase):
+    def test_release_installs_only_with_owner_approved_executor_and_matching_dispatcher(self):
+        from logbook.operator_bundle_bootstrap import install_protected_executor
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            guard = root/'guard'
+            guard.mkdir(mode=0o700)
+            (guard/'bundles').mkdir(mode=0o700)
+            keys = {}
+            for principal in ('owner', 'release'):
+                key = root/principal
+                subprocess.run(['/usr/bin/ssh-keygen','-q','-t','ed25519','-N','','-f',str(key)],check=True)
+                allowed = guard/('approval.allowed_signers' if principal == 'owner' else 'release.allowed_signers')
+                allowed.write_text(principal+' '+key.with_suffix('.pub').read_text())
+                allowed.chmod(0o600)
+                keys[principal] = key
+            def sign(name, value, principal, namespace):
+                path = guard/name
+                path.write_text(json.dumps(value))
+                path.chmod(0o600)
+                sig = Path(str(path)+'.sig')
+                sig.unlink(missing_ok=True)
+                subprocess.run(['/usr/bin/ssh-keygen','-Y','sign','-n',namespace,'-f',str(keys[principal]),str(path)],check=True,capture_output=True)
+                sig.chmod(0o600)
+            def archive(files):
+                stream = io.BytesIO()
+                with tarfile.open(fileobj=stream,mode='w') as tar:
+                    for name, content in files.items():
+                        item = tarfile.TarInfo('logbook/'+name)
+                        item.size = len(content)
+                        tar.addfile(item,io.BytesIO(content))
+                return stream.getvalue()
+            dispatcher = b'fixture protected dispatcher'
+            executor = archive({'named_repair_dispatcher.py':dispatcher,'graph_maintenance_remote.py':b'fixed',
+                                'graph_maintenance_recovery.py':b'fixed','graph_maintenance_worker.py':b'fixed'})
+            sign('executor-approval.json',{'schema':1,'revision':'a'*40,'bundle_sha256':hashlib.sha256(executor).hexdigest(),
+                                           'expires_at':int(time.time())+300},'owner','logbook-repair-executor')
+            sign('standing-policy.json',{'schema':2,'max_records':5,'expires_at':None},'owner','logbook-graph-policy')
+            release = archive({'graph_maintenance_remote.py':b'untrusted'})
+            sign('release.json',{'schema':1,'revision':'b'*40,'bundle_sha256':hashlib.sha256(release).hexdigest()},
+                 'release','logbook-repair-release')
+            fixed = root/'dispatcher'
+            fixed.write_bytes(dispatcher)
+            fixed.chmod(0o700)
+            bundle = guard/'bundles'/('bundle-'+'a'*32)
+            stage = guard/'bundles'/('window-'+'a'*32)
+            with patch('logbook.operator_bundle_bootstrap.trusted_parent'), \
+                 patch('logbook.operator_bundle_bootstrap.PROTECTED_DISPATCHER',fixed):
+                with self.assertRaises((ValueError,OSError)):
+                    install_named_bundle(release,bundle,stage,guard)
+                install_protected_executor(executor,guard)
+                (guard/'executor').chmod(0o755)
+                with self.assertRaisesRegex(ValueError, 'private executor'):
+                    install_named_bundle(release,bundle,stage,guard)
+                (guard/'executor').chmod(0o700)
+                marker = guard/'executor/.bundle-ready'
+                original_marker = marker.read_bytes()
+                marker.write_bytes(b'changed\n')
+                with self.assertRaisesRegex(ValueError, 'approval mismatch'):
+                    install_named_bundle(release,bundle,stage,guard)
+                marker.write_bytes(original_marker)
+                link = guard/'executor/logbook/untrusted-link'
+                link.symlink_to(fixed)
+                with self.assertRaisesRegex(ValueError, 'untrusted executor'):
+                    install_named_bundle(release,bundle,stage,guard)
+                link.unlink()
+                with patch('logbook.operator_bundle_bootstrap.os.walk', side_effect=lambda *a, **k: k['onerror'](OSError('walk failed'))):
+                    with self.assertRaisesRegex(OSError, 'walk failed'):
+                        install_named_bundle(release,bundle,stage,guard)
+                fixed.write_bytes(b'wrong')
+                with self.assertRaises(ValueError):
+                    install_named_bundle(release,bundle,stage,guard)
+                fixed.write_bytes(dispatcher)
+                with patch('logbook.operator_bundle_bootstrap.time.time',return_value=int(time.time())+600):
+                    install_named_bundle(release,bundle,stage,guard)
+                self.assertTrue((bundle/'logbook/graph_maintenance_remote.py').is_file())
+
     def test_separately_signed_releases_share_one_policy(self):
         from logbook.standing_graph_policy import authorize_repair
         from logbook.named_graph_approval import plan_digest
@@ -56,9 +132,9 @@ class NamedBundleInstallerTests(TestCase):
                 request = {'revision':version*40, 'bundle_sha256':digest, 'job_id':147, 'plan_sha256':plan_digest(plan)}
                 token = version*32
                 with patch('logbook.operator_bundle_bootstrap.trusted_parent'):
-                    with self.assertRaises(ValueError):
+                    with self.assertRaises((ValueError, OSError)):
                         install_named_bundle(payload+b'changed', parent/('bundle-'+token), parent/('window-'+token), guard)
-                    with self.assertRaisesRegex(ValueError, 'separate release authority is disabled'):
+                    with self.assertRaises((ValueError, OSError)):
                         install_named_bundle(payload, parent/('bundle-'+token), parent/('window-'+token), guard)
                 self.assertFalse((parent/('bundle-'+token)).exists())
                 authorize_repair(request, plan, guard)

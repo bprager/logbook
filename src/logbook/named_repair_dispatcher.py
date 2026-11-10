@@ -31,9 +31,11 @@ def trusted_path(path: Path, *, directory: bool, private: bool = False) -> None:
 
 def protected_executor() -> Path:
     """Validate a fixed, root-private executor tree, never a release path."""
+    def fail_walk(error: OSError) -> None:
+        raise error
     root = GUARD/'executor'
     trusted_path(root, directory=True, private=True)
-    for current, directories, files in os.walk(root, followlinks=False):
+    for current, directories, files in os.walk(root, followlinks=False, onerror=fail_walk):
         for name in directories + files:
             path = Path(current)/name
             info = path.lstat()

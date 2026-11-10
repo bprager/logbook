@@ -15,6 +15,8 @@ import tarfile
 import time
 from pathlib import Path, PurePosixPath
 
+PROTECTED_DISPATCHER = Path('/usr/local/libexec/logbook-repair-dispatcher')
+
 
 def trusted_parent(destination: Path) -> None:
     if not destination.is_absolute() or '..' in destination.parts:
@@ -114,12 +116,7 @@ def approved_release(guard: Path) -> dict:
         raise ValueError('invalid release') from error
 
 
-def install_protected_executor(data: bytes, guard: Path) -> None:
-    """Install an owner-approved fixed executor once, at its fixed location."""
-    trusted_parent(guard/'executor')
-    info = guard.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
-        raise ValueError('private policy directory required')
+def executor_approval(guard: Path, *, current: bool) -> dict:
     content = _private_file(guard/'executor-approval.json')
     allowed = guard/'approval.allowed_signers'
     signature = guard/'executor-approval.json.sig'
@@ -136,12 +133,48 @@ def install_protected_executor(data: bytes, guard: Path) -> None:
                 or type(approval['schema']) is not int or approval['schema'] != 1
                 or not isinstance(approval['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}', approval['revision'])
                 or not isinstance(approval['bundle_sha256'], str) or not re.fullmatch(r'[a-f0-9]{64}', approval['bundle_sha256'])
-                or type(approval['expires_at']) is not int or approval['expires_at'] < int(time.time())
-                or hashlib.sha256(data).hexdigest() != approval['bundle_sha256']):
+                or type(approval['expires_at']) is not int
+                or (current and approval['expires_at'] < int(time.time()))):
             raise ValueError('executor approval does not match package')
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid executor approval') from error
+    return approval
+
+
+def install_protected_executor(data: bytes, guard: Path) -> None:
+    """Install an owner-approved fixed executor once, at its fixed location."""
+    trusted_parent(guard/'executor')
+    info = guard.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+        raise ValueError('private policy directory required')
+    approval = executor_approval(guard, current=True)
     install_bundle(data, guard/'executor', approval['bundle_sha256'])
+
+
+def verify_protected_executor(guard: Path) -> None:
+    """Require the owner-approved executor and its identical fixed dispatcher."""
+    def fail_walk(error: OSError) -> None:
+        raise error
+    root = guard/'executor'
+    trusted_parent(root/'logbook'/'check')
+    info = root.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+        raise ValueError('private executor required')
+    approval = executor_approval(guard, current=False)
+    if _private_file(root/'.bundle-ready') != (approval['bundle_sha256']+'\n').encode():
+        raise ValueError('executor approval mismatch')
+    for current, directories, files in os.walk(root, followlinks=False, onerror=fail_walk):
+        for name in directories + files:
+            info = (Path(current)/name).lstat()
+            if (stat.S_ISLNK(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022
+                    or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode))):
+                raise ValueError('untrusted executor content')
+    source = root/'logbook'
+    for name in ('graph_maintenance_remote.py', 'graph_maintenance_recovery.py', 'graph_maintenance_worker.py'):
+        _private_file(source/name)
+    trusted_parent(PROTECTED_DISPATCHER)
+    if _private_file(PROTECTED_DISPATCHER) != _private_file(source/'named_repair_dispatcher.py'):
+        raise ValueError('protected dispatcher mismatch')
 
 
 def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: Path) -> None:
@@ -174,11 +207,8 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
                 or not ((policy['schema'] == 2 and policy['expires_at'] is None)
                         or (type(policy['expires_at']) is int and policy['expires_at'] >= int(time.time())))):
             raise ValueError('standing policy does not approve bundle')
-        # The dispatcher runs the bundle as root, so a release signer can replace
-        # the policy verifier. Do not activate separate release trust until the
-        # privileged execution boundary is independently contained.
         if policy['schema'] == 2:
-            raise ValueError('separate release authority is disabled')
+            verify_protected_executor(guard)
         release = policy if policy['schema'] == 1 else approved_release(guard)
         if (not isinstance(release['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}', release['revision'])
                 or not isinstance(release['bundle_sha256'], str)
