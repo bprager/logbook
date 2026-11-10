@@ -28,17 +28,40 @@ class RepairCycleTests(TestCase):
                 self.assertTrue(prepare.call_args.args[2]['protected_executor'])
                 self.assertTrue(run.call_args.kwargs['restricted'])
 
+    def test_existing_job_with_missing_details_is_repaired(self):
+        from logbook.repair_cycle import repair_cycle
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            digest=hashlib.sha256(b'fixture').hexdigest()
+            package=root/(digest+'.tar.gz')
+            package.write_bytes(b'fixture')
+            current=root/'current.json'
+            current.write_text(json.dumps({'schema':2,'sequence':1,'revision':'a'*40,
+                                          'bundle_sha256':digest,'bundle_path':str(package)}))
+            current.chmod(0o600)
+            with patch('logbook.repair_cycle.request_job_ids',return_value=[1,2]), \
+                 patch('logbook.repair_cycle.discover_missing_jobs',return_value={
+                     'container_id':'b'*64,'pid':42,'missing_job_ids':[]}), \
+                 patch('logbook.repair_cycle.discover_partial',return_value={
+                     'container_id':'c'*64,'pid':43,'incomplete':True}), \
+                 patch('logbook.repair_cycle.prepare_named',return_value='prepared') as prepare, \
+                 patch('logbook.repair_cycle.run_named',return_value='retained'):
+                self.assertEqual(repair_cycle(root),'retained')
+                self.assertEqual(prepare.call_args.args[1],1)
+                self.assertEqual(prepare.call_args.args[2]['container_id'],'c'*64)
+
     def test_page_cursor_advances_only_after_empty_discovery(self):
         from logbook.repair_cycle import repair_cycle
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             with patch('logbook.repair_cycle.request_job_ids', side_effect=[list(range(1,101)),[],[1]]) as source, \
                  patch('logbook.repair_cycle.discover_missing_jobs', return_value={
-                     'container_id':'b'*64,'pid':42,'missing_job_ids':[]}):
+                     'container_id':'b'*64,'pid':42,'missing_job_ids':[]}), \
+                 patch('logbook.repair_cycle.discover_partial',return_value={'container_id':'b'*64,'pid':42,'incomplete':False}):
                 self.assertEqual(repair_cycle(root), 'page-complete')
                 self.assertEqual(repair_cycle(root), 'scan-complete')
                 self.assertEqual(repair_cycle(root), 'scan-complete')
-            self.assertEqual([call.args for call in source.call_args_list],[(0,100),(100,100),(0,100)])
+            self.assertEqual([call.args for call in source.call_args_list],[(0,100),(1,100),(0,100)])
 
     def test_rejects_modified_release_and_preserves_cursor(self):
         from logbook.repair_cycle import repair_cycle

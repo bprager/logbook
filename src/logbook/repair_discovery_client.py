@@ -35,3 +35,32 @@ def discover_missing_jobs(ids: list[int]) -> dict:
         return response
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid graph discovery response') from error
+
+
+def discover_partial(job_id: int) -> dict:
+    """Compare one signed source plan; return only target identity and completeness."""
+    from logbook.plan_producer import request_generated_plan
+    if type(job_id) is not int or not 1 <= job_id <= 9223372036854775807:
+        raise ValueError('positive job ID required')
+    plan, proof = request_generated_plan(job_id)
+    request = json.dumps({'job_id':job_id,'plan':plan,'proof':proof})
+    if len(request.encode()) > 5000000:
+        raise ValueError('plan discovery request too large')
+    try:
+        result = subprocess.run(['ssh','-i',str(OPERATOR_KEY),'-o','BatchMode=yes','-o','ConnectTimeout=5',
+                                 '-o','StrictHostKeyChecking=yes','logbook-repair@odin',
+                                 'sudo -n /usr/local/libexec/logbook-repair-dispatcher named-plan-discover'],
+                                input=request,capture_output=True,text=True,timeout=60)
+    except subprocess.TimeoutExpired as error:
+        raise TimeoutError('plan discovery timed out') from error
+    if result.returncode or len(result.stdout) > 1000:
+        raise ConnectionError('plan discovery unavailable')
+    try:
+        response = json.loads(result.stdout)
+        if (not isinstance(response,dict) or set(response) != {'container_id','pid','incomplete'}
+                or not isinstance(response['container_id'],str) or not re.fullmatch(r'[a-f0-9]{64}',response['container_id'])
+                or type(response['pid']) is not int or response['pid'] < 1 or type(response['incomplete']) is not bool):
+            raise ValueError('invalid plan discovery response')
+        return response
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('invalid plan discovery response') from error

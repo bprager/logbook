@@ -45,6 +45,7 @@ class ProducerLauncherTests(TestCase):
         service = plistlib.loads(path.read_bytes())
         self.assertEqual(service['UserName'],'logbook-repair-operator')
         self.assertEqual(service['ProgramArguments'],['/usr/local/libexec/logbook-plan-producer','repair-cycle'])
+        self.assertEqual(service['StartInterval'],120)
         with patch.object(module,'check_trusted_directory'), patch.object(module,'check_trusted_file'), \
              patch.object(module.os,'walk',return_value=[]), patch.object(module.os,'geteuid',return_value=3), \
              patch.object(module.pwd,'getpwnam',side_effect=lambda name: SimpleNamespace(pw_uid=users[name])), \

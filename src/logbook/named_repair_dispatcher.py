@@ -119,6 +119,15 @@ def main() -> None:  # pragma: no cover
     if len(raw) > 5000000:
         raise SystemExit('repair request too large')
     request = json.loads(raw)
+    if sys.argv[1] == 'named-plan-discover':
+        if not isinstance(request,dict) or set(request) != {'job_id','plan','proof'}:
+            raise ValueError('bounded signed plan required')
+        entry = protected_executor().parent/'partial_graph_discovery.py'
+        trusted_path(entry,directory=False,private=True)
+        result = subprocess.run(['/usr/bin/python3','-I',str(entry)],input=raw,
+                                env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'},
+                                cwd='/',timeout=60,check=False)
+        raise SystemExit(result.returncode)
     if sys.argv[1] == 'named-discover':
         if (len(raw) > 4096 or not isinstance(request,dict) or set(request) != {'job_ids'}
                 or not isinstance(request['job_ids'],list) or not 1 <= len(request['job_ids']) <= 100

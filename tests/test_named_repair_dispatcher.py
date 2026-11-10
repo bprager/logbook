@@ -6,6 +6,29 @@ from logbook.named_repair_dispatcher import validate_request
 
 
 class NamedRepairDispatcherTests(TestCase):
+    def test_plan_discovery_dispatches_only_fixed_executor(self):
+        import io
+        import json
+        import sys
+        from types import SimpleNamespace
+        from logbook.named_repair_dispatcher import main
+        executor=Path('/var/lib/logbook-graph-guard/executor/logbook/graph_maintenance_remote.py')
+        for request in ({'job_id':1,'plan':{},'proof':{}},{'job_id':1,'plan':{},'proof':{},'extra':1}):
+            stdin=io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()),encoding='utf-8')
+            with patch('logbook.named_repair_dispatcher.os.geteuid',return_value=0), \
+                 patch('logbook.named_repair_dispatcher.protected_executor',return_value=executor), \
+                 patch('logbook.named_repair_dispatcher.trusted_path'), \
+                 patch('logbook.named_repair_dispatcher.subprocess.run',return_value=SimpleNamespace(returncode=0)) as run, \
+                 patch.object(sys,'stdin',stdin), patch.object(sys,'argv',['dispatcher','named-plan-discover']):
+                if 'extra' in request:
+                    with self.assertRaises(ValueError):
+                        main()
+                    run.assert_not_called()
+                else:
+                    with self.assertRaises(SystemExit):
+                        main()
+                    self.assertEqual(run.call_args.args[0][2],str(executor.parent/'partial_graph_discovery.py'))
+
     def test_discovery_dispatch_is_fixed_read_only_entry_and_bounded(self):
         import io
         import json

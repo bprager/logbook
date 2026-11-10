@@ -16,7 +16,7 @@ from logbook.graph_maintenance_worker import private_directory, read_private_jso
 from logbook.lock_guard_client import OPERATOR_KEY, _check_remote, release_named_handoff
 from logbook.operator_entry import _named_remote, prepare_named, read_release_bundle, run_named
 from logbook.plan_producer import request_job_ids
-from logbook.repair_discovery_client import discover_missing_jobs
+from logbook.repair_discovery_client import discover_missing_jobs, discover_partial
 
 
 def _cursor(root: Path) -> int:
@@ -114,8 +114,11 @@ def repair_cycle(root: Path) -> str:
         found = discover_missing_jobs(ids)
         missing = found['missing_job_ids']
         if not missing:
-            _save_json(root,'repair-cursor.json',{'after':ids[-1] if len(ids) == 100 else 0})
-            return 'page-complete' if len(ids) == 100 else 'scan-complete'
+            found = discover_partial(ids[0])
+            if not found['incomplete']:
+                _save_json(root,'repair-cursor.json',{'after':ids[0] if len(ids) > 1 else 0})
+                return 'page-complete' if len(ids) > 1 else 'scan-complete'
+            missing = [ids[0]]
         release = _release(root)
         state = root/('repair-'+uuid.uuid4().hex+'.json')
         options = {'remote_parent':'/var/lib/logbook-graph-guard/bundles',
