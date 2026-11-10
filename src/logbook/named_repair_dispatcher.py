@@ -92,7 +92,7 @@ def validate_request(action: str, request: dict, *, protected: bool = False) -> 
     return entry
 
 
-def reject_uncontained_policy() -> None:
+def reject_uncontained_policy(*, protected: bool = False) -> None:
     """Do not execute a preinstalled separately authorized release as root."""
     policy = GUARD/'standing-policy.json'
     if not os.path.lexists(policy):
@@ -105,7 +105,8 @@ def reject_uncontained_policy() -> None:
     if len(content) > 100000:
         raise ValueError('policy too large')
     document = json.loads(content)
-    if not isinstance(document, dict) or type(document.get('schema')) is not int or document['schema'] != 1:
+    if (not isinstance(document, dict) or type(document.get('schema')) is not int
+            or document['schema'] != (2 if protected else 1)):
         raise ValueError('separate release authority is disabled')
 
 
@@ -116,8 +117,10 @@ def main() -> None:  # pragma: no cover
     if len(raw) > 5000000:
         raise SystemExit('repair request too large')
     request = json.loads(raw)
-    reject_uncontained_policy()
-    entry = validate_request(sys.argv[1],request)
+    protected = (isinstance(request, dict) and request.get('recovery_file')
+                 == str(GUARD/'executor'/'logbook'/'graph_maintenance_recovery.py'))
+    reject_uncontained_policy(protected=protected)
+    entry = validate_request(sys.argv[1],request,protected=protected)
     result = subprocess.run(['/usr/bin/python3','-I',str(entry),sys.argv[1]],input=raw,
                             env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'},
                             cwd='/',timeout=240,check=False)

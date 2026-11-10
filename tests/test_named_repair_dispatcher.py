@@ -6,6 +6,72 @@ from logbook.named_repair_dispatcher import validate_request
 
 
 class NamedRepairDispatcherTests(TestCase):
+    def test_dispatch_executes_fixed_fixture_not_release_fixture(self):
+        import io
+        import json
+        import os
+        import sys
+        from tempfile import TemporaryDirectory
+        from logbook.named_repair_dispatcher import main
+        with TemporaryDirectory() as tmp:
+            guard = Path(tmp)
+            token = 'a'*32
+            bundle = guard/'bundles'/('bundle-'+token)
+            stage = guard/'bundles'/('window-'+token)
+            package = guard/'executor'/'logbook'
+            for path in (bundle/'logbook', stage, package, guard/'journals'):
+                path.mkdir(parents=True, mode=0o700)
+            (guard/'standing-policy.json').write_text('{"schema":2}')
+            (bundle/'.bundle-ready').write_text('b'*64+'\n')
+            good, bad = guard/'good', guard/'bad'
+            (bundle/'logbook'/'graph_maintenance_remote.py').write_text(f'from pathlib import Path\nPath({str(bad)!r}).touch()\n')
+            for name in ('graph_maintenance_remote.py','graph_maintenance_recovery.py','graph_maintenance_worker.py'):
+                path = package/name
+                path.write_text(f'from pathlib import Path\nPath({str(good)!r}).touch()\n')
+                path.chmod(0o600)
+            request = self.request()
+            request = {key: value.replace('/var/lib/logbook-graph-guard', str(guard)) if isinstance(value, str) else value
+                       for key, value in request.items() if key not in ('plan_data', 'plan_proof')}
+            request['recovery_file'] = str(package/'graph_maintenance_recovery.py')
+            stdin = io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()), encoding='utf-8')
+            real_uid = os.geteuid()
+            with patch('logbook.named_repair_dispatcher.GUARD', guard), \
+                 patch('logbook.named_repair_dispatcher.os.geteuid', side_effect=[0]+[real_uid]*50), \
+                 patch('logbook.named_repair_dispatcher.trusted_path'), \
+                 patch.object(sys, 'stdin', stdin), patch.object(sys, 'argv', ['dispatcher', 'named-status']):
+                with self.assertRaises(SystemExit) as result:
+                    main()
+            self.assertEqual(result.exception.code, 0)
+            self.assertTrue(good.exists())
+            self.assertFalse(bad.exists())
+
+    def test_dispatch_selects_protected_executor_for_version_two_policy(self):
+        import io
+        import json
+        import sys
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        from logbook.named_repair_dispatcher import main
+        with TemporaryDirectory() as tmp:
+            guard = Path(tmp)
+            (guard/'standing-policy.json').write_text(json.dumps({'schema':2}))
+            request = self.request()
+            request['recovery_file'] = str(guard/'executor/logbook/graph_maintenance_recovery.py')
+            raw = json.dumps(request).encode()
+            stdin = io.TextIOWrapper(io.BytesIO(raw), encoding='utf-8')
+            entry = guard/'executor/logbook/graph_maintenance_remote.py'
+            with patch('logbook.named_repair_dispatcher.GUARD', guard), \
+                 patch('logbook.named_repair_dispatcher.os.geteuid', return_value=0), \
+                 patch('logbook.named_repair_dispatcher.trusted_path'), \
+                 patch('logbook.named_repair_dispatcher.validate_request', return_value=entry) as validate, \
+                 patch('logbook.named_repair_dispatcher.subprocess.run', return_value=SimpleNamespace(returncode=0)) as run, \
+                 patch.object(sys, 'stdin', stdin), patch.object(sys, 'argv', ['dispatcher', 'named-status']):
+                with self.assertRaises(SystemExit) as result:
+                    main()
+                self.assertEqual(result.exception.code, 0)
+                validate.assert_called_once_with('named-status', request, protected=True)
+                self.assertEqual(run.call_args.args[0][2], str(entry))
+
     def test_protected_executor_is_fixed_and_rejects_untrusted_code(self):
         import os
         from tempfile import TemporaryDirectory
