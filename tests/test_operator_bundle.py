@@ -39,6 +39,61 @@ class TrustedPathTests(unittest.TestCase):
 
 
 class OperatorBundleTests(unittest.TestCase):
+    def test_executor_install_requires_owner_signature_and_exact_bytes(self):
+        import json
+        import subprocess
+        import time
+        from logbook.operator_bundle_bootstrap import install_protected_executor
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            root.chmod(0o700)
+            key = root/'owner'
+            subprocess.run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], check=True)
+            allowed = root/'approval.allowed_signers'
+            allowed.write_text('owner '+key.with_suffix('.pub').read_text())
+            allowed.chmod(0o600)
+            payload = archive('logbook/graph_maintenance_remote.py')
+            document = {'schema':1, 'revision':'a'*40, 'bundle_sha256':hashlib.sha256(payload).hexdigest(),
+                        'expires_at':int(time.time())+300}
+            policy = root/'executor-approval.json'
+            def sign():
+                sig = root/'executor-approval.json.sig'
+                sig.unlink(missing_ok=True)
+                policy.write_text(json.dumps(document))
+                policy.chmod(0o600)
+                subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'sign', '-n', 'logbook-repair-executor',
+                                '-f', str(key), str(policy)], check=True, capture_output=True)
+                sig.chmod(0o600)
+            sign()
+            root.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, 'directory'):
+                install_protected_executor(payload, root)
+            root.chmod(0o700)
+            with self.assertRaises(ValueError):
+                install_protected_executor(payload+b'changed', root)
+            self.assertFalse((root/'executor').exists())
+            document['expires_at'] = 0
+            sign()
+            with self.assertRaises(ValueError):
+                install_protected_executor(payload, root)
+            document['expires_at'] = int(time.time())+300
+            sign()
+            policy.write_text(policy.read_text()+' ')
+            with self.assertRaises(ValueError):
+                install_protected_executor(payload, root)
+            policy.write_text('{')
+            (root/'executor-approval.json.sig').unlink()
+            subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'sign', '-n', 'logbook-repair-executor',
+                            '-f', str(key), str(policy)], check=True, capture_output=True)
+            (root/'executor-approval.json.sig').chmod(0o600)
+            with self.assertRaisesRegex(ValueError, 'invalid executor approval'):
+                install_protected_executor(payload, root)
+            sign()
+            install_protected_executor(payload, root)
+            self.assertEqual((root/'executor/logbook/graph_maintenance_remote.py').read_bytes(), b'fixture')
+            with self.assertRaises(FileExistsError):
+                install_protected_executor(payload, root)
+
     def setUp(self):
         from unittest.mock import patch
         self.trust = patch('logbook.operator_bundle_bootstrap.trusted_parent')

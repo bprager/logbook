@@ -114,6 +114,36 @@ def approved_release(guard: Path) -> dict:
         raise ValueError('invalid release') from error
 
 
+def install_protected_executor(data: bytes, guard: Path) -> None:
+    """Install an owner-approved fixed executor once, at its fixed location."""
+    trusted_parent(guard/'executor')
+    info = guard.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+        raise ValueError('private policy directory required')
+    content = _private_file(guard/'executor-approval.json')
+    allowed = guard/'approval.allowed_signers'
+    signature = guard/'executor-approval.json.sig'
+    _private_file(allowed)
+    _private_file(signature)
+    result = subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'verify', '-f', str(allowed), '-I', 'owner',
+                             '-n', 'logbook-repair-executor', '-s', str(signature)], input=content,
+                            capture_output=True, timeout=10)
+    if result.returncode:
+        raise ValueError('executor approval signature invalid')
+    try:
+        approval = json.loads(content)
+        if (not isinstance(approval, dict) or set(approval) != {'schema', 'revision', 'bundle_sha256', 'expires_at'}
+                or type(approval['schema']) is not int or approval['schema'] != 1
+                or not isinstance(approval['revision'], str) or not re.fullmatch(r'[a-f0-9]{40}', approval['revision'])
+                or not isinstance(approval['bundle_sha256'], str) or not re.fullmatch(r'[a-f0-9]{64}', approval['bundle_sha256'])
+                or type(approval['expires_at']) is not int or approval['expires_at'] < int(time.time())
+                or hashlib.sha256(data).hexdigest() != approval['bundle_sha256']):
+            raise ValueError('executor approval does not match package')
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('invalid executor approval') from error
+    install_bundle(data, guard/'executor', approval['bundle_sha256'])
+
+
 def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: Path) -> None:
     """Install only a standing-policy-approved package at a constrained location."""
     trusted_parent(guard/'bundles'/'check')
@@ -166,6 +196,12 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
 
 
 def main() -> None:  # pragma: no cover
+    if Path(sys.argv[0]).name == 'logbook-protected-executor-installer':
+        if os.geteuid() != 0 or len(sys.argv) != 1:
+            raise SystemExit('root and no arguments required')
+        install_protected_executor(sys.stdin.buffer.read(30000001), Path('/var/lib/logbook-graph-guard'))
+        print('EXECUTOR_INSTALLED')
+        return
     if Path(sys.argv[0]).name == 'logbook-repair-bundle-installer':
         if os.geteuid() != 0 or len(sys.argv) != 3:
             raise SystemExit('root, named destination and staging required')
