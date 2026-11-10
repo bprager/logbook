@@ -15,6 +15,8 @@ from logbook.operator_bundle_bootstrap import install_named_bundle
 class NamedBundleInstallerTests(TestCase):
     def test_release_installs_only_with_owner_approved_executor_and_matching_dispatcher(self):
         from logbook.operator_bundle_bootstrap import install_protected_executor
+        from logbook.named_graph_approval import plan_digest
+        from logbook.standing_graph_policy import authorize_repair
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             guard = root/'guard'
@@ -85,9 +87,28 @@ class NamedBundleInstallerTests(TestCase):
                 with self.assertRaises(ValueError):
                     install_named_bundle(release,bundle,stage,guard)
                 fixed.write_bytes(dispatcher)
+                initial = {'schema':1,'revision':'b'*40,'bundle_sha256':hashlib.sha256(release).hexdigest()}
+                changed = {**initial,'revision':'c'*40}
+                with patch('logbook.operator_bundle_bootstrap.approved_release',side_effect=[initial,changed]):
+                    with self.assertRaisesRegex(ValueError,'release changed'):
+                        install_named_bundle(release,bundle,stage,guard)
+                self.assertFalse(bundle.exists())
+                self.assertFalse(stage.exists())
                 with patch('logbook.operator_bundle_bootstrap.time.time',return_value=int(time.time())+600):
                     install_named_bundle(release,bundle,stage,guard)
                 self.assertTrue((bundle/'logbook/graph_maintenance_remote.py').is_file())
+                plan = {'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],'properties':{'project':'logbook','job_id':147}}],
+                        'relationships':[],'generated_at':'now'}
+                request = {'job_id':147,'revision':'b'*40,'bundle_sha256':hashlib.sha256(release).hexdigest(),
+                           'unit':'logbook-graph-maintenance-'+'a'*32+'.service','plan_sha256':plan_digest(plan)}
+                with self.assertRaisesRegex(ValueError,'invalid repair unit'):
+                    authorize_repair({**request,'unit':'../unsafe'},plan,guard)
+                sign('release.json',{'schema':1,'revision':'c'*40,'bundle_sha256':'d'*64},
+                     'release','logbook-repair-release')
+                authorize_repair(request,plan,guard)
+                (bundle/'release.json').write_text('{}')
+                with self.assertRaises(ValueError):
+                    authorize_repair(request,plan,guard)
 
     def test_separately_signed_releases_share_one_policy(self):
         from logbook.standing_graph_policy import authorize_repair
@@ -137,18 +158,30 @@ class NamedBundleInstallerTests(TestCase):
                     with self.assertRaises((ValueError, OSError)):
                         install_named_bundle(payload, parent/('bundle-'+token), parent/('window-'+token), guard)
                 self.assertFalse((parent/('bundle-'+token)).exists())
+                snapshot = parent/('bundle-'+token)
+                snapshot.mkdir(mode=0o700)
+                for name in ('release.json','release.json.sig'):
+                    target = snapshot/name
+                    target.write_bytes((guard/name).read_bytes())
+                    target.chmod(0o600)
+                request['unit'] = 'logbook-graph-maintenance-'+token+'.service'
+                snapshot.chmod(0o755)
+                with self.assertRaisesRegex(ValueError, 'private release directory'):
+                    authorize_repair(request, plan, guard)
+                snapshot.chmod(0o700)
                 authorize_repair(request, plan, guard)
                 with self.assertRaises(ValueError):
                     authorize_repair({**request, 'revision':'c'*40}, plan, guard)
-                release.write_text(release.read_text()+' ')
+                snapshot_release = snapshot/'release.json'
+                snapshot_release.write_text(snapshot_release.read_text()+' ')
                 with self.assertRaises(ValueError):
                     authorize_repair(request, plan, guard)
-                sign(release, 'owner', 'logbook-repair-release')
+                sign(snapshot_release, 'owner', 'logbook-repair-release')
                 with self.assertRaises(ValueError):
                     authorize_repair(request, plan, guard)
             for invalid in ('{}', '{'):
-                release.write_text(invalid)
-                sign(release, 'release', 'logbook-repair-release')
+                snapshot_release.write_text(invalid)
+                sign(snapshot_release, 'release', 'logbook-repair-release')
                 with self.assertRaisesRegex(ValueError, 'invalid release'):
                     authorize_repair(request, plan, guard)
             from logbook.standing_graph_policy import check_plan

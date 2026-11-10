@@ -78,7 +78,13 @@ def authorize_repair(request: dict, plan: dict, guard: Path, *, now: int | None 
         policy = json.loads(content)
         if not isinstance(policy, dict):
             raise ValueError('standing policy must be an object')
-        release = approved_release(guard) if policy.get('schema') == 2 else None
+        release = None
+        if policy.get('schema') == 2:
+            unit = request.get('unit')
+            match = re.fullmatch(r'logbook-graph-maintenance-([a-f0-9]{32})\.service', unit) if isinstance(unit, str) else None
+            if match is None:
+                raise ValueError('invalid repair unit')
+            release = approved_release(guard, guard/'bundles'/('bundle-'+match.group(1)))
         check_plan(request, plan, policy, now=now, release=release)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid standing policy') from error

@@ -91,11 +91,15 @@ def _private_file(path: Path) -> bytes:
         return source.read()
 
 
-def approved_release(guard: Path) -> dict:
+def approved_release(guard: Path, release_dir: Path | None = None) -> dict:
     """Read a separately signed release from the protected guard directory."""
-    content = _private_file(guard/'release.json')
+    release_dir = guard if release_dir is None else release_dir
+    info = release_dir.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+        raise ValueError('private release directory required')
+    content = _private_file(release_dir/'release.json')
     allowed = guard/'release.allowed_signers'
-    signature = guard/'release.json.sig'
+    signature = release_dir/'release.json.sig'
     _private_file(allowed)
     _private_file(signature)
     result = subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'verify', '-f', str(allowed),
@@ -218,10 +222,25 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid standing policy') from error
     staging.mkdir(mode=0o700)
+    installed = False
     try:
         install_bundle(data,destination,release['bundle_sha256'])
+        installed = True
+        if policy['schema'] == 2:
+            for name in ('release.json', 'release.json.sig'):
+                content = _private_file(guard/name)
+                fd = os.open(destination/name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, 'wb') as output:
+                    output.write(content)
+                    output.flush()
+                    os.fsync(output.fileno())
+            if approved_release(guard, destination) != release:
+                raise ValueError('release changed during installation')
+            sync_directory(destination)
         sync_directory(parent)
     except Exception:
+        if installed:
+            shutil.rmtree(destination)
         staging.rmdir()
         raise
 
