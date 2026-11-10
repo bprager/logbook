@@ -29,7 +29,24 @@ def trusted_path(path: Path, *, directory: bool, private: bool = False) -> None:
         raise ValueError('unexpected trusted path type')
 
 
-def validate_request_shape(action: str, request: dict) -> Path:
+def protected_executor() -> Path:
+    """Validate a fixed, root-private executor tree, never a release path."""
+    root = GUARD/'executor'
+    trusted_path(root, directory=True, private=True)
+    for current, directories, files in os.walk(root, followlinks=False):
+        for name in directories + files:
+            path = Path(current)/name
+            info = path.lstat()
+            if (stat.S_ISLNK(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077
+                    or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode))):
+                raise ValueError('untrusted executor content')
+    package = root/'logbook'
+    for name in ('graph_maintenance_remote.py', 'graph_maintenance_recovery.py', 'graph_maintenance_worker.py'):
+        trusted_path(package/name, directory=False, private=True)
+    return package/'graph_maintenance_remote.py'
+
+
+def validate_request_shape(action: str, request: dict, *, protected: bool = False) -> Path:
     if action not in ACTIONS or not isinstance(request,dict):
         raise ValueError('unsupported repair action')
     expected = FIELDS | ({'plan_data','plan_proof'} if action in {'named-check','named-stage'} else set())
@@ -50,20 +67,24 @@ def validate_request_shape(action: str, request: dict) -> Path:
     token = match.group(1)
     bundle = GUARD/'bundles'/('bundle-'+token)
     stage = GUARD/'bundles'/('window-'+token)
+    executor = GUARD/'executor' if protected else bundle
     expected_paths = {'private_dir':stage, 'journal':GUARD/'journals'/(token+'.json'),
                       'worker':stage/'worker', 'recovery_worker':stage/'restore',
-                      'recovery_file':bundle/'logbook/graph_maintenance_recovery.py'}
+                      'recovery_file':executor/'logbook/graph_maintenance_recovery.py'}
     if any(request[k] != str(value) for k,value in expected_paths.items()):
         raise ValueError('repair paths outside allowed window')
-    return bundle/'logbook/graph_maintenance_remote.py'
+    return executor/'logbook/graph_maintenance_remote.py'
 
 
-def validate_request(action: str, request: dict) -> Path:
-    entry = validate_request_shape(action, request)
-    bundle = entry.parent.parent
+def validate_request(action: str, request: dict, *, protected: bool = False) -> Path:
+    entry = validate_request_shape(action, request, protected=protected)
+    token = request['unit'].removeprefix('logbook-graph-maintenance-').removesuffix('.service')
+    bundle = GUARD/'bundles'/('bundle-'+token)
     stage = Path(request['private_dir'])
     for path in (GUARD,bundle,stage,GUARD/'journals'):
         trusted_path(path,directory=True,private=True)
+    if protected:
+        entry = protected_executor()
     for path in (entry,bundle/'.bundle-ready'):
         trusted_path(path,directory=False,private=True)
     if (bundle/'.bundle-ready').read_text() != request['bundle_sha256']+'\n':

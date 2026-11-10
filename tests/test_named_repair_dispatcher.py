@@ -6,6 +6,76 @@ from logbook.named_repair_dispatcher import validate_request
 
 
 class NamedRepairDispatcherTests(TestCase):
+    def test_protected_executor_is_fixed_and_rejects_untrusted_code(self):
+        import os
+        from tempfile import TemporaryDirectory
+        from logbook.named_repair_dispatcher import protected_executor
+        with TemporaryDirectory() as tmp, patch('logbook.named_repair_dispatcher.GUARD', Path(tmp)):
+            guard = Path(tmp)
+            executor = guard/'executor'
+            package = executor/'logbook'
+            package.mkdir(parents=True, mode=0o700)
+            executor.chmod(0o700)
+            for name in ('graph_maintenance_remote.py', 'graph_maintenance_recovery.py', 'graph_maintenance_worker.py'):
+                path = package/name
+                path.write_text('# protected fixture\n')
+                path.chmod(0o600)
+            with patch('logbook.named_repair_dispatcher.trusted_path'):
+                self.assertEqual(protected_executor(), package/'graph_maintenance_remote.py')
+                outside = guard/'outside'
+                outside.write_text('untrusted')
+                (package/'link').symlink_to(outside)
+                with self.assertRaisesRegex(ValueError, 'executor'):
+                    protected_executor()
+                (package/'link').unlink()
+                (package/'graph_maintenance_worker.py').chmod(0o666)
+                with self.assertRaisesRegex(ValueError, 'executor'):
+                    protected_executor()
+            self.assertEqual(os.geteuid(), package.stat().st_uid)
+
+    def test_protected_request_uses_fixed_executor_not_release_code(self):
+        request = self.request()
+        guard = Path('/var/lib/logbook-graph-guard')
+        executor = guard/'executor'/'logbook'
+        request['recovery_file'] = str(executor/'graph_maintenance_recovery.py')
+        with patch('logbook.named_repair_dispatcher.trusted_path'), \
+             patch('logbook.named_repair_dispatcher.protected_executor', return_value=executor/'graph_maintenance_remote.py'), \
+             patch.object(Path, 'read_text', return_value='b'*64+'\n'):
+            self.assertEqual(validate_request('named-stage', request, protected=True), executor/'graph_maintenance_remote.py')
+            with self.assertRaises(ValueError):
+                validate_request('named-stage', self.request(), protected=True)
+
+    def test_protected_executor_runs_instead_of_untrusted_release_fixture(self):
+        import subprocess
+        import sys
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            guard = Path(tmp)
+            token = 'a'*32
+            bundle = guard/'bundles'/('bundle-'+token)
+            stage = guard/'bundles'/('window-'+token)
+            package = guard/'executor'/'logbook'
+            for path in (bundle/'logbook', stage, package, guard/'journals'):
+                path.mkdir(parents=True, mode=0o700)
+            good = guard/'good'
+            bad = guard/'bad'
+            (bundle/'logbook'/'graph_maintenance_remote.py').write_text(f'from pathlib import Path\nPath({str(bad)!r}).touch()\n')
+            (bundle/'.bundle-ready').write_text('b'*64+'\n')
+            for name in ('graph_maintenance_remote.py', 'graph_maintenance_recovery.py', 'graph_maintenance_worker.py'):
+                target = package/name
+                target.write_text(f'from pathlib import Path\nPath({str(good)!r}).touch()\n')
+                target.chmod(0o600)
+            request = self.request()
+            old = '/var/lib/logbook-graph-guard'
+            request = {key: value.replace(old, str(guard)) if isinstance(value, str) else value
+                       for key, value in request.items()}
+            request['recovery_file'] = str(package/'graph_maintenance_recovery.py')
+            with patch('logbook.named_repair_dispatcher.GUARD', guard), patch('logbook.named_repair_dispatcher.trusted_path'):
+                entry = validate_request('named-stage', request, protected=True)
+            subprocess.run([sys.executable, '-I', str(entry)], check=True)
+            self.assertTrue(good.exists())
+            self.assertFalse(bad.exists())
+
     def test_dispatch_policy_guard_preserves_original_recovery_and_rejects_bad_policy(self):
         from tempfile import TemporaryDirectory
         from logbook.named_repair_dispatcher import reject_uncontained_policy
