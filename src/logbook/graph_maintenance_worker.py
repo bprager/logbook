@@ -42,7 +42,7 @@ def load_plan(path: Path) -> MemoryGraphPlan:
 
 
 
-def completion_value(request: dict, batch: str) -> dict:
+def completion_value(request: dict, batch: str | None) -> dict:
     return {key: request[key] for key in ('container_id', 'pid', 'port', 'unit')} | {'batch': batch}
 
 
@@ -64,7 +64,7 @@ def completion_matches(journal: Path, request: dict, batch: str) -> bool:
     return read_private_json(journal.with_name(journal.name + '.complete')) == completion_value(request, batch)
 
 
-def write_outcome(journal: Path, request: dict, batch: str, outcome: str) -> None:
+def write_outcome(journal: Path, request: dict, batch: str | None, outcome: str) -> None:
     if outcome not in {'retained', 'rolled-back', 'not-retained'}:
         raise ValueError('invalid outcome')
     path = journal.with_name(journal.name + '.outcome')
@@ -86,6 +86,14 @@ def write_outcome(journal: Path, request: dict, batch: str, outcome: str) -> Non
     finally:
         os.close(directory)
 
+def verify_prestart(request: dict, private: Path) -> None:
+    """A stopped worker without a start gate or journal could not write a batch."""
+    journal = Path(request['journal'])
+    if any(os.path.lexists(path) for path in (private/'worker-start', journal,
+                                              journal.with_name(journal.name+'.complete'))):
+        raise ValueError('pre-start recovery evidence conflicts')
+
+
 def run_worker(action: str, request_file: Path) -> None:
     if os.geteuid() != 0 or action not in {'apply', 'recover'}:
         raise ValueError('root and valid action required')
@@ -94,6 +102,10 @@ def run_worker(action: str, request_file: Path) -> None:
     private_directory(journal.parent)
     target = DockerRecovery(request['container_id'], request['pid'], request['port'], request['unit'])
     target.verify_target()
+    if action == 'recover' and not os.path.lexists(journal):
+        verify_prestart(request, request_file.parent)
+        write_outcome(journal, request, None, 'not-retained')
+        return
     config = MemgraphConfig(f"bolt://127.0.0.1:{request['port']}")
     from neo4j import GraphDatabase
     with GraphDatabase.driver(config.uri, auth=None) as driver, driver.session() as session, GraphWriteLock(request_file.parent) as lock:

@@ -146,6 +146,25 @@ class NamedGraphOperatorTests(TestCase):
             release_named_processing_guard(config,remote)
             self.assertFalse((root/'graph-maintenance.pending').exists())
 
+    def test_confirmed_prestart_outcome_requires_matching_receipt_and_no_gate(self):
+        from logbook.graph_maintenance_remote import confirmed_normal_outcome
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            request={'journal':str(root/'journal'),'private_dir':str(root),'profile':'named-graph',
+                     'container_id':'a'*64,'pid':123,'port':7697,'unit':'fixture'}
+            receipt=root/'journal.outcome'
+            receipt.write_text(json.dumps({k:request[k] for k in ('container_id','pid','port','unit')} |
+                                          {'batch':None,'outcome':'not-retained'}))
+            receipt.chmod(0o600)
+            self.assertEqual(confirmed_normal_outcome(request),'not-retained')
+            (root/'worker-start').touch()
+            with self.assertRaisesRegex(ValueError, 'pre-start'):
+                confirmed_normal_outcome(request)
+            (root/'worker-start').unlink()
+            receipt.write_text(json.dumps({'batch':None,'outcome':'not-retained'}))
+            with self.assertRaisesRegex(ValueError, 'unconfirmed pre-start'):
+                confirmed_normal_outcome(request)
+
     def test_claimed_cancellation_requires_matching_target_and_no_fence(self):
         from logbook.graph_maintenance_remote import prepare_claimed_cancellation
         recovery = Mock(pid=123, table='logbook_fixture')

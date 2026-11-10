@@ -21,7 +21,7 @@ from logbook.graph_maintenance_stage import stage_plan  # noqa: E402
 from logbook.named_graph_approval import verify_bundle_marker  # noqa: E402
 from logbook.standing_graph_policy import authorize_repair  # noqa: E402
 from logbook.plan_attestation import verify_plan  # noqa: E402
-from logbook.graph_maintenance_worker import completion_matches, completion_value, read_private_json  # noqa: E402
+from logbook.graph_maintenance_worker import completion_matches, completion_value, read_private_json, verify_prestart  # noqa: E402
 
 
 def verify_execution_marker(request: dict) -> Path:
@@ -56,6 +56,12 @@ def prepare_claimed_cancellation(request: dict, recovery: DockerRecovery, launch
 
 def confirmed_normal_outcome(request: dict) -> str:
     journal = Path(request['journal'])
+    if request.get('profile') == 'named-graph' and not os.path.lexists(journal):
+        verify_prestart(request, Path(request['private_dir']))
+        result = read_private_json(journal.with_name(journal.name + '.outcome'))
+        if result != {**completion_value(request, None), 'outcome': 'not-retained'}:
+            raise ValueError('unconfirmed pre-start outcome')
+        return 'not-retained'
     record = read_private_json(journal)
     batch = record['batch']
     if record.get('schema') != 1 or str(uuid.UUID(batch)) != batch:

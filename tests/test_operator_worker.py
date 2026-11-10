@@ -25,6 +25,25 @@ class OperatorWorkerTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 read_private_json(link)
 
+    def test_fenced_recovery_without_started_worker_records_no_repair(self):
+        from unittest.mock import patch
+        from logbook.graph_maintenance_worker import run_worker
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            request = {'journal':str(root/'journal'),'container_id':'a'*64,'pid':123,
+                       'port':7687,'unit':'logbook-graph-maintenance-test.service'}
+            with patch('logbook.graph_maintenance_worker.os.geteuid', return_value=0), \
+                 patch('logbook.graph_maintenance_worker.private_directory'), \
+                 patch('logbook.graph_maintenance_worker.read_private_json', return_value=request), \
+                 patch('logbook.graph_maintenance_worker.DockerRecovery') as target, \
+                 patch('logbook.graph_maintenance_worker.write_outcome') as outcome:
+                run_worker('recover', root/'request.json')
+                target.return_value.verify_target.assert_called_once()
+                outcome.assert_called_once_with(root/'journal',request,None,'not-retained')
+                (root/'worker-start').touch()
+                with self.assertRaisesRegex(ValueError, 'pre-start'):
+                    run_worker('recover',root/'request.json')
+
     def test_worker_requires_root_and_fence_for_apply_and_recovery(self):
         from unittest.mock import MagicMock, patch
         from logbook.graph_maintenance_worker import run_worker
@@ -38,6 +57,7 @@ class OperatorWorkerTests(unittest.TestCase):
         with patch('logbook.graph_maintenance_worker.os.geteuid', return_value=0), \
              patch('logbook.graph_maintenance_worker.read_private_json', side_effect=[request, request, {'batch':'batch'}]), \
              patch('logbook.graph_maintenance_worker.private_directory'), \
+             patch('logbook.graph_maintenance_worker.os.path.lexists', side_effect=lambda p: str(p) == '/private/journal'), \
              patch('logbook.graph_maintenance_worker.write_outcome'), \
              patch('logbook.graph_maintenance_worker.DockerRecovery') as target, \
              patch('logbook.graph_maintenance_worker.GraphWriteLock'), \
