@@ -10,6 +10,17 @@ from logbook.standing_graph_policy import authorize_repair
 
 
 class StandingGraphPolicyTests(TestCase):
+    def test_durable_policy_allows_releases_without_renewal_but_legacy_still_expires(self):
+        from logbook.standing_graph_policy import check_plan
+        plan = {'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],'properties':{'project':'logbook','job_id':147}}],
+                'relationships':[], 'generated_at':'now'}
+        digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        release = {'revision':'a'*40, 'bundle_sha256':'c'*64}
+        request = {**release, 'job_id':147, 'plan_sha256':digest}
+        check_plan(request, plan, {'schema':2, 'max_records':5, 'expires_at':None}, now=9999999999, release=release)
+        with self.assertRaises(ValueError):
+            check_plan(request, plan, {'schema':1, **release, 'max_records':5, 'expires_at':None}, now=1)
+
     def test_signed_standing_policy_allows_matching_plan_without_per_run_signature(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -23,8 +23,9 @@ def check_plan(request: dict, plan: dict, policy: dict, *, now: int | None = Non
             or set(policy) != ({'schema', 'revision', 'bundle_sha256', 'max_records', 'expires_at'}
                                if policy['schema'] == 1 else {'schema', 'max_records', 'expires_at'})
             or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
-            or type(policy['expires_at']) is not int
-            or policy['expires_at'] < (int(time.time()) if now is None else now)):
+            or not ((policy['schema'] == 2 and policy['expires_at'] is None)
+                    or (type(policy['expires_at']) is int
+                        and policy['expires_at'] >= (int(time.time()) if now is None else now)))):
         raise ValueError('invalid or expired standing policy')
     selected = policy if policy['schema'] == 1 else release
     if (not isinstance(selected, dict) or not isinstance(selected.get('revision'), str)

@@ -36,7 +36,7 @@ class NamedBundleInstallerTests(TestCase):
                 subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'sign', '-n', namespace, '-f', str(keys[principal]), str(path)], check=True, capture_output=True)
                 sig.chmod(0o600)
             policy = guard/'standing-policy.json'
-            policy.write_text(json.dumps({'schema':2, 'max_records':5, 'expires_at':int(time.time())+300}))
+            policy.write_text(json.dumps({'schema':2, 'max_records':5, 'expires_at':None}))
             policy.chmod(0o600)
             sign(policy, 'owner', 'logbook-graph-policy')
             plan = {'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],'properties':{'project':'logbook','job_id':147}}], 'relationships':[], 'generated_at':'now'}
@@ -82,6 +82,9 @@ class NamedBundleInstallerTests(TestCase):
             sign(policy, 'owner', 'logbook-graph-policy')
             with patch('logbook.operator_bundle_bootstrap.trusted_parent'), self.assertRaisesRegex(ValueError, 'standing policy'):
                 install_named_bundle(payload, parent/('bundle-'+'c'*32), parent/('window-'+'c'*32), guard)
+            (guard/'approval.allowed_signers').unlink()
+            with self.assertRaises(OSError):
+                authorize_repair(request, plan, guard)
 
     def test_installed_named_command_cannot_use_legacy_installer_mode(self):
         from logbook.operator_bundle_bootstrap import main

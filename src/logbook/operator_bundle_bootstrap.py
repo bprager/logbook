@@ -171,7 +171,8 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
                 or set(policy) != ({'schema','revision','bundle_sha256','max_records','expires_at'}
                                    if policy['schema'] == 1 else {'schema','max_records','expires_at'})
                 or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
-                or type(policy['expires_at']) is not int or policy['expires_at'] < int(time.time())):
+                or not ((policy['schema'] == 2 and policy['expires_at'] is None)
+                        or (type(policy['expires_at']) is int and policy['expires_at'] >= int(time.time())))):
             raise ValueError('standing policy does not approve bundle')
         # The dispatcher runs the bundle as root, so a release signer can replace
         # the policy verifier. Do not activate separate release trust until the
