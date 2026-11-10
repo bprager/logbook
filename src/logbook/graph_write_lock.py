@@ -3,10 +3,13 @@
 import fcntl
 from pathlib import Path
 
+from logbook.processing_restart_guard import require_clear_guard
+
 
 class GraphWriteLock:
-    def __init__(self, processing_root: Path):
+    def __init__(self, processing_root: Path, *, allow_pending: bool = False):
         self.processing_root = processing_root
+        self.allow_pending = allow_pending
         self._file = None
 
     @property
@@ -25,6 +28,8 @@ class GraphWriteLock:
         lock = (self.processing_root / "graph-write.lock").open("a")
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if not self.allow_pending:
+                require_clear_guard(self.processing_root)
         except BaseException:
             lock.close()
             raise
