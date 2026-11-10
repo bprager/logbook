@@ -59,7 +59,7 @@ def confirmed_normal_outcome(request: dict) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-check", "named-stage", "named-preflight", "named-launch"}:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-check", "named-stage", "named-preflight", "named-launch", "named-cancel"}:
         raise ValueError("expected launch or status")
     request = json.load(sys.stdin)
     recovery = DockerRecovery(request["container_id"], request["pid"],
@@ -105,6 +105,10 @@ def main() -> None:
                     print('REJECTED')
                 else:
                     print('LAUNCHED')
+        elif action == 'named-cancel':
+            print('CANCELLED' if launcher.cancel_unstarted() else 'PENDING')
+        elif action in {'named-status', 'named-outcome'} and launcher.cancelled() is True:
+            print('RECOVERED' if action == 'named-status' else 'not-retained')
         elif action == 'named-offline':
             print(recover_named_graph_offline(request, recovery))
         elif action == 'named-authorize':

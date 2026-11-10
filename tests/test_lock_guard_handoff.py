@@ -11,6 +11,56 @@ from unittest.mock import Mock, patch
 
 
 class LockGuardHandoffTests(TestCase):
+    def test_holder_cancels_a_never_started_window_and_releases_guard(self):
+        from logbook.lock_guard_broker import hold_window
+        from logbook.processing_restart_guard import require_clear_guard
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = Mock(request={'unit':'logbook-graph-maintenance-'+'a'*32+'.service'})
+            remote.recovered.side_effect = [False, False, True]
+            remote.outcome.return_value = 'not-retained'
+            with patch('logbook.lock_guard_broker.time.monotonic', side_effect=[0, 31]), \
+                 patch('logbook.lock_guard_broker.time.sleep'):
+                hold_window(SimpleNamespace(processing_root=root), lambda request:remote,
+                            io.StringIO('{}\n'), io.StringIO())
+            remote.cancel_unstarted.assert_called_once()
+            require_clear_guard(root)
+
+    def test_real_holder_releases_locks_after_atomic_unstarted_cancellation(self):
+        import fcntl
+        from logbook.processing_restart_guard import require_clear_guard
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stage = root/'stage'
+            stage.mkdir()
+            script = """
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from logbook.graph_maintenance_launcher import DockerLaunch
+import logbook.lock_guard_broker as broker
+root = Path(sys.argv[1])
+launcher = DockerLaunch(SimpleNamespace(unit='fixture.service'), root/'stage', root/'worker', root/'recovery', 10)
+class Remote:
+    def __init__(self, request): self.request = request
+    def recovered(self): return launcher.cancelled()
+    def cancel_unstarted(self): return launcher.cancel_unstarted()
+    def outcome(self): return 'not-retained'
+clock = iter([0, 31])
+broker.time = SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda _: None)
+broker.hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout)
+"""
+            unit = 'logbook-graph-maintenance-'+'a'*32+'.service'
+            child = subprocess.run([sys.executable,'-c',script,str(root)],
+                                   input=json.dumps({'unit':unit})+'\n',
+                                   capture_output=True,text=True,timeout=10,check=True)
+            self.assertEqual(child.stdout, 'LOCKED\nARMED\n')
+            require_clear_guard(root)
+            self.assertEqual((stage/'setup.lock').read_bytes(), b'cancelled-before-start\n')
+            with (root/'pipeline.lock').open('a') as lock:
+                fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.assertFalse((stage/'worker-start').exists())
+
     def test_restricted_release_requires_matching_confirmed_recovery(self):
         from logbook.lock_guard_broker import hold_window
         from logbook.processing_restart_guard import arm_guard, require_clear_guard
@@ -128,6 +178,10 @@ hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout
         with patch('logbook.lock_guard_broker.subprocess.run', return_value=SimpleNamespace(returncode=1)):
             with self.assertRaises(ConnectionError):
                 remote.recovered()
+        with patch.object(remote, '_invoke', return_value='CANCELLED'):
+            self.assertTrue(remote.cancel_unstarted())
+        with patch.object(remote, '_invoke', return_value='PENDING'):
+            self.assertFalse(remote.cancel_unstarted())
         with patch.object(remote, '_invoke', return_value='unknown'):
             with self.assertRaises(RuntimeError):
                 remote.outcome()

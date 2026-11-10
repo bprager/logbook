@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 GUARD = Path('/var/lib/logbook-graph-guard')
-ACTIONS = {'named-check','named-stage','named-preflight','named-launch','named-status','named-outcome','named-offline','named-authorize'}
+ACTIONS = {'named-check','named-stage','named-preflight','named-launch','named-cancel','named-status','named-outcome','named-offline','named-authorize'}
 FIELDS = {'profile','boot_guard_service','boot_guard_dir','port','unit','private_dir','journal','worker',
           'recovery_worker','recovery_file','container_id','pid','seconds','job_id','revision','bundle_sha256','plan_sha256'}
 

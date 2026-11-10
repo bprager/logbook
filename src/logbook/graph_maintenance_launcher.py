@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import fcntl
 import os
+import stat
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable, Protocol, TypeVar
@@ -75,6 +77,32 @@ class DockerLaunch:
         self.timer = recovery.unit.removesuffix(".service") + "-recovery"
         self.deadline = 0.0
         self.after_schedule: Callable[[], None] | None = None
+
+    def cancelled(self) -> bool:
+        """Recognize only the private, atomic marker for a never-started window."""
+        try:
+            fd = os.open(self.lock_path, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            return False
+        try:
+            info = os.fstat(fd)
+            return (stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid()
+                    and info.st_mode & 0o077 == 0 and os.read(fd, 32) == b"cancelled-before-start\n"
+                    and not self.gate.exists())
+        finally:
+            os.close(fd)
+
+    def cancel_unstarted(self) -> bool:
+        """Atomically prevent a not-yet-started window; never stop a running one."""
+        with tempfile.NamedTemporaryFile(dir=self.private_dir, prefix=".cancel-", mode="w+b") as marker:
+            marker.write(b"cancelled-before-start\n")
+            marker.flush()
+            os.fsync(marker.fileno())
+            try:
+                os.link(marker.name, self.lock_path, follow_symlinks=False)
+            except FileExistsError:
+                return self.cancelled()
+        return True
 
     def preflight(self) -> None:
         """Check target and trusted files without creating a worker or fence."""

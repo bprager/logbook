@@ -146,6 +146,20 @@ class NamedGraphOperatorTests(TestCase):
             release_named_processing_guard(config,remote)
             self.assertFalse((root/'graph-maintenance.pending').exists())
 
+    def test_remote_cancel_marks_only_never_started_windows_recovered(self):
+        request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery'), \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('sys.stdout',new_callable=io.StringIO) as out:
+            launcher.return_value.cancel_unstarted.side_effect = [True, False]
+            launcher.return_value.cancelled.return_value = True
+            for action in ('named-cancel','named-cancel','named-status','named-outcome'):
+                with patch('sys.argv',['remote',action]), patch('sys.stdin',io.StringIO(json.dumps(request))):
+                    remote_main()
+            self.assertEqual(out.getvalue(),'CANCELLED\nPENDING\nRECOVERED\nnot-retained\n')
+
     def test_remote_named_status_and_outcome_require_verified_restart(self):
         request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',

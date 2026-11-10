@@ -32,7 +32,7 @@ class FixedRecovery:
         self.request = request
 
     def _invoke(self, action: str) -> str:
-        if action not in {'named-status', 'named-outcome'}:
+        if action not in {'named-status', 'named-outcome', 'named-cancel'}:
             raise ValueError('unsupported recovery query')
         command = shlex.join(['sudo', '-n', '/usr/local/libexec/logbook-repair-dispatcher', action])
         result = subprocess.run(
@@ -48,6 +48,9 @@ class FixedRecovery:
 
     def recovered(self) -> bool:
         return self._invoke('named-status') == 'RECOVERED'
+
+    def cancel_unstarted(self) -> bool:
+        return self._invoke('named-cancel') == 'CANCELLED'
 
     def outcome(self) -> str:
         result = self._invoke('named-outcome')
@@ -86,12 +89,15 @@ def hold_window(config, remote_factory, source, output) -> None:
             output.flush()
         except BrokenPipeError:
             pass
+        cancel_after = time.monotonic() + 30
         while True:
             try:
                 if remote.recovered():
                     remote.outcome()
                     clear_guard(config.processing_root, unit)
                     return
+                if time.monotonic() >= cancel_after:
+                    remote.cancel_unstarted()
             except Exception:
                 pass
             time.sleep(0.5)

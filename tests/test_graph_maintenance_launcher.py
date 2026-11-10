@@ -9,6 +9,59 @@ from logbook.graph_maintenance_recovery import DockerRecovery
 
 
 class GraphMaintenanceLauncherTests(unittest.TestCase):
+    def test_cancel_unstarted_window_prevents_a_late_launch(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recovery = Mock(unit='logbook-graph-maintenance-test.service')
+            launcher = DockerLaunch(recovery, root, root/'worker', root/'recovery', 10)
+            self.assertFalse(launcher.cancelled())
+            self.assertTrue(launcher.cancel_unstarted())
+            self.assertTrue(launcher.cancelled())
+            self.assertTrue(launcher.cancel_unstarted())
+            with patch.object(Path, 'stat', return_value=SimpleNamespace(st_uid=0, st_mode=0o700)):
+                with self.assertRaisesRegex(ValueError, 'directory is not fresh'):
+                    launcher.preflight()
+            self.assertFalse(launcher.gate.exists())
+            recovery.run.assert_not_called()
+
+    def test_cancel_cannot_override_an_already_started_window(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recovery = Mock(unit='logbook-graph-maintenance-test.service')
+            launcher = DockerLaunch(recovery, root, root/'worker', root/'recovery', 10)
+            (root/'setup.lock').touch()
+            self.assertFalse(launcher.cancel_unstarted())
+            self.assertFalse(launcher.cancelled())
+            self.assertFalse(launcher.gate.exists())
+            recovery.run.assert_not_called()
+
+    def test_launch_and_cancel_cannot_both_claim_the_window(self):
+        import os
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        for _ in range(30):
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                launcher = DockerLaunch(Mock(unit='logbook-graph-maintenance-test.service'),
+                                        root, root/'worker', root/'recovery', 10)
+                barrier = threading.Barrier(2)
+                def launch_claim():
+                    barrier.wait()
+                    try:
+                        fd = os.open(launcher.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    except FileExistsError:
+                        return False
+                    os.close(fd)
+                    return True
+                def cancel_claim():
+                    barrier.wait()
+                    return launcher.cancel_unstarted()
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    launch = pool.submit(launch_claim)
+                    cancel = pool.submit(cancel_claim)
+                    self.assertNotEqual(launch.result(), cancel.result())
+                    self.assertEqual(launcher.cancelled(), cancel.result())
+
     def test_guard_is_closed_only_after_recovery_timer_is_scheduled(self):
         recovery = Mock()
         recovery.unit = 'logbook-graph-maintenance-test.service'
