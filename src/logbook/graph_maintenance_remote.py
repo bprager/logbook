@@ -39,6 +39,21 @@ def verify_execution_marker(request: dict) -> Path:
     return executor
 
 
+def prepare_claimed_cancellation(request: dict, recovery: DockerRecovery, launcher: DockerLaunch) -> None:
+    """Reopen the named boot guard only when the exact target has no fence."""
+    launcher.verify_target()
+    listing = json.loads(recovery.run(['nsenter', '-t', str(recovery.pid), '-n',
+                                       'nft', '-j', 'list', 'tables']))
+    entries = listing['nftables']
+    if not isinstance(entries, list) or not any(isinstance(entry, dict) and 'metainfo' in entry for entry in entries):
+        raise RuntimeError('incomplete firewall listing')
+    if any(isinstance(entry, dict) and entry.get('table', {}).get('family') == 'inet'
+           and entry.get('table', {}).get('name') == recovery.table for entry in entries):
+        raise RuntimeError('maintenance fence remains')
+    verify_memgraph_binding(recovery)
+    MemgraphBootGuard(Path(request['boot_guard_dir']), recovery.run).allow()
+
+
 def confirmed_normal_outcome(request: dict) -> str:
     journal = Path(request['journal'])
     record = read_private_json(journal)
@@ -106,7 +121,9 @@ def main() -> None:
                 else:
                     print('LAUNCHED')
         elif action == 'named-cancel':
-            print('CANCELLED' if launcher.cancel_unstarted() else 'PENDING')
+            def prepare() -> None:
+                prepare_claimed_cancellation(request, recovery, launcher)
+            print('CANCELLED' if launcher.cancel_unstarted(prepare) else 'PENDING')
         elif action in {'named-status', 'named-outcome'} and launcher.cancelled() is True:
             print('RECOVERED' if action == 'named-status' else 'not-retained')
         elif action == 'named-offline':

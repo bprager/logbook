@@ -35,6 +35,92 @@ class GraphMaintenanceLauncherTests(unittest.TestCase):
             self.assertFalse(launcher.gate.exists())
             recovery.run.assert_not_called()
 
+    def test_cancel_claimed_window_requires_exclusive_lock_and_verified_safety(self):
+        import fcntl
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            launcher = DockerLaunch(Mock(unit='logbook-graph-maintenance-test.service'),
+                                    root, root/'worker', root/'recovery', 10)
+            launcher.lock_path.touch(mode=0o600)
+            check = Mock()
+            with launcher.lock_path.open('r') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertFalse(launcher.cancel_unstarted(check))
+                check.assert_not_called()
+            check.side_effect = ValueError('unsafe')
+            with self.assertRaisesRegex(ValueError, 'unsafe'):
+                launcher.cancel_unstarted(check)
+            self.assertFalse(launcher.cancelled())
+            check.side_effect = None
+            self.assertTrue(launcher.cancel_unstarted(check))
+            self.assertTrue(launcher.cancelled())
+
+    def test_cancel_claimed_window_rejects_untrusted_lock_and_changed_gate(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            launcher = DockerLaunch(Mock(unit='logbook-graph-maintenance-test.service'),
+                                    root, root/'worker', root/'recovery', 10)
+            launcher.lock_path.touch(mode=0o600)
+            launcher.lock_path.chmod(0o666)
+            with self.assertRaisesRegex(ValueError, 'untrusted setup lock'):
+                launcher.cancel_unstarted(lambda: None)
+            launcher.lock_path.chmod(0o600)
+            with self.assertRaisesRegex(RuntimeError, 'gate appeared'):
+                launcher.cancel_unstarted(lambda: launcher.gate.touch())
+            self.assertFalse(launcher.cancelled())
+
+    def test_cancel_claimed_window_fails_closed_on_partial_marker(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            launcher = DockerLaunch(Mock(unit='logbook-graph-maintenance-test.service'),
+                                    root, root/'worker', root/'recovery', 10)
+            launcher.lock_path.touch(mode=0o600)
+            with patch('logbook.graph_maintenance_launcher.os.write', return_value=1):
+                with self.assertRaisesRegex(RuntimeError, 'incomplete cancellation'):
+                    launcher.cancel_unstarted(lambda: None)
+            self.assertFalse(launcher.cancelled())
+
+    def test_cancel_claimed_window_accepts_concurrent_verified_cancellation(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            launcher = DockerLaunch(Mock(unit='logbook-graph-maintenance-test.service'),
+                                    root, root/'worker', root/'recovery', 10)
+            launcher.lock_path.touch(mode=0o600)
+            with patch.object(launcher, 'cancelled', side_effect=[False,True]):
+                self.assertTrue(launcher.cancel_unstarted(lambda: self.fail('already cancelled')))
+
+    def test_cancel_claimed_window_refuses_started_worker(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            launcher = DockerLaunch(Mock(unit='logbook-graph-maintenance-test.service'),
+                                    root, root/'worker', root/'recovery', 10)
+            launcher.lock_path.touch(mode=0o600)
+            launcher.gate.touch()
+            check = Mock()
+            self.assertFalse(launcher.cancel_unstarted(check))
+            check.assert_not_called()
+
+    def test_launcher_rejects_cancellation_between_open_and_lock(self):
+        import fcntl
+        from logbook.graph_maintenance_launcher import StartupRejected
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            launcher = DockerLaunch(Mock(unit='logbook-graph-maintenance-test.service'),
+                                    root, root/'worker', root/'recovery', 10)
+            real_flock = fcntl.flock
+            calls = []
+            def interleave(fd, operation):
+                if not calls:
+                    calls.append('launcher')
+                    self.assertTrue(launcher.cancel_unstarted(lambda: None))
+                return real_flock(fd, operation)
+            with patch.object(launcher, 'preflight'), \
+                 patch('logbook.graph_maintenance_launcher.fcntl.flock', side_effect=interleave), \
+                 patch('logbook.graph_maintenance_launcher.launch') as launch:
+                with self.assertRaisesRegex(StartupRejected, 'cancelled'):
+                    launcher.run_window()
+            launch.assert_not_called()
+
     def test_launch_and_cancel_cannot_both_claim_the_window(self):
         import os
         import threading
@@ -114,6 +200,32 @@ with patch.object(launcher, 'preflight'), patch('logbook.graph_maintenance_launc
                     parent.kill()
                     parent.wait()
                 parent.stderr.close()
+
+    def test_recovery_command_skips_a_cancelled_window(self):
+        import subprocess
+        import sys
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recovery_file = root/'recovery.py'
+            called = root/'recovery-called'
+            recovery_file.write_text(
+                'from pathlib import Path\n'
+                f'Path({str(called)!r}).touch()\n'
+                'class DockerRecovery:\n'
+                '    def __init__(self,*args): pass\n'
+                'def recover(*args,**kwargs): pass\n'
+            )
+            recovery = Mock(unit='logbook-graph-maintenance-test.service',
+                            container_id='a'*64,pid=1,port=7687)
+            launcher = DockerLaunch(recovery, root, root/'worker', recovery_file, 10)
+            command = launcher._recovery_command()[3:]
+            command[0] = sys.executable
+            launcher.lock_path.write_bytes(b'cancelled-before-start\n')
+            subprocess.run(command,check=True,timeout=10)
+            self.assertFalse(called.exists())
+            launcher.lock_path.write_bytes(b'')
+            subprocess.run(command,check=True,timeout=10)
+            self.assertTrue(called.exists())
 
     def test_guard_is_closed_only_after_recovery_timer_is_scheduled(self):
         recovery = Mock()

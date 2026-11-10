@@ -146,6 +146,42 @@ class NamedGraphOperatorTests(TestCase):
             release_named_processing_guard(config,remote)
             self.assertFalse((root/'graph-maintenance.pending').exists())
 
+    def test_claimed_cancellation_requires_matching_target_and_no_fence(self):
+        from logbook.graph_maintenance_remote import prepare_claimed_cancellation
+        recovery = Mock(pid=123, table='logbook_fixture')
+        launcher = Mock()
+        request = {'boot_guard_dir':'/var/lib/logbook-graph-guard'}
+        with patch('logbook.graph_maintenance_remote.verify_memgraph_binding') as binding, \
+             patch('logbook.graph_maintenance_remote.MemgraphBootGuard') as guard:
+            recovery.run.return_value = json.dumps({'nftables':[{'metainfo':{}},
+                                         {'table':{'family':'inet','name':'logbook_fixture'}}]})
+            with self.assertRaisesRegex(RuntimeError, 'fence'):
+                prepare_claimed_cancellation(request,recovery,launcher)
+            binding.assert_not_called()
+            guard.assert_not_called()
+            recovery.run.return_value = json.dumps({'nftables':[{'metainfo':{}}]})
+            prepare_claimed_cancellation(request,recovery,launcher)
+            launcher.verify_target.assert_called()
+            binding.assert_called_once_with(recovery)
+            guard.return_value.allow.assert_called_once()
+            recovery.run.return_value = json.dumps({'nftables':[]})
+            with self.assertRaisesRegex(RuntimeError, 'incomplete'):
+                prepare_claimed_cancellation(request,recovery,launcher)
+
+    def test_remote_cancel_invokes_claimed_window_safety_check(self):
+        request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
+                 'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',
+                 'boot_guard_service':'memgraph.service','boot_guard_dir':'/var/lib/logbook-graph-guard'}
+        with patch('logbook.graph_maintenance_remote.DockerRecovery') as recovery, \
+             patch('logbook.graph_maintenance_remote.DockerLaunch') as launcher, \
+             patch('logbook.graph_maintenance_remote.prepare_claimed_cancellation') as prepare, \
+             patch('sys.stdout',new_callable=io.StringIO) as out, \
+             patch('sys.argv',['remote','named-cancel']), patch('sys.stdin',io.StringIO(json.dumps(request))):
+            launcher.return_value.cancel_unstarted.side_effect = lambda check: check() or True
+            remote_main()
+            prepare.assert_called_once_with(request,recovery.return_value,launcher.return_value)
+            self.assertEqual(out.getvalue(),'CANCELLED\n')
+
     def test_remote_cancel_marks_only_never_started_windows_recovered(self):
         request={'container_id':'id','pid':1,'port':7697,'unit':'unit','private_dir':'/private',
                  'worker':'/worker','recovery_file':'/recovery','seconds':10,'profile':'named-graph',

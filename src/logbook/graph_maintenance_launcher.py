@@ -88,12 +88,12 @@ class DockerLaunch:
             info = os.fstat(fd)
             return (stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid()
                     and info.st_mode & 0o077 == 0 and os.read(fd, 32) == b"cancelled-before-start\n"
-                    and not self.gate.exists())
+                    and not os.path.lexists(self.gate))
         finally:
             os.close(fd)
 
-    def cancel_unstarted(self) -> bool:
-        """Atomically prevent a not-yet-started window; never stop a running one."""
+    def cancel_unstarted(self, prepare_claimed: Callable[[], None] | None = None) -> bool:
+        """Cancel an unstarted window only after exclusive, verified preparation."""
         with tempfile.NamedTemporaryFile(dir=self.private_dir, prefix=".cancel-", mode="w+b") as marker:
             marker.write(b"cancelled-before-start\n")
             marker.flush()
@@ -101,7 +101,33 @@ class DockerLaunch:
             try:
                 os.link(marker.name, self.lock_path, follow_symlinks=False)
             except FileExistsError:
-                return self.cancelled()
+                if self.cancelled():
+                    return True
+                if prepare_claimed is None:
+                    return False
+                fd = os.open(self.lock_path, os.O_RDWR | os.O_NOFOLLOW)
+                try:
+                    info = os.fstat(fd)
+                    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                        raise ValueError("untrusted setup lock")
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        return False
+                    if self.cancelled():
+                        return True
+                    if os.path.lexists(self.gate):
+                        return False
+                    prepare_claimed()
+                    if os.path.lexists(self.gate):
+                        raise RuntimeError("worker gate appeared during cancellation")
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    os.ftruncate(fd, 0)
+                    if os.write(fd, b"cancelled-before-start\n") != len(b"cancelled-before-start\n"):
+                        raise RuntimeError("incomplete cancellation marker")
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         return True
 
     def preflight(self) -> None:
@@ -125,6 +151,8 @@ class DockerLaunch:
         fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         with os.fdopen(fd, "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            if self.cancelled():
+                raise StartupRejected("repair window was cancelled")
             self.deadline = time.monotonic() + self.seconds
             original_run = self.recovery.run
             def run_with_setup_lock(*args, **kwargs):
@@ -156,6 +184,7 @@ class DockerLaunch:
 
     def _recovery_command(self) -> list[str]:
         code = ("import importlib.util,sys;from pathlib import Path;"
+                "Path(sys.argv[8]).read_bytes()==b'cancelled-before-start\\n' and sys.exit(0);"
                 "s=importlib.util.spec_from_file_location('recovery',sys.argv[1]);"
                 "m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
                 "m.recover(m.DockerRecovery(sys.argv[2],int(sys.argv[3]),int(sys.argv[4]),sys.argv[5],Path(sys.argv[7])),"
@@ -164,7 +193,7 @@ class DockerLaunch:
                 str(self.recovery_file), self.recovery.container_id, str(self.recovery.pid),
                 str(self.recovery.port), self.recovery.unit,
                 str(self.recovery_worker) if self.recovery_worker else "",
-                str(self.private_dir / "stopped.json")]
+                str(self.private_dir / "stopped.json"), str(self.lock_path)]
 
     def schedule_recovery(self) -> None:
         self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
