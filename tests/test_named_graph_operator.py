@@ -151,7 +151,7 @@ class NamedGraphOperatorTests(TestCase):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)
             request={'journal':str(root/'journal'),'private_dir':str(root),'profile':'named-graph',
-                     'container_id':'a'*64,'pid':123,'port':7697,'unit':'fixture'}
+                     'container_id':'a'*64,'pid':123,'port':7697,'unit':'logbook-graph-maintenance-test.service'}
             receipt=root/'journal.outcome'
             receipt.write_text(json.dumps({k:request[k] for k in ('container_id','pid','port','unit')} |
                                           {'batch':None,'outcome':'not-retained'}))

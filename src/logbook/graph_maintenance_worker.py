@@ -87,11 +87,15 @@ def write_outcome(journal: Path, request: dict, batch: str | None, outcome: str)
         os.close(directory)
 
 def verify_prestart(request: dict, private: Path) -> None:
-    """A stopped worker without a start gate or journal could not write a batch."""
+    """Require no journal or completion and proof if the worker was started."""
     journal = Path(request['journal'])
-    if any(os.path.lexists(path) for path in (private/'worker-start', journal,
-                                              journal.with_name(journal.name+'.complete'))):
+    if any(os.path.lexists(path) for path in (journal, journal.with_name(journal.name+'.complete'))):
         raise ValueError('pre-start recovery evidence conflicts')
+    if os.path.lexists(private/'worker-start'):
+        target = DockerRecovery(request['container_id'], request['pid'], request['port'],
+                                request['unit'], private/'stopped.json')
+        if target._proof_valid() is not True:
+            raise ValueError('pre-start recovery requires worker stop proof')
 
 
 def run_worker(action: str, request_file: Path) -> None:

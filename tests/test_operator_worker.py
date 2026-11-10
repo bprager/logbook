@@ -44,6 +44,25 @@ class OperatorWorkerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'pre-start'):
                     run_worker('recover',root/'request.json')
 
+    def test_started_worker_without_journal_requires_matching_stop_proof(self):
+        from logbook.graph_maintenance_recovery import DockerRecovery
+        from logbook.graph_maintenance_worker import verify_prestart
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            unit='logbook-graph-maintenance-test.service'
+            request={'journal':str(root/'journal'),'container_id':'a'*64,'pid':123,'port':7687,'unit':unit}
+            (root/'worker-start').touch()
+            with self.assertRaisesRegex(ValueError,'pre-start'):
+                verify_prestart(request,root)
+            recovery=DockerRecovery(request['container_id'],request['pid'],request['port'],unit,root/'stopped.json')
+            recovery._save_proof()
+            verify_prestart(request,root)
+            with self.assertRaisesRegex(ValueError,'pre-start'):
+                verify_prestart({**request,'pid':124},root)
+            (root/'journal.complete').touch()
+            with self.assertRaisesRegex(ValueError,'pre-start'):
+                verify_prestart(request,root)
+
     def test_worker_requires_root_and_fence_for_apply_and_recovery(self):
         from unittest.mock import MagicMock, patch
         from logbook.graph_maintenance_worker import run_worker
