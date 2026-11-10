@@ -93,6 +93,20 @@ broker.hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys
             remote.outcome.assert_called_once()
             require_clear_guard(root)
 
+    def test_release_is_idempotent_when_matching_recovery_is_confirmed(self):
+        from logbook.lock_guard_broker import hold_window
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unit = 'logbook-graph-maintenance-'+'a'*32+'.service'
+            remote = Mock(request={'unit':unit})
+            remote.recovered.return_value = True
+            remote.outcome.return_value = 'retained'
+            output = io.StringIO()
+            hold_window(SimpleNamespace(processing_root=root), lambda _:remote,
+                        io.StringIO(json.dumps({'release':{'unit':unit}})+'\n'),output)
+            self.assertEqual(output.getvalue(),'LOCKED\nRELEASED\n')
+            remote.outcome.assert_called_once()
+
     def test_restricted_release_uses_fixed_holder(self):
         from logbook.lock_guard_client import release_named_handoff, OPERATOR_KEY, COMMAND
         from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
@@ -299,6 +313,7 @@ hold_window(SimpleNamespace(processing_root=root), Remote, sys.stdin, sys.stdout
                 with self.assertRaisesRegex(ConnectionError,'stage failed'):
                     coordinate_named_handoff(remote,lambda:{'nodes':[]},timeout_seconds=3)
             self.assertNotEqual(processes[0].wait(timeout=5),0)
+            processes[0].stdout.close()
             self.assertFalse((root/'graph-maintenance.pending').exists())
             for name in ('pipeline.lock','graph-write.lock'):
                 with (root/name).open('a') as lock:

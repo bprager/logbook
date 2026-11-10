@@ -243,6 +243,16 @@ class NamedGraphOperatorTests(TestCase):
             authorize.assert_called_once()
             self.assertEqual(out.getvalue(),'STARTED\n')
 
+    def test_named_cancel_requires_expected_response(self):
+        from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
+        remote=NamedGraphMaintenance('host',Path('/key'),Path('/entry'),{})
+        with patch.object(remote,'invoke',side_effect=['CANCELLED','PENDING','invalid']):
+            self.assertTrue(remote.cancel_unstarted())
+            self.assertFalse(remote.cancel_unstarted())
+            with self.assertRaisesRegex(ConnectionError,'unexpected'):
+                remote.cancel_unstarted()
+        self.assertIn('named-cancel',remote._command('named-cancel'))
+
     def test_named_remote_and_local_reject_unconfirmed_results(self):
         from logbook.graph_maintenance_cross_host import NamedGraphMaintenance
         remote=NamedGraphMaintenance('host',Path('/key'),Path('/entry'),{})

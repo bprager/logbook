@@ -31,7 +31,7 @@ class SshMaintenance:
         return shlex.join(['sudo', '-n', '/usr/bin/python3', str(self.entrypoint), action])
 
     def invoke(self, action: str, payload: dict | None = None) -> str:
-        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-check", "named-stage", "named-preflight", "named-launch"}:
+        if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-check", "named-stage", "named-preflight", "named-launch", "named-cancel"}:
             raise ValueError("invalid remote action")
         command = self._command(action)
         try:
@@ -80,7 +80,7 @@ class NamedGraphMaintenance(SshMaintenance):
     """Bounded named graph launch and recovery commands."""
 
     def _command(self, action: str) -> str:
-        if action not in {'named-check','named-stage','named-preflight','named-launch','named-status','named-outcome','named-offline','named-authorize'}:
+        if action not in {'named-check','named-stage','named-preflight','named-launch','named-cancel','named-status','named-outcome','named-offline','named-authorize'}:
             raise ValueError('invalid named action')
         return shlex.join(['sudo','-n','/usr/local/libexec/logbook-repair-dispatcher',action])
 
@@ -108,6 +108,12 @@ class NamedGraphMaintenance(SshMaintenance):
             raise StartupRejected("remote startup rejected")
         if result != "LAUNCHED":
             raise ConnectionError("unexpected remote launch response")
+
+    def cancel_unstarted(self) -> bool:
+        result = self.invoke('named-cancel')
+        if result not in {'CANCELLED', 'PENDING'}:
+            raise ConnectionError('unexpected cancellation response')
+        return result == 'CANCELLED'
 
     def recovered(self) -> bool:
         return self.invoke("named-status") == "RECOVERED"

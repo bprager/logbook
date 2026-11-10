@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from logbook.graph_maintenance_launcher import with_logbook_lock_descriptors
 from logbook.named_repair_dispatcher import GUARD, validate_request_shape
-from logbook.processing_restart_guard import arm_guard, clear_guard, require_clear_guard
+from logbook.processing_restart_guard import GUARD as PENDING_GUARD, arm_guard, clear_guard, require_clear_guard
 from logbook.source_plan_broker import trusted_config
 
 ROOT = Path('/Users/bernd/VoiceIngest')
@@ -76,7 +76,8 @@ def hold_window(config, remote_factory, source, output) -> None:
             if not remote.recovered():
                 raise RuntimeError('recovery unconfirmed')
             remote.outcome()
-            clear_guard(config.processing_root, unit)
+            if os.path.lexists(config.processing_root / PENDING_GUARD):
+                clear_guard(config.processing_root, unit)
             output.write('RELEASED\n')
             output.flush()
             return

@@ -38,7 +38,12 @@ def main():
     elif os.geteuid() == pwd.getpwnam('logbook-plan-producer').pw_uid:
         from logbook.plan_producer import main as run
     elif os.geteuid() == pwd.getpwnam('logbook-repair-operator').pw_uid:
-        from logbook.repair_release_delivery import main as run
+        if len(sys.argv) == 1:
+            from logbook.repair_release_delivery import main as run
+        elif len(sys.argv) == 2 and sys.argv[1] == 'repair-cycle':
+            from logbook.repair_cycle import main as run
+        else:
+            raise ValueError('unsupported operator action')
     else:
         raise ValueError('unexpected producer account')
     run()
