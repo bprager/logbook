@@ -2686,6 +2686,8 @@ def _backup_run(
             ssh_identity_file=(
                 config.backup.ssh_identity_file if config.backup is not None else None
             ),
+            restricted_rsync=(config.backup.restricted_rsync if config.backup else False),
+            rsync_executable=(config.backup.rsync_executable if config.backup else "rsync"),
         )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"backup_error: {error}", file=sys.stderr)
@@ -2723,6 +2725,7 @@ def _backup_restore_drill(env_path: Path, backup_location: str) -> int:
             ssh_identity_file=(
                 config.backup.ssh_identity_file if config.backup is not None else None
             ),
+            rsync_executable=(config.backup.rsync_executable if config.backup else "rsync"),
         )
     except (ConfigError, OSError, ValueError, sqlite3.Error, subprocess.CalledProcessError) as error:
         print(f"restore_drill_error: {error}", file=sys.stderr)

@@ -90,3 +90,22 @@ restore_drill=status=ok integrity_check=ok schema_version=1 job_count=34
 raw_audio_files=0
 live_env_files=0
 ```
+
+## Restricted SSH transfer
+
+A server using `rrsync` can grant access only to its backup directory. On that
+server, the restricted directory is the SSH transfer root; configure Logbook
+with the dedicated identity, a compatible rsync executable, and the opt-in:
+
+```text
+LOGBOOK_BACKUP_ROOT=192.168.1.3:/
+LOGBOOK_BACKUP_SSH_IDENTITY_FILE=/Users/bernd/.ssh/odin-logbook-backup
+LOGBOOK_BACKUP_RESTRICTED_RSYNC=true
+LOGBOOK_BACKUP_RSYNC_EXECUTABLE=/opt/homebrew/bin/rsync
+```
+
+The restricted directory must already exist. In this mode Logbook does not
+request a remote shell command or delete remote files. Mimir's existing backup
+commands use this configuration. For a restore drill,
+use the backup ID relative to that restricted root, for example
+`192.168.1.3:/logbook-backup-YYYYMMDDTHHMMSSZ`.

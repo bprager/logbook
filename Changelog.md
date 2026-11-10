@@ -78,6 +78,7 @@ production version remains 1.2.3.
 - Prepare a persistent startup guard for the named Memgraph service; not activated.
 
 - Add an experimental durable processing stop marker for fixture repair recovery.
+- Allow the existing backup and restore commands to use a restricted Odin rsync identity without remote shell or delete permissions.
 
 - Preserve verified completed fixture repair batches across a graph-host restart.
 
