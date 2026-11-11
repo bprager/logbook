@@ -14,7 +14,8 @@ Validation: 21 focused gateway/guardian tests passed. The full local gate passed
 662 tests (21 skipped), Ruff, mypy, Markdown checks and the watcher build;
 changed executable-line coverage is 100% (7 lines). Read-only code review found
 no blocking issue. Full gate output: `/tmp/logbook-recovery-profile-gate.log`.
-Commit and PR references follow publication. Exact next:
+Implementation: `b43bc146b475d8588131ce843cad7297d7272ebe`;
+[PR #87](https://github.com/bprager/logbook/pull/87). Exact next:
 publish a fresh signed source release, include this profile and the exact source
 guardian permission in the pinned final installation, and verify actual role
 separation before fresh final severe-change approval. The previous `6788f52`
