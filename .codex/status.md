@@ -1,5 +1,15 @@
 # Status
 
+## Standalone policy validation correction — 2026-11-11 UTC
+
+Final package review found that PR #84's standalone named installer imported the
+new policy helper from the project package, which need not exist during install.
+The helper now lives in the standard-library-only installer and the shared module
+re-exports it. A copied installer runs its validator under Python `-I -S` without
+project imports. Thirty related tests passed. The earlier candidate was published
+but not activated; this correction must be released before protected installation.
+No production graph, source, owner policy or executor changed.
+
 ## Oversized source-plan recovery candidate — 2026-11-11 UTC
 
 Implemented bounded progress for complete signed source plans: 500 records per

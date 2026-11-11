@@ -2,6 +2,11 @@
 
 ## November 11 oversized graph source plans
 
+Package follow-up: the shared validator is now owned by the standalone installer,
+with a regression check using an isolated interpreter and disabled site packages.
+This corrects a project-import dependency in the first published candidate before
+any activation. Verify publication of this correction before executor staging.
+
 The candidate preserves each complete producer-signed source plan and selects
 at most 500 missing records for each independently recoverable window. Policy
 versions 1 and 2 retain their existing full-plan limits; version 3 explicitly

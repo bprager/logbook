@@ -23,6 +23,9 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Keep shared graph-policy validation inside the standalone standard-library-only
+  installer so named bundle installation needs no installed project package.
+
 - Process oversized signed graph source plans through successive create-only
   windows of at most 500 records. A new explicitly signed version-3 policy may
   allow source plans up to 5,000 records; existing policy limits are unchanged.

@@ -112,7 +112,7 @@ policy approval remain required before production activation.
 
 ## Changed files and evidence
 
-- `src/logbook/graph_repair_policy.py`: shared, versioned policy bounds.
+- `src/logbook/graph_repair_policy.py`: re-exports shared, versioned policy bounds.
 - `src/logbook/standing_graph_policy.py`: validate the explicit source-plan bound.
 - `src/logbook/operator_bundle_bootstrap.py`: preserve protected installation.
 - `src/logbook/named_repair_dispatcher.py`: keep version 3 on the fixed executor.
@@ -122,3 +122,16 @@ policy approval remain required before production activation.
   and guarded-repair files cover these paths.
 - `Changelog.md`, `.codex/backlog.md`, and `.codex/status.md` record capability and
   the next action. Git review supplies the exact source diff.
+
+## Standalone installer correction
+
+Review after the initial signed publication found that the standalone named
+installer imported the new shared helper through `logbook`, which may not be
+installed when it runs. Production repair remained inactive. Move ownership of
+the helper and constants into the standard-library-only installer, and re-export
+them from the shared module. This avoids duplicate policy parsing and preserves
+the standalone entry point. A regression test copies only that installer into a
+temporary directory and executes its version-3 validation with Python `-I -S`,
+which disables project paths and site packages. The test failed before the fix
+and passed afterward; 30 related installer/policy tests passed. Require the
+corrected signed release before protected installation or activation.
