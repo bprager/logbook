@@ -12,12 +12,11 @@ target is the `saga` NFS mount exposed on `odin`:
 192.168.1.3:/mnt/saga/Napoleon/logbook-backups
 ```
 
-The live `.env` config uses:
-
-```text
-LOGBOOK_BACKUP_ROOT=192.168.1.3:/mnt/saga/Napoleon/logbook-backups
-LOGBOOK_BACKUP_SSH_IDENTITY_FILE=/Users/bernd/.ssh/id_rsa_odin
-```
+The live `.env`, deployable SOPS settings and `.env.example` use the dedicated
+restricted identity and transfer-root configuration shown under
+[Restricted SSH transfer](#restricted-ssh-transfer). The physical NFS target
+above remains behind that server-side restriction. The dedicated key and rsync
+executable must be provisioned before using those settings.
 
 Avoid the bare `odin` SSH alias for this job; local name resolution can point it
 at `prager.homeip.net` rather than the LAN host.
