@@ -1,5 +1,21 @@
 # Status
 
+## Restricted backup deployment settings — 2026-11-11 UTC
+
+The tracked SOPS settings still selected the old administrator SSH identity and
+unrestricted backup root, despite the already verified restricted live `.env`.
+Aligned all four backup settings with that live configuration: dedicated key,
+restricted root, restricted transfer mode and compatible rsync executable.
+SOPS integrity verification passed; all other decrypted settings are unchanged.
+The existing configuration loader selects the same four values. No decrypted
+secret was printed or written to a temporary file. Runtime `.env` and running
+services are unchanged. The old administrator key has not been revoked.
+
+Next integrate this configuration correction and update the matching tracked
+settings in the live checkout without touching its existing local edits, then
+continue administrator/source separation and pending final graph-policy approval.
+The signed repair source code remains unchanged; production repair is inactive.
+
 ## Standalone policy validation correction — 2026-11-11 UTC
 
 Final package review found that PR #84's standalone named installer imported the

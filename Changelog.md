@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Align SOPS deployment backup settings with the verified restricted runtime identity, root and rsync mode so redeployment does not restore administrator-key backup access.
+
 - Keep shared graph-policy validation inside the standalone standard-library-only
   installer so named bundle installation needs no installed project package.
 
