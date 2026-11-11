@@ -6,7 +6,11 @@ The tracked SOPS settings still selected the old administrator SSH identity and
 unrestricted backup root, despite the already verified restricted live `.env`.
 Aligned all four backup settings with that live configuration: dedicated key,
 restricted root, restricted transfer mode and compatible rsync executable.
-SOPS integrity verification passed; all other decrypted settings are unchanged.
+Also corrected the tracked 24-hour retention value to match the live and required
+168-hour gate. SOPS integrity verification passed; every other decrypted setting
+is unchanged. Updated the sample and backup guide to use the same restricted
+configuration. The full commit gate passed 659 tests (21 skipped), lint, types,
+Markdown and UI build; changed-line coverage has no changed executable lines.
 The existing configuration loader selects the same four values. No decrypted
 secret was printed or written to a temporary file. Runtime `.env` and running
 services are unchanged. The old administrator key has not been revoked.
