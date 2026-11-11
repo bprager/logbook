@@ -10,6 +10,45 @@ from logbook.standing_graph_policy import authorize_repair
 
 
 class StandingGraphPolicyTests(TestCase):
+    def test_unknown_policy_shapes_never_expand_authority(self):
+        from logbook.graph_repair_policy import policy_plan_limit
+        for policy in (None, [], {}, {'schema': True}, {'schema': 4},
+                       {'schema': 3, 'max_batch_records': 500,
+                        'max_plan_records': True, 'expires_at': None}):
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                policy_plan_limit(policy)
+
+    def test_large_source_plan_requires_explicit_new_policy(self):
+        from logbook.standing_graph_policy import check_plan
+        job = 'logbook:job:000147'
+        plan = {'nodes': [
+            {'id': job, 'labels': ['LogbookJob'], 'properties': {}},
+            *[{'id': job + f':segment:{i:04d}', 'labels': ['TranscriptSegment'],
+               'properties': {}} for i in range(600)],
+        ], 'relationships': [], 'generated_at': 'fixture'}
+        digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        release = {'revision': 'a' * 40, 'bundle_sha256': 'c' * 64}
+        request = {**release, 'job_id': 147, 'plan_sha256': digest}
+        legacy = {'schema': 2, 'max_records': 500, 'expires_at': None}
+        with self.assertRaisesRegex(ValueError, 'exceeds policy'):
+            check_plan(request, plan, legacy, release=release)
+        policy = {'schema': 3, 'max_batch_records': 500, 'max_plan_records': 1000,
+                  'expires_at': None}
+        check_plan(request, plan, policy, release=release)
+        link = {'id': job + ':has-segment:0000', 'type': 'HAS_SEGMENT',
+                'start_id': job, 'end_id': job + ':segment:0000', 'properties': {}}
+        for duplicate in ({**plan, 'nodes': plan['nodes'] + plan['nodes'][1:2]},
+                          {**plan, 'relationships': [link, link]}):
+            duplicate_digest = hashlib.sha256(json.dumps(
+                duplicate, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            with self.assertRaisesRegex(ValueError, 'duplicate plan'):
+                check_plan({**request, 'plan_sha256': duplicate_digest}, duplicate, policy, release=release)
+        for changed in ({'max_plan_records': 600}, {'max_plan_records': 5001},
+                        {'max_batch_records': 501}, {'max_batch_records': True},
+                        {'expires_at': 99}):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                check_plan(request, plan, {**policy, **changed}, release=release, now=100)
+
     def test_durable_policy_allows_releases_without_renewal_but_legacy_still_expires(self):
         from logbook.standing_graph_policy import check_plan
         plan = {'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],'properties':{'project':'logbook','job_id':147}}],

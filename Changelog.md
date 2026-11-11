@@ -23,6 +23,11 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Process oversized signed graph source plans through successive create-only
+  windows of at most 500 records. A new explicitly signed version-3 policy may
+  allow source plans up to 5,000 records; existing policy limits are unchanged.
+  This candidate does not activate production repair.
+
 - Check required graph uniqueness constraints before arming a named repair guard.
 
 - Allow the restricted repair operator to release a matching guard only after confirmed recovery.

@@ -108,7 +108,7 @@ def reject_uncontained_policy(*, protected: bool = False) -> None:
         raise ValueError('policy too large')
     document = json.loads(content)
     if (not isinstance(document, dict) or type(document.get('schema')) is not int
-            or document['schema'] != (2 if protected else 1)):
+            or document['schema'] not in ((2, 3) if protected else (1,))):
         raise ValueError('separate release authority is disabled')
 
 

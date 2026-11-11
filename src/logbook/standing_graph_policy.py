@@ -8,25 +8,18 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import time
 from pathlib import Path
 
 from logbook.guarded_graph_repair import _is_canonical_node, _is_canonical_relationship
 from logbook.memory_graph import MemoryNode, MemoryRelationship
 from logbook.named_graph_approval import _private_bytes, plan_digest
 from logbook.operator_bundle_bootstrap import approved_release
+from logbook.graph_repair_policy import policy_plan_limit
 
 
 def check_plan(request: dict, plan: dict, policy: dict, *, now: int | None = None,
                release: dict | None = None) -> None:
-    if (type(policy.get('schema')) is not int or policy['schema'] not in (1, 2)
-            or set(policy) != ({'schema', 'revision', 'bundle_sha256', 'max_records', 'expires_at'}
-                               if policy['schema'] == 1 else {'schema', 'max_records', 'expires_at'})
-            or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
-            or not ((policy['schema'] == 2 and policy['expires_at'] is None)
-                    or (type(policy['expires_at']) is int
-                        and policy['expires_at'] >= (int(time.time()) if now is None else now)))):
-        raise ValueError('invalid or expired standing policy')
+    limit = policy_plan_limit(policy, now=now)
     selected = policy if policy['schema'] == 1 else release
     if (not isinstance(selected, dict) or not isinstance(selected.get('revision'), str)
             or not re.fullmatch(r'[a-f0-9]{40}', selected['revision'])
@@ -41,7 +34,7 @@ def check_plan(request: dict, plan: dict, policy: dict, *, now: int | None = Non
     if (set(plan) != {'nodes', 'relationships', 'generated_at'}
             or not isinstance(plan['nodes'], list) or not isinstance(plan['relationships'], list)
             or not isinstance(plan['generated_at'], str)
-            or not 1 <= len(plan['nodes']) + len(plan['relationships']) <= policy['max_records']):
+            or not 1 <= len(plan['nodes']) + len(plan['relationships']) <= limit):
         raise ValueError('repair plan exceeds policy')
     job_prefix = f'logbook:job:{job:06d}'
     shared = ('logbook:topic:', 'logbook:person:', 'logbook:project:')
@@ -50,6 +43,9 @@ def check_plan(request: dict, plan: dict, policy: dict, *, now: int | None = Non
     try:
         nodes = [MemoryNode(n['id'], tuple(n['labels']), n['properties']) for n in plan['nodes']]
         relationships = [MemoryRelationship(**r) for r in plan['relationships']]
+        if (len({node.id for node in nodes}) != len(nodes)
+                or len({rel.id for rel in relationships}) != len(relationships)):
+            raise ValueError('duplicate plan identifiers')
         if (any(not isinstance(n.id, str) or not isinstance(n.properties, dict)
                 or not _is_canonical_node(n) or not (in_scope(n.id) or n.id.startswith(shared))
                 for n in nodes)
@@ -79,7 +75,7 @@ def authorize_repair(request: dict, plan: dict, guard: Path, *, now: int | None 
         if not isinstance(policy, dict):
             raise ValueError('standing policy must be an object')
         release = None
-        if policy.get('schema') == 2:
+        if policy.get('schema') in (2, 3):
             unit = request.get('unit')
             match = re.fullmatch(r'logbook-graph-maintenance-([a-f0-9]{32})\.service', unit) if isinstance(unit, str) else None
             if match is None:

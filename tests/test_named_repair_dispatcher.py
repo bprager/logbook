@@ -92,6 +92,12 @@ class NamedRepairDispatcherTests(TestCase):
             self.assertFalse(bad.exists())
 
     def test_dispatch_selects_protected_executor_for_version_two_policy(self):
+        self._dispatch_selects_protected_executor(2)
+
+    def test_large_plan_policy_dispatch_still_selects_protected_executor(self):
+        self._dispatch_selects_protected_executor(3)
+
+    def _dispatch_selects_protected_executor(self, schema):
         import io
         import json
         import sys
@@ -100,7 +106,7 @@ class NamedRepairDispatcherTests(TestCase):
         from logbook.named_repair_dispatcher import main
         with TemporaryDirectory() as tmp:
             guard = Path(tmp)
-            (guard/'standing-policy.json').write_text(json.dumps({'schema':2}))
+            (guard/'standing-policy.json').write_text(json.dumps({'schema':schema}))
             request = self.request()
             request['recovery_file'] = str(guard/'executor/logbook/graph_maintenance_recovery.py')
             raw = json.dumps(request).encode()

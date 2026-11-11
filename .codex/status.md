@@ -1,5 +1,21 @@
 # Status
 
+## Oversized source-plan recovery candidate — 2026-11-11 UTC
+
+Implemented bounded progress for complete signed source plans: 500 records per
+window, with nodes before relationships, and a fresh read of remaining graph
+records each time. New policy version 3 explicitly permits larger source plans
+up to 5,000 records; earlier signed policy meanings remain unchanged. All 71
+currently absent source plans passed candidate structural validation; discarded
+status remained present in all three relevant plans. Two isolated database tests
+passed, including three writes of 500/500/201 records and reverse-order rollback.
+The local gate passed 658 tests (21 skipped), lint, type checks, the watcher build,
+and 100% changed-line coverage. No production graph or owner policy changed.
+Next integrate and verify the signed
+release, then resolve independent authority and qualify the protected executor
+upgrade before fresh final policy approval. Evidence:
+`docs/plans/2026-11-11-oversized-graph-source-plans.md`.
+
 ## Permanent recorder-helper signing — 2026-10-22
 
 Added optional permanent certificate signing to `launchd-render`. The identity is

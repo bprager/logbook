@@ -9,6 +9,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 
 from logbook.named_graph_approval import plan_digest  # noqa: E402
 from logbook.standing_graph_policy import check_plan  # noqa: E402
+from logbook.graph_repair_policy import MAX_BATCH_RECORDS, MAX_PLAN_RECORDS  # noqa: E402
 
 
 def incomplete_plan(session: Any, job_id: int, plan: dict) -> bool:
@@ -16,7 +17,9 @@ def incomplete_plan(session: Any, job_id: int, plan: dict) -> bool:
     identity = '0'*40
     digest = '0'*64
     request = {'job_id':job_id,'revision':identity,'bundle_sha256':digest,'plan_sha256':plan_digest(plan)}
-    policy = {'schema':2,'max_records':500,'expires_at':None}
+    # Structural validation of signed evidence is read-only, not write authority.
+    policy = {'schema':3, 'max_batch_records':MAX_BATCH_RECORDS,
+              'max_plan_records':MAX_PLAN_RECORDS, 'expires_at':None}
     check_plan(request,plan,policy,release={'revision':identity,'bundle_sha256':digest})
     nodes = {node['id']:node for node in plan['nodes']}
     relations = {rel['id']:rel for rel in plan['relationships']}

@@ -1,5 +1,22 @@
 # Backlog
 
+## November 11 oversized graph source plans
+
+The candidate preserves each complete producer-signed source plan and selects
+at most 500 missing records for each independently recoverable window. Policy
+versions 1 and 2 retain their existing full-plan limits; version 3 explicitly
+separates a source-plan limit (at most 5,000) from the fixed 500-record write
+limit. All 71 currently absent job plans passed structural validation; the
+largest contained 3,923 records. Two isolated Memgraph tests passed, including
+three-window recovery and reversal with unrelated data preserved.
+
+This is not deployed or activated. Next integrate and verify the signed release,
+then qualify independent source/administrator authority and the exact protected
+executor transition before requesting the fresh owner policy approval. Existing
+discard semantics are preserved: discarded jobs retain their status, notes and
+audio; no source job was reactivated. See
+`docs/plans/2026-11-11-oversized-graph-source-plans.md`.
+
 ## November 5 graph repair safety
 
 An experimental bounded repair/rollback module has isolated graph tests. It is

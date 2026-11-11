@@ -2,6 +2,19 @@ from unittest import TestCase
 
 
 class PartialGraphDiscoveryTests(TestCase):
+    def test_discovers_large_source_plan_without_a_write_permission(self):
+        from logbook.partial_graph_discovery import incomplete_plan
+        job = 'logbook:job:000001'
+        nodes = [{'id': job, 'labels': ['LogbookJob'], 'properties': {}}] + [
+            {'id': job + f':segment:{i:04d}', 'labels': ['TranscriptSegment'], 'properties': {}}
+            for i in range(600)]
+        plan = {'nodes': nodes, 'relationships': [], 'generated_at': 'fixture'}
+        class Session:
+            def run(self, query, **kwargs):
+                return [] if 'MATCH (a)-[r]' in query else [
+                    {'id': n['id'], 'labels': n['labels']} for n in nodes]
+        self.assertFalse(incomplete_plan(Session(), 1, plan))
+
     def test_signed_discovery_checks_graph_binding_and_result(self):
         from unittest.mock import patch
         from logbook.partial_graph_discovery import discover
