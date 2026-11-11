@@ -14,6 +14,14 @@ from logbook.operator_bundle_bootstrap import install_named_bundle
 
 class NamedBundleInstallerTests(TestCase):
     def test_release_installs_only_with_owner_approved_executor_and_matching_dispatcher(self):
+        self._release_installs_with_protected_executor(
+            {'schema': 2, 'max_records': 5, 'expires_at': None})
+
+    def test_large_plan_policy_keeps_owner_executor_and_release_signature_checks(self):
+        self._release_installs_with_protected_executor(
+            {'schema': 3, 'max_batch_records': 500, 'max_plan_records': 1000, 'expires_at': None})
+
+    def _release_installs_with_protected_executor(self, standing_policy):
         from logbook.operator_bundle_bootstrap import install_protected_executor
         from logbook.named_graph_approval import plan_digest
         from logbook.standing_graph_policy import authorize_repair
@@ -51,7 +59,7 @@ class NamedBundleInstallerTests(TestCase):
                                 'graph_maintenance_recovery.py':b'fixed','graph_maintenance_worker.py':b'fixed'})
             sign('executor-approval.json',{'schema':1,'revision':'a'*40,'bundle_sha256':hashlib.sha256(executor).hexdigest(),
                                            'expires_at':int(time.time())+300},'owner','logbook-repair-executor')
-            sign('standing-policy.json',{'schema':2,'max_records':5,'expires_at':None},'owner','logbook-graph-policy')
+            sign('standing-policy.json',standing_policy,'owner','logbook-graph-policy')
             release = archive({'graph_maintenance_remote.py':b'untrusted'})
             sign('release.json',{'schema':1,'revision':'b'*40,'bundle_sha256':hashlib.sha256(release).hexdigest()},
                  'release','logbook-repair-release')
@@ -99,6 +107,11 @@ class NamedBundleInstallerTests(TestCase):
                 self.assertTrue((bundle/'logbook/graph_maintenance_remote.py').is_file())
                 plan = {'nodes':[{'id':'logbook:job:000147','labels':['LogbookJob'],'properties':{'project':'logbook','job_id':147}}],
                         'relationships':[],'generated_at':'now'}
+                if standing_policy['schema'] == 3:
+                    plan['nodes'].extend(
+                        {'id': f'logbook:job:000147:segment:{i:04d}',
+                         'labels': ['TranscriptSegment'], 'properties': {}}
+                        for i in range(600))
                 request = {'job_id':147,'revision':'b'*40,'bundle_sha256':hashlib.sha256(release).hexdigest(),
                            'unit':'logbook-graph-maintenance-'+'a'*32+'.service','plan_sha256':plan_digest(plan)}
                 with self.assertRaisesRegex(ValueError,'invalid repair unit'):

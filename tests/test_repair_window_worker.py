@@ -4,11 +4,46 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from logbook.graph_write_lock import GraphWriteLock
-from logbook.memory_graph import MemoryGraphPlan, MemoryGraphRepairPlan, MemoryNode
+from logbook.memory_graph import MemoryGraphPlan, MemoryGraphRepairPlan, MemoryNode, MemoryRelationship
 from logbook.repair_window_worker import repair_in_window
 
 
 class RepairWindowWorkerTests(unittest.TestCase):
+    def test_large_plan_advances_in_bounded_windows_with_nodes_before_links(self):
+        job = 'logbook:job:000123'
+        nodes = (MemoryNode(job, ('LogbookJob',), {}),) + tuple(
+            MemoryNode(job + f':segment:{i:04d}', ('TranscriptSegment',), {})
+            for i in range(600))
+        links = tuple(MemoryRelationship(id=job + f':has-segment:{i:04d}', type='HAS_SEGMENT',
+                                        start_id=job, end_id=node.id, properties={})
+                      for i, node in enumerate(nodes[1:]))
+        plan = MemoryGraphPlan(nodes, links, 'fixture')
+        present_nodes, present_links = set(), set()
+        sizes = []
+        def fresh(_plan, _client):
+            return MemoryGraphRepairPlan(plan, (), (),
+                tuple(n for n in nodes if n.id not in present_nodes),
+                tuple(r for r in links if r.id not in present_links), (), ())
+        def apply(_session, _lock, repair, _journal):
+            size = len(repair.missing_nodes) + len(repair.missing_relationships)
+            self.assertLessEqual(size, 500)
+            self.assertGreater(size, 0)
+            present_nodes.update(n.id for n in repair.missing_nodes)
+            for rel in repair.missing_relationships:
+                self.assertIn(rel.start_id, present_nodes)
+                self.assertIn(rel.end_id, present_nodes)
+            present_links.update(r.id for r in repair.missing_relationships)
+            sizes.append(size)
+            return 'batch'
+        with TemporaryDirectory() as tmp, GraphWriteLock(Path(tmp)) as lock, \
+             patch('logbook.repair_window_worker.build_memory_graph_repair_plan', side_effect=fresh), \
+             patch('logbook.repair_window_worker.apply_one_batch', side_effect=apply):
+            for i in range(3):
+                repair_in_window(plan, Mock(), Mock(), lock, Path(tmp) / str(i))
+        self.assertEqual(sizes, [500, 500, 201])
+        self.assertEqual(present_nodes, {n.id for n in nodes})
+        self.assertEqual(present_links, {r.id for r in links})
+
     def test_refreshes_graph_before_applying_and_leaves_recovery_record(self):
         plan = MemoryGraphPlan((MemoryNode('logbook:job:000123', ('LogbookJob',), {}),), (), 'now')
         refreshed = MemoryGraphRepairPlan(plan, (), (), plan.nodes, (), (), ())

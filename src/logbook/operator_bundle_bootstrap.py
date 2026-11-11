@@ -297,15 +297,9 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
         raise ValueError('standing policy signature invalid')
     try:
         policy = json.loads(content)
-        if (not isinstance(policy, dict) or type(policy.get('schema')) is not int
-                or policy['schema'] not in (1, 2)
-                or set(policy) != ({'schema','revision','bundle_sha256','max_records','expires_at'}
-                                   if policy['schema'] == 1 else {'schema','max_records','expires_at'})
-                or type(policy['max_records']) is not int or not 1 <= policy['max_records'] <= 500
-                or not ((policy['schema'] == 2 and policy['expires_at'] is None)
-                        or (type(policy['expires_at']) is int and policy['expires_at'] >= int(time.time())))):
-            raise ValueError('standing policy does not approve bundle')
-        if policy['schema'] == 2:
+        from logbook.graph_repair_policy import policy_plan_limit
+        policy_plan_limit(policy)
+        if policy['schema'] in (2, 3):
             verify_protected_executor(guard)
         release_dir = guard if policy['schema'] == 1 else current_release_directory(guard)
         release = policy if policy['schema'] == 1 else approved_release(guard, release_dir)
@@ -321,7 +315,7 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
     try:
         install_bundle(data,destination,release['bundle_sha256'])
         installed = True
-        if policy['schema'] == 2:
+        if policy['schema'] in (2, 3):
             for name in ('release.json', 'release.json.sig'):
                 content = _private_file(release_dir/name)
                 fd = os.open(destination/name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

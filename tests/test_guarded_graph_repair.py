@@ -80,6 +80,48 @@ class GuardedRepairIntegrationTests(unittest.TestCase):
         self.assertEqual(self.session.run('MATCH (n {id:$id}) RETURN count(n) AS n',
                                           id=self.foreign).single()['n'], 1)
 
+    def test_large_source_plan_progresses_and_each_window_can_be_reversed(self):
+        from logbook.config import MemgraphConfig
+        from logbook.memory_graph import Neo4jMemgraphClient
+        from logbook.repair_window_worker import repair_in_window
+        constraints = list(self.session.run('SHOW CONSTRAINT INFO'))
+        if not any(r['label'] == 'TranscriptSegment' and r['properties'] == ['id']
+                   and r['constraint type'] == 'unique' for r in constraints):
+            self.session.run('CREATE CONSTRAINT ON (n:TranscriptSegment) ASSERT n.id IS UNIQUE').consume()
+        nodes = (self.node,) + tuple(
+            MemoryNode(self.node_id + f':segment:{i:04d}', ('TranscriptSegment',),
+                       {'project': 'logbook'}) for i in range(600))
+        links = tuple(MemoryRelationship(id=self.node_id + f':has-segment:{i:04d}',
+                        type='HAS_SEGMENT', start_id=self.node_id, end_id=node.id,
+                        properties={'project': 'logbook'})
+                      for i, node in enumerate(nodes[1:]))
+        plan = MemoryGraphPlan(nodes, links, 'fixture')
+        batches = []
+        try:
+            for i, expected in enumerate((500, 500, 201)):
+                client = Neo4jMemgraphClient(MemgraphConfig(os.environ['LOGBOOK_TEST_GRAPH_URI']))
+                batch = repair_in_window(plan, client, self.session, self.lock,
+                                         Path(self.tmp.name) / f'window-{i}.json')
+                batches.append(batch)
+                manifest = self.session.run('MATCH (n:LogbookRepairBatch {id:$id}) '
+                                            'RETURN n.nodes AS nodes, n.relationships AS links',
+                                            id=batch).single()
+                self.assertEqual(len(manifest['nodes']) + len(manifest['links']), expected)
+                rollback_batch(self.session, batch, lock=self.lock, verify_only=True)
+            self.assertEqual(self.session.run('MATCH (n) WHERE n.id IN $ids RETURN count(n) AS n',
+                                              ids=[n.id for n in nodes]).single()['n'], 601)
+            self.assertEqual(self.session.run('MATCH ()-[r]->() WHERE r.id IN $ids RETURN count(r) AS n',
+                                              ids=[r.id for r in links]).single()['n'], 600)
+            for batch in reversed(batches):
+                rollback_batch(self.session, batch, lock=self.lock)
+            self.assertEqual(self.session.run('MATCH (n) WHERE n.id IN $ids RETURN count(n) AS n',
+                                              ids=[n.id for n in nodes]).single()['n'], 0)
+        finally:
+            self.session.run('MATCH (n) WHERE n.id IN $ids DETACH DELETE n',
+                             ids=[n.id for n in nodes]).consume()
+            self.session.run('MATCH (n:LogbookRepairBatch) WHERE n.id IN $ids DELETE n',
+                             ids=batches).consume()
+
     def test_relationship_only_batch_can_be_rolled_back(self):
         self.session.run('CREATE (:LogbookJob {id:$id, project:"logbook"})',
                          id=self.node_id).consume()
