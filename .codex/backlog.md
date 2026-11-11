@@ -1,5 +1,27 @@
 # Backlog
 
+## Recovery-only source guardian gateway — 2026-11-11 UTC
+
+Implemented a separate `--recovery` profile in the existing standalone gateway.
+The existing source-holder key can be bound to only status, outcome and safe
+cancellation; it cannot receive/install releases, discover, stage, authorize or
+launch repairs. Unknown profile arguments fail before execution. Default operator
+behavior remains compatible. This closes the code prerequisite for replacing the
+source key's inactive diagnostic mapping without sharing the protected operator
+identity. No live key, sudo rule, owner policy, executor or graph was changed.
+
+Validation: 21 focused gateway/guardian tests passed. The full local gate passed
+662 tests (21 skipped), Ruff, mypy, Markdown checks and the watcher build;
+changed executable-line coverage is 100% (7 lines). Read-only code review found
+no blocking issue. Full gate output: `/tmp/logbook-recovery-profile-gate.log`.
+Implementation: `b43bc146b475d8588131ce843cad7297d7272ebe`;
+[PR #87](https://github.com/bprager/logbook/pull/87). Exact next:
+publish a fresh signed source release, include this profile and the exact source
+guardian permission in the pinned final installation, and verify actual role
+separation before fresh final severe-change approval. The previous `6788f52`
+package remains historical staged evidence and must not be treated as containing
+this new profile. See `docs/recovery-only-gateway.md`.
+
 ## Restricted backup deployment settings — 2026-11-11 UTC
 
 The tracked SOPS settings still selected the old administrator SSH identity and

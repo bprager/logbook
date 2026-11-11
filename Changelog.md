@@ -23,6 +23,10 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Add a recovery-only SSH gateway profile for the source lock holder, permitting
+  only status, outcome and safe cancellation without sharing repair-launch rights.
+  The profile remains pending controlled installation.
+
 - Align SOPS deployment settings, the example and backup guide with the verified restricted runtime backup identity, root and rsync mode; preserve the required 168-hour audio retention value during redeployment.
 
 - Keep shared graph-policy validation inside the standalone standard-library-only
