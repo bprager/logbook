@@ -39,6 +39,24 @@ class TrustedPathTests(unittest.TestCase):
 
 
 class OperatorBundleTests(unittest.TestCase):
+    def test_standalone_installer_validates_policy_without_project_imports(self):
+        import subprocess
+        import sys
+        from logbook import operator_bundle_bootstrap
+        with TemporaryDirectory() as tmp:
+            standalone = Path(tmp) / 'standalone-installer.py'
+            standalone.write_bytes(Path(operator_bundle_bootstrap.__file__).read_bytes())
+            code = (
+                'import runpy,sys; '
+                'ns=runpy.run_path(sys.argv[1]); '
+                'print(ns["policy_plan_limit"]({"schema":3,"max_batch_records":500,'
+                '"max_plan_records":5000,"expires_at":None}))'
+            )
+            result = subprocess.run([sys.executable, '-I', '-S', '-c', code, str(standalone)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), '5000')
+
     def test_executor_install_requires_owner_signature_and_exact_bytes(self):
         import json
         import subprocess
