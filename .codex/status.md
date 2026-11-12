@@ -13,6 +13,8 @@ Read-only review found no blocker. Actual unstarted recovery returned not-retain
 and the source guard cleared. No protected executor was patched or approval
 forged. Exact next: publish the canonical signed candidate and prepare its narrow
 owner-approved protected executor update; then continue actual bounded repair.
+Implementation: `5a54e0b3bc0b6218ae9ef6c0c38753bb10424de9`;
+[PR #88](https://github.com/bprager/logbook/pull/88).
 Gate log: /tmp/logbook-whole-plan-preflight-gate.log.
 
 ## Recovery-only source guardian gateway — 2026-11-11 UTC
