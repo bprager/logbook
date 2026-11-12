@@ -11,8 +11,12 @@ the existing 240-second start deadline cover recovery execution. Manual guarded
 retry reuses those properties with nonblocking service submission. No repair is
 restarted, and target/stop-proof/drain/fence checks, standing policy and role
 permissions are unchanged. Focused 22 launcher tests passed, including the new
-bounded-watchdog regression; full commit gate/publication and actual isolated
-systemd validation are next. Production remains on the old executor with a
+bounded-watchdog regression; full required commit gate passed (lint, types,
+documentation, watcher build, suite and changed-line coverage). systemd 255
+unit-parser verification passed in the ordinary VM; a real restart-success/limit
+smoke is a blocking owner-update preflight, not yet runtime proof. Implementation
+`4abfec22920cac518948cf198e679fef92900fe7`, [PR #89](https://github.com/bprager/logbook/pull/89).
+Signed publication and protected-update staging are next. Production remains on the old executor with a
 pending guarded recovery; do not clear it or claim readiness. After validation,
 publish the signed one-file launcher correction and prepare exact owner recovery
 plus executor replacement, then continue routine repair without per-window
