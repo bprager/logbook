@@ -1,5 +1,23 @@
 # Status
 
+## Bounded recovery watchdog retries — 2026-11-12 UTC
+
+Actual protected repair retained additional windows but again left recovery
+unconfirmed. The existing watchdog runs only once; an owner-triggered guarded
+retry of the earlier incident succeeded with zero active transactions. Reuse
+systemd failure restart for that same recovery command, bounded to three total
+starts over the unit lifetime, five seconds apart. Explicit oneshot type makes
+the existing 240-second start deadline cover recovery execution. Manual guarded
+retry reuses those properties with nonblocking service submission. No repair is
+restarted, and target/stop-proof/drain/fence checks, standing policy and role
+permissions are unchanged. Focused 22 launcher tests passed, including the new
+bounded-watchdog regression; full commit gate/publication and actual isolated
+systemd validation are next. Production remains on the old executor with a
+pending guarded recovery; do not clear it or claim readiness. After validation,
+publish the signed one-file launcher correction and prepare exact owner recovery
+plus executor replacement, then continue routine repair without per-window
+intervention. See `docs/recovery-watchdog-retries.md`.
+
 ## Complete-plan schema preflight bound — 2026-11-12 UTC
 
 Actual protected repair retained two jobs, then stopped before writing job 125:
