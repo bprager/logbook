@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Check complete repair plans against the shared 5,000-record bound during read-only schema preflight; retain the separate 500-record write batch limit.
+
 - Add a recovery-only SSH gateway profile for the source lock holder, permitting
   only status, outcome and safe cancellation without sharing repair-launch rights.
   The profile remains pending controlled installation.

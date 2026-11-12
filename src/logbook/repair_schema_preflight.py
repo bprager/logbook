@@ -8,11 +8,12 @@ from typing import Any
 
 from logbook.guarded_graph_repair import _is_canonical_node
 from logbook.memory_graph import MemoryNode
+from logbook.graph_repair_policy import MAX_PLAN_RECORDS
 
 
 def check_schema(session: Any, plan: dict) -> None:
     raw_nodes = plan.get('nodes')
-    if not isinstance(raw_nodes, list) or len(raw_nodes) > 500:
+    if not isinstance(raw_nodes, list) or len(raw_nodes) > MAX_PLAN_RECORDS:
         raise ValueError('bounded repair nodes required')
     nodes = []
     for raw in raw_nodes:
