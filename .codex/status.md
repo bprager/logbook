@@ -1,5 +1,20 @@
 # Status
 
+## Complete-plan schema preflight bound — 2026-11-12 UTC
+
+Actual protected repair retained two jobs, then stopped before writing job 125:
+its 574-node/1,221-relationship source plan is within signed v3 policy but the
+read-only schema check retained an obsolete 500-node bound. Reuse the shared
+MAX_PLAN_RECORDS (5,000) for this check; write batches remain 500 and policy is
+unchanged. The 574-node regression failed before the fix and passes afterward;
+above-limit refusal remains covered. Full quality gate passed 663 tests (21
+skipped), Ruff, mypy, Markdown and watcher build; changed-line coverage is 100%.
+Read-only review found no blocker. Actual unstarted recovery returned not-retained
+and the source guard cleared. No protected executor was patched or approval
+forged. Exact next: publish the canonical signed candidate and prepare its narrow
+owner-approved protected executor update; then continue actual bounded repair.
+Gate log: /tmp/logbook-whole-plan-preflight-gate.log.
+
 ## Recovery-only source guardian gateway — 2026-11-11 UTC
 
 Implemented a separate `--recovery` profile in the existing standalone gateway.
