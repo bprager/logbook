@@ -15,6 +15,18 @@ from logbook.graph_write_lock import GraphWriteLock
 
 T = TypeVar("T")
 
+# A failed drain keeps the fence. Retry that same recovery at most three times;
+# infinity bounds total starts, including attempts separated by long timeouts.
+RECOVERY_PROPERTIES = (
+    '--property=Type=oneshot',
+    '--property=RemainAfterExit=yes',
+    '--property=TimeoutStartSec=240s',
+    '--property=Restart=on-failure',
+    '--property=RestartSec=5s',
+    '--property=StartLimitIntervalSec=infinity',
+    '--property=StartLimitBurst=3',
+)
+
 
 class StartupRejected(ValueError):
     """Validation rejected startup before any remote state was changed."""
@@ -198,8 +210,8 @@ class DockerLaunch:
     def schedule_recovery(self) -> None:
         self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
                            "--on-active=" + str(self.seconds) + "s",
-                           "--timer-property=AccuracySec=1ms", "--property=RemainAfterExit=yes",
-                           "--property=TimeoutStartSec=240s", *self._recovery_command()])
+                           "--timer-property=AccuracySec=1ms", *RECOVERY_PROPERTIES,
+                           *self._recovery_command()])
         if self.after_schedule is not None:
             self.after_schedule()
 
@@ -221,8 +233,8 @@ class DockerLaunch:
                 raise RuntimeError("recovery service is still active")
             if state == "failed":
                 self.recovery.run(["systemctl", "reset-failed", service])
-            self.recovery.run(["systemd-run", "--quiet", "--unit=" + self.timer,
-                               "--property=RemainAfterExit=yes", "--property=TimeoutStartSec=240s",
+            self.recovery.run(["systemd-run", "--quiet", "--no-block", "--unit=" + self.timer,
+                               *RECOVERY_PROPERTIES,
                                *self._recovery_command()])
 
     def install_fence(self) -> None:

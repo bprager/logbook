@@ -23,6 +23,8 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Retry the existing fenced recovery watchdog on failure at most three times; enforce its 240-second execution deadline without restarting the repair or weakening transaction-drain checks.
+
 - Check complete repair plans against the shared 5,000-record bound during read-only schema preflight; retain the separate 500-record write batch limit.
 
 - Add a recovery-only SSH gateway profile for the source lock holder, permitting

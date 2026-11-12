@@ -227,6 +227,21 @@ with patch.object(launcher, 'preflight'), patch('logbook.graph_maintenance_launc
             subprocess.run(command,check=True,timeout=10)
             self.assertTrue(called.exists())
 
+    def test_watchdog_retries_are_bounded_without_restarting_the_repair(self):
+        recovery = Mock()
+        recovery.unit = 'logbook-graph-maintenance-test.service'
+        launcher = DockerLaunch(recovery, Path('/tmp/window'), Path('/tmp/worker'), Path('/tmp/recovery'), 120)
+        launcher.schedule_recovery()
+        command = recovery.run.call_args.args[0]
+        self.assertIn('--property=Restart=on-failure', command)
+        self.assertIn('--property=RestartSec=5s', command)
+        self.assertIn('--property=StartLimitIntervalSec=infinity', command)
+        self.assertIn('--property=StartLimitBurst=3', command)
+        self.assertIn('--property=RemainAfterExit=yes', command)
+        self.assertIn('--property=TimeoutStartSec=240s', command)
+        self.assertEqual(command[-1], str(launcher.lock_path))
+        self.assertIn('--on-active=120s', command)
+
     def test_guard_is_closed_only_after_recovery_timer_is_scheduled(self):
         recovery = Mock()
         recovery.unit = 'logbook-graph-maintenance-test.service'
@@ -352,6 +367,12 @@ with patch.object(launcher, 'preflight'), patch('logbook.graph_maintenance_launc
                 launcher.retry_recovery()
             self.assertTrue(any('reset-failed' in c.args[0] for c in recovery.run.call_args_list))
             self.assertTrue(any('systemd-run' in c.args[0] for c in recovery.run.call_args_list))
+            command = next(c.args[0] for c in recovery.run.call_args_list if 'systemd-run' in c.args[0])
+            self.assertIn('--no-block', command)
+            self.assertIn('--property=Type=oneshot', command)
+            self.assertIn('--property=Restart=on-failure', command)
+            self.assertIn('--property=StartLimitIntervalSec=infinity', command)
+            self.assertIn('--property=StartLimitBurst=3', command)
 
     def test_operator_retry_rejects_untrusted_recovery_file(self):
         with TemporaryDirectory() as tmp:
