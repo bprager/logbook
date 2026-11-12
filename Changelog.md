@@ -26,6 +26,8 @@ production version remains 1.2.3.
 - Block ordinary processing and graph writes while a graph repair remains unresolved.
 - Isolate nested Git test commands from the commit hook environment.
 
+- Separate Grafana monitoring errors and missing data from confirmed Logbook service conditions, preserve recovery notifications, and use safe literal annotations with a neutral delivery-rule title.
+
 - Allow the existing backup and restore commands to use a restricted Odin rsync identity without remote shell or delete permissions.
 
 - Preserve verified completed fixture repair batches across a graph-host restart.
