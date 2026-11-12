@@ -1,5 +1,33 @@
 # Backlog
 
+## Applied bounded-retry executor and ongoing reconciliation — 2026-11-12 UTC
+
+Owner installed signed sequence8 executor74a069ec on Odin after actual counter
+smokes proved two-start success and three-start terminal failure. Existing retained
+recovery was finalized through normal outcome/binding/positive-startup checks;
+old executor/approval backups retained. Standing policy and permissions unchanged.
+Routine signed delivery accepted74a069ec. Fjolsvidr PR377 records implementation,
+owner receipts, failures and actual runtime. Sixteen fixed repair windows have
+returned retained so far. First external supervisor64007 stopped before a source
+LOCKED handshake; current source contention was observed in the recorder pipeline.
+After that process ended, the existing guarded pending path returned not-retained
+for unstarted work. No force unlock, cleanup or reclassification. Sequential
+supervisor88084 now continues with a nonblocking readiness probe before calls;
+installed lock/authorization checks remain mandatory. Latest live source snapshot
+was271 jobs/221 graph jobs, one new arrival awaiting owner review and zero cleanup-
+eligible unreviewed. Its audio and review note exist. Counts are separate snapshots,
+not final identifier reconciliation. Setup approval expiry is installation-only;
+normal installed-executor verification retains signature/digest checking without
+periodic re-signing.
+
+Exact next: supervise existing88084, never start another concurrent loop; at scan
+completion compare current identifiers/classifications and retained extra records,
+confirm recovery/guard/health, record truthful outcome and final audit. No owner
+key action currently required. Full reconciliation/readiness remains pending.
+Evidence: [Fjolsvidr PR #377](https://github.com/bprager/Fjolsvidr/pull/377) and
+`docs/evidence/developmental-partnership/bounded-retry-runtime-2026-11-12/` there.
+This supersedes earlier awaiting-publication/installation next actions below.
+
 ## Bounded recovery watchdog retries — 2026-11-12 UTC
 
 Actual protected repair retained additional windows but again left recovery
