@@ -1,5 +1,21 @@
 # Status
 
+## Current — batch verified; post-stop volume check still refuses recovery
+
+PR97/f45aa4e merged9c5134b; publisher43431670801 passed, machine-only delivery
+returned RELEASE_READY9c5134b. Under the proven18GiB/2CPU restore capacity the
+worker reached its retained verification result, then the post-stop exclusive
+volume check failed: fixture volume remains in use. No offline receipt or main
+restart was permitted. Do not bypass this check or stop an unknown consumer.
+
+Current branch fix/offline-volume-release-check adds bounded read-only consumer
+name/state diagnostics on that exact refusal, at most3 containers/2000 chars each.
+Regression first reproduced missing diagnostics; safety still refuses. Exact next:
+required gate, signed routine delivery, one pending attempt to identify the actual
+consumer; correct only the demonstrated coordination cause. No owner action,
+policy/permission/resource change.132 earlier windows/current outcome unconfirmed,
+main graph unavailable and source guard retained. Readiness/reconciliation pending.
+
 ## Current — reuse the proven full-database restore capacity
 
 PR96/607280c delivered automatically (sequence15). Its bounded recorder now retains
