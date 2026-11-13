@@ -1,32 +1,38 @@
 # Backlog
 
-## Applied bounded-retry executor and ongoing reconciliation — 2026-11-12 UTC
+## Current recovery hold — 2026-11-13 01:04 UTC
 
-Owner installed signed sequence8 executor74a069ec on Odin after actual counter
-smokes proved two-start success and three-start terminal failure. Existing retained
-recovery was finalized through normal outcome/binding/positive-startup checks;
-old executor/approval backups retained. Standing policy and permissions unchanged.
-Routine signed delivery accepted74a069ec. Fjolsvidr PR377 records implementation,
-owner receipts, failures and actual runtime. Sixteen fixed repair windows have
-returned retained so far. First external supervisor64007 stopped before a source
-LOCKED handshake; current source contention was observed in the recorder pipeline.
-After that process ended, the existing guarded pending path returned not-retained
-for unstarted work. No force unlock, cleanup or reclassification. Sequential
-supervisor88084 now continues with a nonblocking readiness probe before calls;
-installed lock/authorization checks remain mandatory. Latest live source snapshot
-was271 jobs/221 graph jobs, one new arrival awaiting owner review and zero cleanup-
-eligible unreviewed. Its audio and review note exist. Counts are separate snapshots,
-not final identifier reconciliation. Setup approval expiry is installation-only;
-normal installed-executor verification retains signature/digest checking without
-periodic re-signing.
+Signed sequence8 executor74a069ec is installed. Standing policy and permissions
+remain unchanged.110 actual repair windows returned retained. Last valid service
+snapshot at00:11 UTC matched271 source/271 graph jobs; graph health still drift,
+one new arrival awaiting ordinary owner review, zero cleanup-eligible unreviewed.
+Full current node/link/property reconciliation is not yet proven.
 
-Exact next: supervise existing88084, never start another concurrent loop; at scan
-completion compare current identifiers/classifications and retained extra records,
-confirm recovery/guard/health, record truthful outcome and final audit. No owner
-key action currently required. Full reconciliation/readiness remains pending.
-Evidence: [Fjolsvidr PR #377](https://github.com/bprager/Fjolsvidr/pull/377) and
-`docs/evidence/developmental-partnership/bounded-retry-runtime-2026-11-12/` there.
-This supersedes earlier awaiting-publication/installation next actions below.
+Current supervisor48339 is terminal: cycle89 timed out after441.988sec total,
+waiting390sec for independent source holder16943. Existing fixed pending checks
+returned recovery-pending through01:04 UTC; source guard and holder remain.
+The installed watchdog permits three starts capped at240sec each. Its actual
+protected service state is not exposed through the limited pending response;
+no terminal-watchdog cause is inferred. No new repair loop, forced marker release,
+service restart, policy change or owner signing was performed.
+
+Exact next on Mimir: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-watchdog-74a069e/inspect-current-recovery.sh`.
+This prepared, shell-checked script reads only exact pending worker/recovery unit
+state and logs through the protected recovery login. Owner must privately unlock
+that SSH login because automation cannot read those logs. It requests no approval
+signature and starts no repair/retry. Inspect output, recover only this pending
+window through existing verified paths, then finish all current identifiers,
+classifications, extra-record preservation and guard/health checks before readiness.
+Do not ask for a generic proceed or repeat strategic approval.
+
+Fjolsvidr draft [PR377](https://github.com/bprager/Fjolsvidr/pull/377) contains actual
+receipts and `bounded-retry-runtime-2026-11-12/` evidence. The distinct coordinator
+failure is recorded in the existing private outcome ledger as
+`operator-task.188f049b542185bfccf509e36ef72b6a7d423ac328d08a0f3caa02be23462e44`;
+replay/fresh read passed, operator-reported, benefit missing, no runtime authority.
+Existing source implementation gate:664 tests passed/21 skipped, lint/types/docs/
+watcher build/changed-line coverage passed. This update changes status only.
+This supersedes earlier next actions below.
 
 ## Bounded recovery watchdog retries — 2026-11-12 UTC
 
