@@ -51,9 +51,19 @@ pending call subsequently returned retained; main graph query succeeded and the
 normal source holder released both locks. See PR95–99 and Fjolsvidr's
 delegated-recovery-2026-11-13 evidence. No force-start or guard bypass was used.
 
-Full record reconciliation and production readiness remain pending. Receipt-bound
-recovery is distinct from those outcomes. A new bounded repair loop is running;
-no continuous database availability is claimed during guarded maintenance windows.
+The later full comparison verifies all271 current source jobs,31428 required
+nodes and93655 required links, with zero missing or conflicting records and
+zero projected-property differences. PR100 corrected read-only discovery of
+large existing jobs; signed sequence19 installed automatically. The existing
+source-owner writer refreshed only248 existing nodes/304 verified fields.
+All28 surplus nodes/2135 links remain unchanged; their producer identity is
+unestablished. Count-health still reports this preserved surplus as drift.
+Running application health reports API, SQLite, Odin and Memgraph allok.
+Source guard is absent, locks free and repair loops terminal. Current-source
+reconciliation/recovery qualification is verified; broader independent benefit
+and a complete account of graph history are not claimed. See Fjolsvidr's
+final delegated-recovery-2026-11-13 evidence. No owner intervention is pending
+for this gap; routine operation continues within the existing standing policy.
 
 ## Evidence
 

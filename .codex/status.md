@@ -1,5 +1,46 @@
 # Status
 
+## Current — source reconciliation verified; routine maintenance requires no owner intervention
+
+Logbook PR100/code8f5885d mergedcd4a07211b3a4cd8e0a476e421c05922ca6ae795.
+Signed publisher43444960681 passed; actual machine-only delivery installed
+sequence19/digestc58543033ceb65564c411d2a01d89d53488a8726b400f13d49b41395c992dd7b
+on both hosts without owner signature/login/admin prompt. Standing policy4,
+500writes/window and5000records/repair-plan remain. Read-only large-job discovery
+now validates bounded pages without applying the write-plan size restriction.
+The new regression failed then passed; required684-test gate/21skipped,
+100% changed-line coverage, lint/types/docs/build and focused review passed.
+
+The resumed loops retained23+4 further repair windows and reached scan-complete.
+A source-locked full MCP comparison now verifies271 jobs,31428 required nodes
+and93655 required links, zero missing records/duplicates/type/endpoint conflicts
+and zero projected-property differences. A bounded existing source-owner writer
+refreshed304 verified fields on248 existing nodes; exact before/after comparison
+proves no node/label/relationship insertion/deletion or other property change.
+Both source projection and graph counts stayed stable during the comparisons.
+
+All28 extra nodes/2135 extra links are unchanged and preserved:3 superseded
+note routes and2132 pre-existing transcript-entity connections. Their producing
+identity is not established. Normal count-health truthfully remains drift solely
+for this surplus; it is not a missing-current-data warning. Actual running service
+observer reports API/SQLite/Odin/Memgraph allok; worker HTTP200 healthy/ready.
+Source guard absent, both source locks available, all repair supervisors terminal.
+The current source-projection/recovery qualification gap is closed; no claim that
+all graph history is explained or that independent improvement is measured.
+
+Actual final local ledger ebc97b9c passed replay/fresh-read/previous-record integrity;
+its automatic event review isdone, all17 eventsdone, schedule remainsdisabled.
+Origin owner-requested/applicationobserved; intended outcome/benefit not inferred,
+no new runtime authority. Severe-only signing preference is already synced through
+Memgraph and both local mirrors. Earlier owner commands/approval requests are satisfied.
+
+Exact next: ordinary operation under current standing authority. No repair loop
+or additional owner action is pending for this gap. Monitor the existing service
+and receipts; preserve surplus history and keep its count drift visible. Request
+owner intervention only for an actual policy/trust/permission/authority exception.
+Fjolsvidr final evidence: delegated-recovery-2026-11-13/assessment.md. Earlier
+next-action entries below are historical and superseded.
+
 ## Current — full comparison found remaining differences; read-only limit corrected
 
 The sole repair loop stopped safely at cycle69 after23 retained windows, before
