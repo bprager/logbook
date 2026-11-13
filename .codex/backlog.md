@@ -1,5 +1,24 @@
 # Backlog
 
+## Current — exact Docker removal race identified and corrected
+
+PR98/cbdabdc merged5f2556d; publisher43432774530 passed and automatic delivery
+returned RELEASE_READY5f2556d (sequence17). Actual diagnostics show the sole
+reported consumer is this exact temporary recovery container, status removing,
+Running=false. Database startup and retained batch verification already pass;
+Docker stop returns before asynchronous --rm releases its mounts.
+
+Branch fix/wait-for-owned-recovery-removal waits at most10 one-second intervals
+only for the exact owned container in removing/false state, then still requires
+an empty volume consumer list. Other/active consumers refuse immediately. If
+removal wins the ps/inspect race, only a fresh empty consumer list permits success;
+inspection/daemon errors never imply absence. Tests cover disappearance, exact
+removal wait, other/active refusal and the bounded deadline. No policy, permissions,
+resources, receipt or startup-gate changes. Exact next: required gate/review,
+signed automatic delivery and pending recovery; confirm real receipt, guarded
+restart and normal source-holder release before continuing reconciliation. No
+owner interaction is required;132 prior windows/current final outcome unconfirmed.
+
 ## Current — batch verified; post-stop volume check still refuses recovery
 
 PR97/f45aa4e merged9c5134b; publisher43431670801 passed, machine-only delivery

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
@@ -40,17 +41,30 @@ def stop_offline_container(recovery, name: str) -> None:
             raise
 
 
-def ensure_volume_unused(recovery, volume: str, context: str = "") -> None:
-    consumers = recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).split()
-    if consumers:
+def ensure_volume_unused(recovery, volume: str, context: str = "", *, departing_name: str | None = None) -> None:
+    for attempt in range(11):
+        consumers = recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).split()
+        if not consumers:
+            return
         diagnostics = []
         for identifier in consumers[:3]:
             try:
                 details = recovery.run(['docker', 'inspect', '--format',
                                         '{{.Name}} {{.State.Status}} {{.State.Running}}', identifier])
             except subprocess.CalledProcessError as error:
+                # Removal can complete between ps and inspect. Require fresh
+                # positive proof that the entire volume has no consumers.
+                if not recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
+                    return
                 details = 'inspect failed: '+str(error)
             diagnostics.append({'container':identifier,'state':details[:2000]})
+        # Docker may return from stop before --rm has finished releasing mounts.
+        # Wait only for our exact already-stopped container; never ignore other consumers.
+        departing = (departing_name is not None and len(consumers) == 1
+                     and diagnostics[0]['state'].strip() == '/'+departing_name+' removing false')
+        if departing and attempt < 10:
+            time.sleep(1)
+            continue
         raise ValueError('fixture volume in use '+context+': '+json.dumps(diagnostics))
 
 
@@ -240,7 +254,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
                 raise ValueError('fixture rollback outcome unconfirmed')
         finally:
             stop_offline_container(recovery, name)
-        ensure_volume_unused(recovery, volume, 'after stopping '+name)
+        ensure_volume_unused(recovery, volume, 'after stopping '+name, departing_name=name)
         _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(), 'outcome':result, 'batch':batch})
         return result
 

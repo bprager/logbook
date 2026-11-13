@@ -134,6 +134,27 @@ class FixtureOfflineTests(unittest.TestCase):
             self.assertEqual(commands[5][:3], ['docker', 'stop', '--time'])
             self.assertFalse((root/'start-allowed').exists())
 
+    def test_waits_only_for_the_exact_stopped_removing_container(self):
+        from logbook.fixture_offline_recovery import ensure_volume_unused
+        recovery = Mock()
+        recovery.run.side_effect = ['id', '/owned removing false\n', '']
+        with patch('logbook.fixture_offline_recovery.time.sleep') as sleep:
+            ensure_volume_unused(recovery, 'logbook-fixture-data', departing_name='owned')
+            sleep.assert_called_once_with(1)
+        recovery.run.side_effect = ['id', subprocess.CalledProcessError(1, ['docker', 'inspect']), '']
+        ensure_volume_unused(recovery, 'logbook-fixture-data', departing_name='owned')
+        for state in ('/other removing false', '/owned running true'):
+            recovery.run.side_effect = ['id', state]
+            with patch('logbook.fixture_offline_recovery.time.sleep') as sleep:
+                with self.assertRaisesRegex(ValueError, 'in use'):
+                    ensure_volume_unused(recovery, 'logbook-fixture-data', departing_name='owned')
+                sleep.assert_not_called()
+        recovery.run.side_effect = ['id', '/owned removing false'] * 11
+        with patch('logbook.fixture_offline_recovery.time.sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'in use'):
+                ensure_volume_unused(recovery, 'logbook-fixture-data', departing_name='owned')
+            self.assertEqual(sleep.call_count, 10)
+
     def test_post_stop_volume_consumer_is_reported_without_releasing_guard(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -222,7 +243,7 @@ class FixtureOfflineTests(unittest.TestCase):
                     responses = ['', 'id', '321 true none', mount, 'unknown', '']
                 else:
                     responses = ['', 'id', '321 true none', mount, 'rolled-back', '', 'still-running',
-                                 subprocess.CalledProcessError(1, ['docker', 'inspect'])]
+                                 subprocess.CalledProcessError(1, ['docker', 'inspect']), 'still-running']
                 recovery.run.side_effect = responses
                 with patch('logbook.fixture_offline_recovery.boot_id', return_value='boot-two'), \
                      patch('logbook.fixture_offline_recovery.FixtureBootGuard') as guard:
