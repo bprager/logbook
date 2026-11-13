@@ -29,7 +29,7 @@ class NamedGraphRecoveryTests(TestCase):
             with patch('logbook.fixture_offline_recovery.NAMED_GUARD_DIR', root), self.assertRaises(ValueError):
                 record_named_graph_storage(request, recovery)
 
-    @patch("logbook.fixture_offline_recovery.offline_memory_limit", return_value="4g")
+    @patch("logbook.fixture_offline_recovery.offline_memory_limit", return_value="18g")
     def test_named_recovery_rejects_unverified_receipt(self, _memory):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)
@@ -55,9 +55,9 @@ class NamedGraphRecoveryTests(TestCase):
                     'rolled-back','','']
                 self.assertEqual(recover_named_graph_offline(request,recovery),'rolled-back')
                 command = recovery.run.call_args_list[1].args[0]
-                self.assertIn('--memory=4g',command)
-                self.assertIn('--memory-swap=4g',command)
-                self.assertIn('--cpus=1',command)
+                self.assertIn('--memory=18g',command)
+                self.assertIn('--memory-swap=18g',command)
+                self.assertIn('--cpus=2',command)
                 self.assertIn('--storage-recovery-thread-count=1',command)
                 self.assertIn('--log-level=INFO',command)
                 self.assertIn('--network=none',command)
@@ -72,7 +72,7 @@ class NamedGraphRecoveryTests(TestCase):
                 with self.assertRaises(FileNotFoundError):
                     authorize_named_graph_restart(request,Mock())
 
-    @patch("logbook.fixture_offline_recovery.offline_memory_limit", return_value="4g")
+    @patch("logbook.fixture_offline_recovery.offline_memory_limit", return_value="18g")
     def test_second_restart_rechecks_stale_offline_outcome(self, _memory):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)

@@ -32,10 +32,11 @@ def capture(pid: str, proc: Path = Path("/proc")) -> dict:
         except (OSError, ValueError) as error:
             return str(error)
 
+    status = read(base / "status")
     result = {
-        "alive": base.exists(),
+        "alive": base.exists() and not re.search(r"^State:\s+Z\b", status, re.MULTILINE),
         "monotonic": time.monotonic(),
-        "status": read(base / "status"),
+        "status": status,
         "listeners": read(base / "net/tcp"),
         "cgroup": {
             name: read(base / "root/sys/fs/cgroup" / name)
