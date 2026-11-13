@@ -1,5 +1,7 @@
 # Backlog
 
+2026-11-13: Owner output now proves Odin restarted; exact bafc7fb journal and completion exist, stopped.json/offline receipt absent. Installed isolated retain worker exited 1, but captured child stdout/stderr were hidden; underlying cause remains unknown. No recovery/restart confirmed; 132 earlier retained windows, pending outcome unknown, no repair supervisor. New branch fix/offline-recovery-error-evidence adds exact child-command/stdout/stderr reporting and rethrows unchanged, no retry or protected executor/policy/permission change. Six focused tests (new regression red then green), Ruff/diff and native byte/mode checks pass. Exact next ON MIMIR: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/recover-restarted-window.sh` and provide complete output; same bounded installed recovery with diagnostics, one private SSH login, no signature. Inspect actual child cause before fixing. Do not directly restart Memgraph or clear guards. Evidence: offline-child-diagnostic-2026-11-13/assessment.md; PR377. Original reconciliation and readiness remain pending; prior next instructions below are historical.
+
 ## Current recovery handoff — 2026-11-13
 
 Owner inspection reports the exact bafc7fb669f24824bdbe6d89607cfb61 worker,
