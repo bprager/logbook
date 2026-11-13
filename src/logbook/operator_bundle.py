@@ -91,6 +91,16 @@ def build_revision_bundle(repo: Path, revision: str, wheel_dir: Path) -> bytes:
                 raise ValueError('source contains unsupported file type')
             item.name = item.name.removeprefix('src/')
             bundle.addfile(item, original.extractfile(item) if item.isfile() else None)
+        for name in ('logbook-plan-producer','logbook-maintenance-update','logbook-lock-guardian'):
+            path = 'scripts/'+name
+            present = subprocess.run(['git','-C',str(repo),'cat-file','-e',revision+':'+path],
+                                     capture_output=True,check=False)
+            if present.returncode == 0:
+                data = subprocess.run(['git','-C',str(repo),'show',revision+':'+path],
+                                      capture_output=True,check=True).stdout
+                info = tarfile.TarInfo('logbook/_entrypoints/'+name)
+                info.size = len(data)
+                bundle.addfile(info,io.BytesIO(data))
         add_pinned_wheels(bundle, wheel_dir)
     return _bounded(output)
 

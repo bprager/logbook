@@ -6,6 +6,12 @@ from logbook.named_repair_dispatcher import validate_request
 
 
 class NamedRepairDispatcherTests(TestCase):
+    def setUp(self):
+        from contextlib import nullcontext
+        locking = patch('logbook.named_repair_dispatcher.dispatch_lock', side_effect=nullcontext)
+        locking.start()
+        self.addCleanup(locking.stop)
+
     def test_plan_discovery_dispatches_only_fixed_executor(self):
         import io
         import json
@@ -82,7 +88,7 @@ class NamedRepairDispatcherTests(TestCase):
             stdin = io.TextIOWrapper(io.BytesIO(json.dumps(request).encode()), encoding='utf-8')
             real_uid = os.geteuid()
             with patch('logbook.named_repair_dispatcher.GUARD', guard), \
-                 patch('logbook.named_repair_dispatcher.os.geteuid', side_effect=[0]+[real_uid]*50), \
+                 patch('logbook.named_repair_dispatcher.os.geteuid', side_effect=[0,0]+[real_uid]*50), \
                  patch('logbook.named_repair_dispatcher.trusted_path'), \
                  patch.object(sys, 'stdin', stdin), patch.object(sys, 'argv', ['dispatcher', 'named-status']):
                 with self.assertRaises(SystemExit) as result:

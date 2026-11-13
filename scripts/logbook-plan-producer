@@ -2,11 +2,25 @@
 """Fixed launcher for a separately installed automatic plan producer."""
 import os
 import pwd
+import re
+import subprocess
 import stat
 import sys
 from pathlib import Path
 
 CODE_ROOT = Path('/Library/Application Support/LogbookPlanProducer/lib')
+
+
+def selected_code_root():
+    base = CODE_ROOT.parent
+    pointer = base/'source.current'
+    if not os.path.lexists(pointer):
+        return CODE_ROOT
+    check_trusted_file(pointer)
+    value = pointer.read_text().strip()
+    if not re.fullmatch(r'[a-f0-9]{64}',value):
+        raise ValueError('invalid source generation pointer')
+    return base/'releases'/value
 
 
 def check_trusted_directory(path):
@@ -22,9 +36,18 @@ def check_trusted_file(path):
 
 
 def main():
-    for ancestor in (CODE_ROOT, *CODE_ROOT.parents):
+    operator = pwd.getpwnam('logbook-repair-operator').pw_uid
+    if os.geteuid() == operator and len(sys.argv) == 1:
+        result = subprocess.run(['/usr/bin/sudo','-n','/usr/local/libexec/logbook-maintenance-update'],
+                                capture_output=True,text=True,timeout=180,check=False)
+        if result.returncode:
+            sys.stdout.write(result.stdout)
+            sys.stderr.write(result.stderr)
+            raise SystemExit(result.returncode)
+    code_root = selected_code_root()
+    for ancestor in (code_root, *code_root.parents):
         check_trusted_directory(ancestor)
-    package = CODE_ROOT/'logbook'
+    package = code_root/'logbook'
     check_trusted_directory(package)
     for current, directories, files in os.walk(package, followlinks=False):
         for directory in directories:
@@ -32,7 +55,7 @@ def main():
         for filename in files:
             check_trusted_file(Path(current)/filename)
     sys.dont_write_bytecode = True
-    sys.path.insert(0, str(CODE_ROOT))
+    sys.path.insert(0, str(code_root))
     if os.geteuid() == pwd.getpwnam('bernd').pw_uid:
         from logbook.source_plan_broker import main as run
     elif os.geteuid() == pwd.getpwnam('logbook-plan-producer').pw_uid:

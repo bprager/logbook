@@ -21,6 +21,12 @@ production version remains 1.2.3.
 
 ## [Unreleased]
 
+### Changed
+
+- Explicit standing maintenance delegation replaces per-release owner signatures
+  with verified automatic executor and immutable source updates on both hosts.
+  Authority changes still require the owner; initial delegation is not activated.
+
 ### Fixed
 
 - Bound named graph offline recovery at 4GiB with 8GiB available-memory preflight, preserving 1CPU/network isolation and journal verification; tolerate already-removed recovery containers only after confirming absence.
