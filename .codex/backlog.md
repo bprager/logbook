@@ -1,5 +1,39 @@
 # Backlog
 
+## Current recovery handoff — 2026-11-13
+
+Owner inspection reports the exact bafc7fb669f24824bdbe6d89607cfb61 worker,
+recovery service and timer absent, Memgraph inactive, and stopped.json absent.
+The old same-boot adapter refused before recovery. A host restart is not yet
+proven. 132 earlier repair windows are retained; this window's outcome is unknown.
+Both repair supervisors are terminal; the source guard remains with its independent
+holder. No new repair, direct startup or forced guard release was performed.
+
+Fjolsvidr implementation `af7e2f6a` on `fix/reboot-recovery-investigation`,
+[draft PR #377](https://github.com/bprager/Fjolsvidr/pull/377), reuses the installed
+signed offline recovery, receipt verification and guarded restart paths. It first
+requires the exact protected boot-target record and a proven boot-ID change.
+It refuses changed targets and never fabricates stopped.json or journal evidence.
+Five focused adapter tests, eight existing offline/restart tests, temporary-file
+integration with simulated service boundaries, native byte/mode checks, lint,
+shell checks and focused review passed. These are not live Odin recovery proof.
+Protected executor remains `74a069ec`; policy and permissions are unchanged.
+
+**Exact next on Mimir:**
+`/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/recover-restarted-window.sh`
+
+This requires one private recovery SSH login, no new approval signature or
+strategic approval. After verified recovery/restart, use the existing routine
+pending check to confirm the outcome and normal source-guard release, then resume
+bounded repair and finish complete record reconciliation, approved-field replay,
+extra-record preservation/classification and health checks. Automatic cold-start
+selection is not implemented; full readiness and the original goal remain pending.
+The rejected retry is separately recorded as operator-task.1de9a84e99c63d54bce7a53a7f97bad4b0e37810f2dd3b23f3ac2bb7e9da5269;
+replay/fresh read and automatic review passed, overall benefit remains missing.
+Earlier next-action entries below are historical and superseded by this handoff.
+
+Evidence: Fjolsvidr `docs/evidence/developmental-partnership/restarted-window-recovery-2026-11-13/assessment.md`; [Logbook draft PR #90](https://github.com/bprager/logbook/pull/90).
+
 ## Current protected recovery hold — 2026-11-13 03:48 UTC
 
 132 actual repair windows retained. Both supervisors73425/4635 are terminal.
