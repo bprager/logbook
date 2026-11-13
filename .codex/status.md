@@ -1,5 +1,33 @@
 # Status
 
+## Current — signed source repair published; bootstrap authentication needed
+
+Logbook [PR94](https://github.com/bprager/logbook/pull/94), implementation
+9840fcc254747da08928bc37f06b3736b415abc7, merged32b88b1d295aea15e0685de352e9bbe38aba1571.
+Publisher43384454154 passed; signed sequence13 digest
+833ab7d686a9fc57b698d5f07b435336a0a25319748a450da5d6ba5722961d8c.
+Mandatory gate passed679 tests/21 skipped; changed source lines100% covered,
+lint/types/Markdown/watcher build passed. The actual published payload passed
+root namespace11→13→14 updates and idempotence with fixture owner key deleted;
+real private signature/permission checks remained active. Review found no blockers.
+
+Actual native delivery still fails at the old private-directory check. Source
+pointer independently remains abb99da11. No new repair started; Odin delivery
+has not run. Existing policy4 delegation remains active on both hosts. A narrow
+fixed-updater repair is staged and its real publisher signature verified.
+Exact next ON MIMIR:
+`/usr/bin/python3 ~/.local/share/FjolsvidrAccessMigration/logbook-source-updater-32b88b1/repair-source-updater.py --apply`
+
+One Mac administrator authentication is technically necessary to repair the broken
+root entry; sudo -n confirms no root access. This is a routine bug repair, not a
+severe change. No signing key or private Odin login; policy/trust/permissions stay
+unchanged and sudo credentials are cleared. Do not request another generic proceed.
+After its receipt, immediately run existing machine-only delivery and one pending
+recovery cycle, inspect actual memory evidence and finish reconciliation.132 prior
+retained; pending bafc7fb outcome unknown, graph inactive, source guard retained.
+Fjolsvidr evidence: standing-maintenance-live-2026-11-13/assessment.md. All older
+next instructions below are superseded; full readiness remains pending.
+
 ## Current — repair source updater bootstrap, 2026-11-13
 
 Standing policy4 is active on both hosts (signed abb99da, sequence11). The first
