@@ -1,5 +1,18 @@
 # Backlog
 
+## Current — preserve useful startup evidence after process exit
+
+PR95/966f0b2 merged542d707; publisher43430475264 passed and native machine-only
+delivery returned RELEASE_READY542d707 (signed sequence14). No owner interaction.
+The one-thread INFO attempt failed before connection; repeated dead-process samples
+erased all living frames. Thread-count change did not resolve recovery. Current
+branch fix/preserve-final-startup-sample keeps the first dead frame and final
+living frames within the same six-frame bound. Regression reproduces the data
+loss before the fix; no resource/policy/permission changes. Exact next: required
+gate, signed routine delivery, one pending cycle, inspect actual retained INFO
+startup evidence and repair the demonstrated cause. Do not raise caps blindly.
+132 earlier retained; bafc7fb outcome unknown, graph inactive, source guard held.
+
 ## Current — automatic recovery reached real startup, 2026-11-13
 
 Owner source-updater repair receipt and independent native source pointer verify

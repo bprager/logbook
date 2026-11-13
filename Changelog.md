@@ -23,6 +23,11 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Preserve final living startup evidence when later polls find an exited recovery
+  process; repeated missing-process errors no longer erase useful diagnostics.
+
+### Fixed
+
 - Match isolated named recovery to its one-CPU allowance with one recovery
   thread and preserve INFO startup evidence under the unchanged4GiB cap.
 
