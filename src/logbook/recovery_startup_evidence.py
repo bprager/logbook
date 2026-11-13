@@ -60,7 +60,10 @@ class StartupEvidence:
         self.thread = threading.Thread(target=self.poll, daemon=True)
 
     def sample(self) -> None:
-        self.samples.append(capture(self.pid))
+        frame = capture(self.pid)
+        # Repeated missing-process errors must not evict the last useful frame.
+        if frame["alive"] or not self.samples or self.samples[-1]["alive"]:
+            self.samples.append(frame)
 
     def poll(self) -> None:
         while not self.stop.wait(1):

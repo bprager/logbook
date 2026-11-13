@@ -131,6 +131,22 @@ class AutomaticColdRecoveryTests(TestCase):
             self.assertIn("loading snapshot", saved[0].read_text())
             self.assertIn("loading snapshot", error.getvalue())
 
+    def test_dead_process_polls_preserve_the_last_living_evidence(self):
+        from logbook.recovery_startup_evidence import StartupEvidence
+
+        with TemporaryDirectory() as temporary:
+            living = {"alive": True, "logs": {"startup": "actual last startup stage"}}
+            dead = {"alive": False, "logs": {}}
+            with patch(
+                "logbook.recovery_startup_evidence.capture", side_effect=[living] + [dead] * 10
+            ):
+                evidence = StartupEvidence("123", Path(temporary))
+                for _ in range(11):
+                    evidence.sample()
+            self.assertIn(living, evidence.samples)
+            self.assertEqual(evidence.samples[-1], dead)
+            self.assertLessEqual(len(evidence.samples), 6)
+
     def test_capture_reads_real_bounded_files_without_following_log_links(self):
         from logbook.recovery_startup_evidence import capture
 
