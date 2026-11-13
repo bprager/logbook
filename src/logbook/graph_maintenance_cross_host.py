@@ -34,17 +34,17 @@ class SshMaintenance:
         if action not in {"launch", "status", "preflight", "retry", "stage", "outcome", "offline", "authorize", "named-offline", "named-authorize", "named-status", "named-outcome", "named-check", "named-stage", "named-preflight", "named-launch", "named-cancel"}:
             raise ValueError("invalid remote action")
         command = self._command(action)
+        args = ["ssh", "-i", str(self.identity), "-o", "BatchMode=yes", "-o",
+                "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", self.host, command]
         try:
-            result = subprocess.run(
-                ["ssh", "-i", str(self.identity), "-o", "BatchMode=yes", "-o",
-                 "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", self.host, command],
+            result = subprocess.run(args,
                 input=json.dumps(self.request if payload is None else payload), capture_output=True, text=True,
                 timeout=240 if action in {"offline", "authorize", "named-offline", "named-authorize"} else 15,
             )
         except subprocess.TimeoutExpired as error:
             raise TimeoutError("remote maintenance request timed out") from error
         if result.returncode != 0:
-            raise ConnectionError("remote maintenance request failed")
+            raise ConnectionError("remote maintenance request failed\ncommand: " + shlex.join(args) + "\nstdout:\n" + result.stdout + "\nstderr:\n" + result.stderr)
         return result.stdout.strip()
 
     def outcome(self) -> str:

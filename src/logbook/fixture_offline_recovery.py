@@ -1,6 +1,7 @@
 """Fixture-only recovery after the protected graph host has restarted."""
 from __future__ import annotations
 
+from contextlib import nullcontext
 import fcntl
 import json
 import os
@@ -9,6 +10,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
+from logbook.recovery_startup_evidence import StartupEvidence
 from logbook.fixture_boot_guard import FixtureBootGuard, MemgraphBootGuard, verify_memgraph_binding
 from logbook.graph_maintenance_worker import completion_matches, private_directory, read_private_json
 
@@ -114,6 +116,30 @@ def record_fixture_storage(request: dict, recovery, *, _named: bool = False) -> 
     })
 
 
+def named_offline_required(request: dict, recovery) -> bool:
+    """Select only a proven restarted, matching, guarded and inactive target."""
+    _validate_named(request)
+    record = read_private_json(Path(request['private_dir'])/'boot-target.json')
+    expected = {'container':request['container_id'],'pid':request['pid'],'unit':request['unit'],
+                'service':request['boot_guard_service'],'guard_dir':request['boot_guard_dir'],
+                'journal':request['journal'],'port':request['port'],'recovery_file':request['recovery_file']}
+    if (not record.get('boot_id') or record['boot_id'] == boot_id()
+            or any(record.get(k) != v for k,v in expected.items())):
+        return False
+    guard = MemgraphBootGuard(Path(request['boot_guard_dir']),recovery.run)
+    if os.path.lexists(guard.marker):
+        # An interrupted authorizer may have created the valid marker before
+        # starting the service. Only a verified current receipt permits replay.
+        from logbook.fixture_recovery_release import verify_named_graph_receipt
+        try:
+            guard._check_marker()
+            verify_named_graph_receipt(request)
+        except (OSError,ValueError):
+            return False
+    guard.verify('inactive')
+    return True
+
+
 def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
     if _named:
         _validate_named(request)
@@ -192,9 +218,10 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
                     or matches[0].get('Name') != volume or not matches[0].get('RW')):
                 raise ValueError('isolated fixture volume mismatch')
             bundle = Path(request['recovery_file']).parent.parent
-            result = recovery.run(['nsenter', '-t', details[0], '-n', '/usr/bin/env', 'PYTHONPATH='+str(bundle),
-                                   '/usr/bin/python3', '-m', 'logbook.fixture_offline_worker',
-                                   request['journal'], str(directory), str(request['port']), mode], timeout=120).strip()
+            with StartupEvidence(details[0],directory) if _named else nullcontext():
+                result = recovery.run(['nsenter', '-t', details[0], '-n', '/usr/bin/env', 'PYTHONPATH='+str(bundle),
+                                       '/usr/bin/python3', '-m', 'logbook.fixture_offline_worker',
+                                       request['journal'], str(directory), str(request['port']), mode], timeout=120).strip()
             if result not in ({'retained'} if completed else {'rolled-back', 'not-retained'}):
                 raise ValueError('fixture rollback outcome unconfirmed')
         finally:

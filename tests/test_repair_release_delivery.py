@@ -108,12 +108,12 @@ class RepairReleaseDeliveryTests(TestCase):
 
     def test_sender_uses_fixed_restricted_receiver_and_checks_response(self):
         from logbook.repair_release_delivery import send_release
-        with patch('logbook.repair_release_delivery.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='UPDATED\n')) as run:
+        with patch('logbook.repair_release_delivery.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='UPDATED\n',stderr='')) as run:
             self.assertEqual(send_release(b'{}',b'signature'),'UPDATED')
             command = run.call_args.args[0]
             self.assertEqual(command[-2:],['logbook-repair@odin','sudo -n /usr/local/libexec/logbook-repair-release-receiver'])
             self.assertIn('StrictHostKeyChecking=yes',command)
-        for response in (SimpleNamespace(returncode=1,stdout=''),SimpleNamespace(returncode=0,stdout='unexpected')):
+        for response in (SimpleNamespace(returncode=1,stdout='',stderr='rejected'),SimpleNamespace(returncode=0,stdout='unexpected',stderr='')):
             with patch('logbook.repair_release_delivery.subprocess.run',return_value=response):
                 with self.assertRaises(ConnectionError):
                     send_release(b'{}',b'signature')
