@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 import re
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,27 @@ from logbook.graph_maintenance_worker import completion_matches, private_directo
 
 NAMED_GUARD_DIR = Path('/var/lib/logbook-graph-guard')
 NAMED_VOLUME = 'memgraph-data-v313-20261011'
+
+
+def offline_memory_limit(named: bool) -> str:
+    """Keep named recovery bounded and leave at least the same RAM available."""
+    if not named:
+        return '1g'
+    match = re.search(r'^MemAvailable:\s+([0-9]+) kB$',
+                      Path('/proc/meminfo').read_text(), re.MULTILINE)
+    if match is None or int(match[1]) < 8 * 1024 * 1024:
+        raise ValueError('8GiB available memory headroom required for named recovery')
+    return '4g'
+
+
+def stop_offline_container(recovery, name: str) -> None:
+    try:
+        recovery.run(['docker', 'stop', '--time', '30', name], timeout=45)
+    except subprocess.CalledProcessError:
+        # --rm may already have removed a killed container. Confirm absence;
+        # daemon errors and a container that still exists remain failures.
+        if recovery.run(['docker', 'ps', '-aq', '--filter', 'name=^/'+name+'$']).strip():
+            raise
 
 
 def _validate_named(request: dict) -> None:
@@ -150,10 +172,11 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
             raise ValueError('fixture volume is in use')
         if _named:
             _discard_stale_named_receipt(directory, expected, volume, record['boot_id'], batch, completed)
+        memory = offline_memory_limit(_named)
         name = 'logbook-fixture-recovery-'+uuid.uuid4().hex
         try:
             recovery.run(['docker', 'run', '-d', '--rm', '--name', name, '--network=none',
-                          '--cpus=1', '--memory=1g', '--memory-swap=1g',
+                          '--cpus=1', '--memory='+memory, '--memory-swap='+memory,
                           '--mount', 'type=volume,src='+volume+',dst=/var/lib/memgraph',
                           image, '--bolt-port='+str(request['port']),
                           *(['--storage-wal-enabled=true', '--storage-wal-file-flush-every-n-tx=1',
@@ -175,7 +198,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
             if result not in ({'retained'} if completed else {'rolled-back', 'not-retained'}):
                 raise ValueError('fixture rollback outcome unconfirmed')
         finally:
-            recovery.run(['docker', 'stop', '--time', '30', name], timeout=45)
+            stop_offline_container(recovery, name)
         if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
             raise ValueError('fixture volume remains in use')
         _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(), 'outcome':result, 'batch':batch})
