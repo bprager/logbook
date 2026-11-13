@@ -20,7 +20,23 @@ def incomplete_plan(session: Any, job_id: int, plan: dict) -> bool:
     # Structural validation of signed evidence is read-only, not write authority.
     policy = {'schema':3, 'max_batch_records':MAX_BATCH_RECORDS,
               'max_plan_records':MAX_PLAN_RECORDS, 'expires_at':None}
-    check_plan(request,plan,policy,release={'revision':identity,'bundle_sha256':digest})
+    release = {'revision':identity,'bundle_sha256':digest}
+    if (set(plan) != {'nodes','relationships','generated_at'}
+            or not isinstance(plan['nodes'],list) or not isinstance(plan['relationships'],list)
+            or not isinstance(plan['generated_at'],str)
+            or not plan['nodes'] and not plan['relationships']):
+        check_plan(request,plan,policy,release=release)
+    # This is a read-only inspection of signed source evidence. Reuse the same
+    # canonical/scope validation in bounded pages, without treating the complete
+    # existing job as a request to write it. Write authorization still validates
+    # the complete repair plan against the unchanged standing-policy limit.
+    node_count = len(plan['nodes'])
+    for start in range(0,node_count+len(plan['relationships']),MAX_PLAN_RECORDS):
+        end = start+MAX_PLAN_RECORDS
+        page = {'nodes':plan['nodes'][start:end],
+                'relationships':plan['relationships'][max(0,start-node_count):max(0,end-node_count)],
+                'generated_at':plan['generated_at']}
+        check_plan({**request,'plan_sha256':plan_digest(page)},page,policy,release=release)
     nodes = {node['id']:node for node in plan['nodes']}
     relations = {rel['id']:rel for rel in plan['relationships']}
     if (len(nodes) != len(plan['nodes']) or len(relations) != len(plan['relationships'])

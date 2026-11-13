@@ -23,6 +23,11 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Validate read-only discovery of large existing source jobs in bounded pages;
+  keep the complete repair-plan and per-window write limits unchanged.
+
+### Fixed
+
 - Wait briefly for the exact stopped recovery container to finish asynchronous
   removal, requiring a fresh empty volume check and refusing other consumers.
 
