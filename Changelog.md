@@ -21,6 +21,11 @@ production version remains 1.2.3.
 
 ## [Unreleased]
 
+### Fixed
+
+- Wait briefly for the exact stopped recovery container to finish asynchronous
+  removal, requiring a fresh empty volume check and refusing other consumers.
+
 ### Changed
 
 - Report bounded consumer identity/state when the post-recovery volume check
