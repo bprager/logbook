@@ -1,5 +1,23 @@
 # Status
 
+## Current — automatic recovery reached real startup, 2026-11-13
+
+Owner source-updater repair receipt and independent native source pointer verify
+sequence13/32b88b1 installed on Mimir. Automatic fixed delivery returns RELEASE_READY
+32b88b1 with empty stderr: Odin delivery succeeded without an owner key. One
+pending cycle reached named-offline but failed; live last frame shows memory.current
+4294406144 vs4294967296 maximum, RSS4145108kB,41threads/32visibleCPUs and237/241
+CPU-throttled periods. No listener and WARNING log empty. Outcome remains unknown.
+
+Branch fix/delegated-recovery-startup matches the existing CPU1 allowance with
+storage-recovery-thread-count=1 and INFO private startup logs. No memory cap,
+policy, permission, image, volume, durability, receipt or startup-gate change.
+Regression first failed on absent thread setting, then passes. Exact next:
+required gate, one signed routine publication/delivery, one pending cycle and
+inspect actual startup logs. This is a measured concurrency hypothesis, not proof
+of the complete memory cause. No owner intervention needed.132 prior retained,
+graph inactive/source guard retained; reconciliation/readiness pending.
+
 ## Current — repair source updater bootstrap, 2026-11-13
 
 Standing policy4 is active on both hosts (signed abb99da, sequence11). The first

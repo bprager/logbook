@@ -205,7 +205,8 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
                           '--cpus=1', '--memory='+memory, '--memory-swap='+memory,
                           '--mount', 'type=volume,src='+volume+',dst=/var/lib/memgraph',
                           image, '--bolt-port='+str(request['port']),
-                          *(['--storage-wal-enabled=true', '--storage-wal-file-flush-every-n-tx=1',
+                          *(['--storage-recovery-thread-count=1', '--log-level=INFO',
+                             '--storage-wal-enabled=true', '--storage-wal-file-flush-every-n-tx=1',
                              '--storage-snapshot-interval-sec=300', '--storage-snapshot-on-exit=false']
                             if _named else [])])
             details = recovery.run(['docker', 'inspect', '--format',
