@@ -1,5 +1,49 @@
 # Status
 
+## Current protected recovery hold — 2026-11-13 03:48 UTC
+
+132 actual repair windows retained. Both supervisors73425/4635 are terminal.
+4635 cycle7 timed out444.392sec waiting390sec for independent holder51095.
+Fixed pending checks through03:48 return recovery-pending, exit0/empty stderr;
+source guard exactbafc7fb669f24824bdbe6d89607cfb61 remains; holder live16:27.
+Conservative installed retry allowance passed; actual protected remote state and
+underlying cause are unknown. No new repair, forced release or readiness claim.
+
+Exact next ON MIMIR:
+`/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/inspect-and-retry.sh`.
+One private recovery SSH login collects exact service/journal output, then uses
+the existing guarded retry only if its checks permit. No new approval signature,
+executor, standing policy or permission change. Four existing safety tests,
+old/wrong-type target refusal, combined compilation, read-only inspection checks,
+non-root/arguments refusal, native byte/mode match, shell/Ruff/diff checks and
+focused read-only review pass. Canonical source unchanged; staged artifact in
+Fjolsvidr transaction-drain-recovery-2026-11-13/bafc7fb-recovery, draftPR377.
+Do not run old updater or start another loop while pending. After actual output,
+confirm normal pending outcome and source-guard release, finish bounded repair,
+full source/graph comparison, approved-field replay, preserved extras and final
+recovery/health/original-goal audit. Timeout ledger1915dc34 separately failed,
+pending outcome unknown; replay/fresh read and event review passed, benefit
+missing/no authority. Earlier live-loop/retry instructions below are historical.
+
+## Current continuation — 2026-11-13 03:23 UTC
+
+Supervisor73425 stopped on remote named-launch error after18 retained windows.
+Routine pending check2676 returned not-retained, exit0/empty stderr; source guard
+absent. No underlying remote cause is exposed; preserve the error as unknown.
+Single replacement4635 retained its first window and next scan passed (130 total).
+At the quiet point, complete properties on the three metadata-job projections
+showed exactly5 differences, no structural conflict, but6 nodes/6 links still
+missing; normal replay remains deferred until bounded repair fills them.
+
+Exact next: supervise4635 to terminal, refresh all-record comparison, lawful
+normal replay of accepted source decisions after its precondition, preserve/
+classify extras, verify recovery/guard/health and record final truthful outcome.
+No owner action, new signature, policy/executor/permission change or force release.
+Fjolsvidr evidence/current checkpoint e56ed2b9, draftPR377. Earlier73425/retry
+instructions below are historical. Failed-outcome ledger8cf63a77 and separate
+recovery recordd9a5772f passed insert/replay/fresh read; neither claims overall
+benefit or grants authority.
+
 ## Recovery confirmed; bounded repair resumed — 2026-11-13 UTC
 
 The owner retry recovered exact6fcb354 and confirmed retained outcome/startup
