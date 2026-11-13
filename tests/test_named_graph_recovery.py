@@ -29,7 +29,8 @@ class NamedGraphRecoveryTests(TestCase):
             with patch('logbook.fixture_offline_recovery.NAMED_GUARD_DIR', root), self.assertRaises(ValueError):
                 record_named_graph_storage(request, recovery)
 
-    def test_named_recovery_rejects_unverified_receipt(self):
+    @patch("logbook.fixture_offline_recovery.offline_memory_limit", return_value="4g")
+    def test_named_recovery_rejects_unverified_receipt(self, _memory):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)
             request={'private_dir':str(root),'boot_guard_service':'memgraph.service',
@@ -54,6 +55,10 @@ class NamedGraphRecoveryTests(TestCase):
                     'rolled-back','','']
                 self.assertEqual(recover_named_graph_offline(request,recovery),'rolled-back')
                 command = recovery.run.call_args_list[1].args[0]
+                self.assertIn('--memory=4g',command)
+                self.assertIn('--memory-swap=4g',command)
+                self.assertIn('--cpus=1',command)
+                self.assertIn('--network=none',command)
                 self.assertIn('--storage-wal-enabled=true',command)
                 self.assertIn('--storage-wal-file-flush-every-n-tx=1',command)
                 self.assertIn('--storage-snapshot-interval-sec=300',command)
@@ -65,7 +70,8 @@ class NamedGraphRecoveryTests(TestCase):
                 with self.assertRaises(FileNotFoundError):
                     authorize_named_graph_restart(request,Mock())
 
-    def test_second_restart_rechecks_stale_offline_outcome(self):
+    @patch("logbook.fixture_offline_recovery.offline_memory_limit", return_value="4g")
+    def test_second_restart_rechecks_stale_offline_outcome(self, _memory):
         with TemporaryDirectory() as tmp:
             root=Path(tmp)
             request={'private_dir':str(root),'boot_guard_service':'memgraph.service',

@@ -1,5 +1,157 @@
 # Status
 
+2026-11-13: Owner Docker events prove the isolated named recovery container hit OOM and died137 about9sec after launch. Host MemAvailable56069312kB; 1GiB scratch cap is insufficient. Branch fix/offline-recovery-memory raises only named recovery to4GiB with at least8GiB available host memory required; CPU1, network-none, exact image/volume, 500-write policy, receipts and restart protections remain. Fixture cap stays1GiB. Cleanup confirms already-removed container absence without masking the worker failure. Not installed or qualified yet; protected executor remains74a069ec,132 earlier retained windows, current outcome unknown. Exact next: finish required gate, publish signed correction, stage tested exact owner executor update plus the existing cold recovery in one owner login, then confirm actual outcome and source-guard release and resume reconciliation. No repeated diagnostic retry under the insufficient cap. Fjolsvidr PR377/Logbook implementation PR to follow; no readiness claim.
+
+2026-11-13: Owner child stderr proves isolated retain-worker connectivity was refused at 127.0.0.1:7697 throughout its 30-attempt check. Restart verified; journal/completion present; no verified recovery/restart. Underlying database startup cause still unknown. Branch fix/offline-startup-diagnostics adds bounded read-only temporary-container state, logs (both streams) and events before existing cleanup; one attempt, original exception retained, no executor/policy/permission/resource changes. Seven focused checks, Ruff/shell/diff and native byte/mode match pass. Exact next ON MIMIR: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/recover-restarted-window.sh` then complete output; one private SSH login, no new signature. Inspect startup evidence before changing behavior. 132 earlier retained windows; current outcome unknown; no repair supervisor; source guard not force-cleared. Evidence: offline-startup-diagnostic-2026-11-13/assessment.md; PR377. Full reconciliation and readiness pending. Earlier handoffs are historical.
+
+2026-11-13: Owner output now proves Odin restarted; exact bafc7fb journal and completion exist, stopped.json/offline receipt absent. Installed isolated retain worker exited 1, but captured child stdout/stderr were hidden; underlying cause remains unknown. No recovery/restart confirmed; 132 earlier retained windows, pending outcome unknown, no repair supervisor. New branch fix/offline-recovery-error-evidence adds exact child-command/stdout/stderr reporting and rethrows unchanged, no retry or protected executor/policy/permission change. Six focused tests (new regression red then green), Ruff/diff and native byte/mode checks pass. Exact next ON MIMIR: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/recover-restarted-window.sh` and provide complete output; same bounded installed recovery with diagnostics, one private SSH login, no signature. Inspect actual child cause before fixing. Do not directly restart Memgraph or clear guards. Evidence: offline-child-diagnostic-2026-11-13/assessment.md; PR377. Original reconciliation and readiness remain pending; prior next instructions below are historical.
+
+## Current recovery handoff — 2026-11-13
+
+Owner inspection reports the exact bafc7fb669f24824bdbe6d89607cfb61 worker,
+recovery service and timer absent, Memgraph inactive, and stopped.json absent.
+The old same-boot adapter refused before recovery. A host restart is not yet
+proven. 132 earlier repair windows are retained; this window's outcome is unknown.
+Both repair supervisors are terminal; the source guard remains with its independent
+holder. No new repair, direct startup or forced guard release was performed.
+
+Fjolsvidr implementation `af7e2f6a` on `fix/reboot-recovery-investigation`,
+[draft PR #377](https://github.com/bprager/Fjolsvidr/pull/377), reuses the installed
+signed offline recovery, receipt verification and guarded restart paths. It first
+requires the exact protected boot-target record and a proven boot-ID change.
+It refuses changed targets and never fabricates stopped.json or journal evidence.
+Five focused adapter tests, eight existing offline/restart tests, temporary-file
+integration with simulated service boundaries, native byte/mode checks, lint,
+shell checks and focused review passed. These are not live Odin recovery proof.
+Protected executor remains `74a069ec`; policy and permissions are unchanged.
+
+**Exact next on Mimir:**
+`/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/recover-restarted-window.sh`
+
+This requires one private recovery SSH login, no new approval signature or
+strategic approval. After verified recovery/restart, use the existing routine
+pending check to confirm the outcome and normal source-guard release, then resume
+bounded repair and finish complete record reconciliation, approved-field replay,
+extra-record preservation/classification and health checks. Automatic cold-start
+selection is not implemented; full readiness and the original goal remain pending.
+The rejected retry is separately recorded as operator-task.1de9a84e99c63d54bce7a53a7f97bad4b0e37810f2dd3b23f3ac2bb7e9da5269;
+replay/fresh read and automatic review passed, overall benefit remains missing.
+Earlier next-action entries below are historical and superseded by this handoff.
+
+Evidence: Fjolsvidr `docs/evidence/developmental-partnership/restarted-window-recovery-2026-11-13/assessment.md`; [Logbook draft PR #90](https://github.com/bprager/logbook/pull/90).
+
+## Current protected recovery hold — 2026-11-13 03:48 UTC
+
+132 actual repair windows retained. Both supervisors73425/4635 are terminal.
+4635 cycle7 timed out444.392sec waiting390sec for independent holder51095.
+Fixed pending checks through03:48 return recovery-pending, exit0/empty stderr;
+source guard exactbafc7fb669f24824bdbe6d89607cfb61 remains; holder live16:27.
+Conservative installed retry allowance passed; actual protected remote state and
+underlying cause are unknown. No new repair, forced release or readiness claim.
+
+Exact next ON MIMIR:
+`/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/inspect-and-retry.sh`.
+One private recovery SSH login collects exact service/journal output, then uses
+the existing guarded retry only if its checks permit. No new approval signature,
+executor, standing policy or permission change. Four existing safety tests,
+old/wrong-type target refusal, combined compilation, read-only inspection checks,
+non-root/arguments refusal, native byte/mode match, shell/Ruff/diff checks and
+focused read-only review pass. Canonical source unchanged; staged artifact in
+Fjolsvidr transaction-drain-recovery-2026-11-13/bafc7fb-recovery, draftPR377.
+Do not run old updater or start another loop while pending. After actual output,
+confirm normal pending outcome and source-guard release, finish bounded repair,
+full source/graph comparison, approved-field replay, preserved extras and final
+recovery/health/original-goal audit. Timeout ledger1915dc34 separately failed,
+pending outcome unknown; replay/fresh read and event review passed, benefit
+missing/no authority. Earlier live-loop/retry instructions below are historical.
+
+## Current continuation — 2026-11-13 03:23 UTC
+
+Supervisor73425 stopped on remote named-launch error after18 retained windows.
+Routine pending check2676 returned not-retained, exit0/empty stderr; source guard
+absent. No underlying remote cause is exposed; preserve the error as unknown.
+Single replacement4635 retained its first window and next scan passed (130 total).
+At the quiet point, complete properties on the three metadata-job projections
+showed exactly5 differences, no structural conflict, but6 nodes/6 links still
+missing; normal replay remains deferred until bounded repair fills them.
+
+Exact next: supervise4635 to terminal, refresh all-record comparison, lawful
+normal replay of accepted source decisions after its precondition, preserve/
+classify extras, verify recovery/guard/health and record final truthful outcome.
+No owner action, new signature, policy/executor/permission change or force release.
+Fjolsvidr evidence/current checkpoint e56ed2b9, draftPR377. Earlier73425/retry
+instructions below are historical. Failed-outcome ledger8cf63a77 and separate
+recovery recordd9a5772f passed insert/replay/fresh read; neither claims overall
+benefit or grants authority.
+
+## Recovery confirmed; bounded repair resumed — 2026-11-13 UTC
+
+The owner retry recovered exact6fcb354 and confirmed retained outcome/startup
+permission. Routine pending call45430 returned retained, exit0/empty stderr;
+source guard absent, old holder exited and both locks free before resuming.
+111 retained windows including the recovered incident; sole supervisor73425 has
+added three more as of02:18 UTC (114 total). Policy, executor and permissions
+unchanged; no owner action currently needed.
+
+Actual quiet-point comparison found271/271 jobs but1698 missing nodes/11374
+missing links,28 extra nodes/2135 extra links and5 old fields on3 existing jobs.
+Source projection refresh matched; graph counts stable while collected. Other
+content properties were not compared. Preserve extras; totals alone do not close
+the gap. Current protected repair is create-only and will not fix those fields.
+Read-only authority review supports the existing normal job-scoped projection
+path for prior approved source decisions, conditional on comparing the complete
+three projections first (293 nodes/517 links in private preview, no writes).
+
+Exact next: supervise73425 to terminal, refresh comparison, then use normal sync
+only if its effective changes match approved source updates; otherwise assess
+additional changes. Verify recovery/guard/health and record final truthful ledger,
+evidence and original-goal audit. No policy expansion, forced release or source
+reclassification. Fjolsvidr evidence: transaction-drain-recovery-2026-11-13,
+commit7b5a4a9c, draftPR377. This supersedes old retry instructions below.
+
+## Exact guarded retry staged — 2026-11-13 UTC
+
+Signed sequence8 executor74a069ec is installed. Standing policy and permissions
+remain unchanged.110 actual repair windows returned retained. Last valid service
+snapshot at00:11 UTC matched271 source/271 graph jobs; graph health still drift,
+one new arrival awaiting ordinary owner review, zero cleanup-eligible unreviewed.
+Full current node/link/property reconciliation is not yet proven.
+
+Current supervisor48339 is terminal: cycle89 timed out after441.988sec total,
+waiting390sec for independent source holder16943. Existing fixed pending checks
+returned recovery-pending through01:04 UTC; source guard and holder remain.
+Owner protected state/journals now confirm all three attempts failed at
+`drain_transactions`, first final drain then initial drain, followed by start-limit
+refusal. Recovery is failed/failed/exit-code with no process; worker/timer inactive,
+Memgraph service running. Underlying active-transaction/listing cause is not yet
+observed. No new repair loop, forced marker release,
+service restart, policy change or owner signing was performed.
+
+Exact next ON MIMIR: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-6fcb354/retry-pending-recovery.sh`.
+The existing reviewed retry adapter is staged with only its exact target changed
+to6fcb354f44694457bf18d0b4e93f0506. Four existing safety tests against that candidate,
+wrong/old target refusal, AST-only-pin equivalence, native byte matching, Ruff and
+shell checks passed. It verifies installed signed executor, private exact stop
+proof, target/fence and failed/inactive retry state, emits redacted transaction
+listing diagnostic and invokes the installed guarded retry. It does not clear
+fences directly or change code/policy/permissions. Existing outcome/binding checks
+precede startup permission; source guard release stays with its independent holder.
+Owner privately unlocks the protected SSH recovery login; no new approval
+signature is requested. Paste output. Then recover only this pending window,
+finish actual identifiers/classifications/extras/recovery/guard/health comparison
+and the original goal audit. New repair has not started. Do not run the old updater.
+Do not ask for a generic proceed or repeat strategic approval.
+
+Fjolsvidr draft [PR377](https://github.com/bprager/Fjolsvidr/pull/377) contains actual
+receipts and `bounded-retry-runtime-2026-11-12/` evidence. The distinct coordinator
+failure is recorded in the existing private outcome ledger as
+`operator-task.188f049b542185bfccf509e36ef72b6a7d423ac328d08a0f3caa02be23462e44`;
+replay/fresh read passed, operator-reported, benefit missing, no runtime authority.
+Existing source implementation gate:664 tests passed/21 skipped, lint/types/docs/
+watcher build/changed-line coverage passed. This update changes status only. Current retry artifact and tests are in Fjolsvidr
+`transaction-drain-recovery-2026-11-13/assessment.md`, PR377.
+This supersedes earlier next actions below.
+
 ## Bounded recovery watchdog retries — 2026-11-12 UTC
 
 Actual protected repair retained additional windows but again left recovery

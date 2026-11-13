@@ -8,6 +8,45 @@ from logbook.fixture_offline_recovery import record_fixture_storage, recover_off
 
 
 class FixtureOfflineTests(unittest.TestCase):
+    def test_named_memory_cap_requires_headroom_and_keeps_fixture_small(self):
+        from logbook.fixture_offline_recovery import offline_memory_limit
+        with patch('logbook.fixture_offline_recovery.Path.read_text', return_value='MemAvailable: 56069312 kB\n'):
+            self.assertEqual(offline_memory_limit(True), '4g')
+        with patch('logbook.fixture_offline_recovery.Path.read_text', return_value='MemAvailable: 1048576 kB\n'):
+            with self.assertRaisesRegex(ValueError, 'headroom'):
+                offline_memory_limit(True)
+            self.assertEqual(offline_memory_limit(False), '1g')
+        with patch('logbook.fixture_offline_recovery.Path.read_text', return_value='invalid'):
+            with self.assertRaisesRegex(ValueError, 'headroom'):
+                offline_memory_limit(True)
+
+    def test_removed_container_cleanup_keeps_original_failure_and_no_receipt(self):
+        import subprocess
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            request = self.make_state(root)
+            failure = RuntimeError('worker connection refused')
+            recovery = Mock()
+            mount = json.dumps([{'Destination':'/var/lib/memgraph','Type':'volume',
+                                 'Name':'logbook-fixture-data','RW':True}])
+            recovery.run.side_effect = ['', 'id', '321 true none', mount, failure,
+                                        subprocess.CalledProcessError(1, ['docker','stop'],
+                                                                      stderr='No such container'), '']
+            with patch('logbook.fixture_offline_recovery.boot_id', return_value='boot-two'), \
+                 patch('logbook.fixture_offline_recovery.FixtureBootGuard') as guard:
+                guard.return_value.marker = root/'start-allowed'
+                with self.assertRaises(RuntimeError) as raised:
+                    recover_offline(request, recovery)
+            self.assertIs(raised.exception, failure)
+            self.assertEqual(recovery.run.call_args.args[0][:3], ['docker','ps','-aq'])
+            self.assertFalse((root/'offline-outcome.json').exists())
+        from logbook.fixture_offline_recovery import stop_offline_container
+        cleanup_error = subprocess.CalledProcessError(1, ['docker','stop'])
+        recovery.run.side_effect = [cleanup_error, 'still-present']
+        with self.assertRaises(subprocess.CalledProcessError) as raised:
+            stop_offline_container(recovery, 'exact-container')
+        self.assertIs(raised.exception, cleanup_error)
+
     def test_records_original_fixture_volume_before_restart(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
