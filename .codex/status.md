@@ -1,5 +1,30 @@
 # Status
 
+## Current — repair source updater bootstrap, 2026-11-13
+
+Standing policy4 is active on both hosts (signed abb99da, sequence11). The first
+new-version machine-only delivery of PR93/b0f407e failed before installation:
+the old source installer passed public0755/0644 generation metadata into a
+private-only verifier. Source/Odin remain11; no new repair was started.
+
+Branch fix/source-update-bootstrap verifies public metadata through a private
+copy and runs the freshly signed installer in a separate interpreter. Existing
+policy, trust, permissions and500/5000 limits are unchanged. Real consecutive
+signed source updates now exercise the actual modes; an empty root namespace
+rehearsal updates11→13→14 and repeats each version without an owner private key.
+The original fixture missed this second real update; installation/idempotence
+alone was insufficient. See docs/source-updater-bootstrap.md.
+
+Exact next: publish this correction once, stage the verified narrow fixed-loader
+repair, then one Mimir administrator authentication is technically necessary:
+installed updater11 cannot replace itself and sudo -n confirms no root access.
+This is a routine bootstrap bug repair, NOT a severe policy change; no owner
+signature or private Odin login is requested. After repair, use existing fixed
+machine-only delivery and one pending recovery cycle; inspect live memory before
+further resource changes.132 earlier retained windows; bafc7fb outcome unknown,
+graph inactive, source guard preserved. Readiness remains pending. Earlier next
+actions below are historical and superseded.
+
 ## Current — machine-only cold recovery correction, 2026-11-13
 
 Owner receipts confirm standing maintenance active on BOTH hosts (abb99da,

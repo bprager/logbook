@@ -124,6 +124,48 @@ class MaintenanceAuthorityTests(TestCase):
                 signed_policy(guard)
             signer.write_bytes(original_signer)
             owner.unlink()  # No private owner key exists for later routine releases.
+            # Real consecutive public source generations must use actual signature
+            # verification, not the mocked verifier in the filesystem-only test.
+            from logbook import source_maintenance as source
+
+            source_base = root / "source-base"
+            source_base.mkdir(mode=0o755)
+            source_guard = source_base / "maintenance"
+            source_guard.mkdir(mode=0o700)
+            for name in (
+                "approval.allowed_signers",
+                "release.allowed_signers",
+                "standing-policy.json",
+                "standing-policy.json.sig",
+            ):
+                path = source_guard / name
+                path.write_bytes((guard / name).read_bytes())
+                path.chmod(0o600)
+            for number in (1, 2):
+                data = bundle("source-" + str(number))
+                directory = source_guard / "releases" / str(number)
+                directory.parent.mkdir(mode=0o700, exist_ok=True)
+                publish_release(data, "a" * 40, release_key, directory, sequence=number)
+                for path in directory.iterdir():
+                    path.chmod(0o600)
+                (source_guard / "release.current").write_text(str(number) + "\n")
+                (source_guard / "release.current").chmod(0o600)
+                with (
+                    patch("logbook.operator_bundle_bootstrap.trusted_parent"),
+                    patch.object(source, "SOURCE_HELPERS", {}),
+                ):
+                    self.assertEqual(
+                        source.install_source_release(data, source_guard, source_base), "UPDATED"
+                    )
+                    current = source.source_runtime(source_base)
+                    self.assertEqual(current.stat().st_mode & 0o777, 0o755)
+                    self.assertEqual((current / "release.json").stat().st_mode & 0o777, 0o644)
+            public_manifest = current / "release.json"
+            original_metadata = public_manifest.read_bytes()
+            public_manifest.write_bytes(b"x" * 100001)
+            with self.assertRaisesRegex(ValueError, "bounded installed source"):
+                source.installed_source_release(source_guard, current)
+            public_manifest.write_bytes(original_metadata)
             control = {p.name: (p.read_bytes(), p.stat().st_mode) for p in guard.iterdir()}
             helper = root / "helper"
             helper.write_bytes(b"initial")
@@ -301,6 +343,14 @@ class MaintenanceAuthorityTests(TestCase):
                         with self.assertRaisesRegex(ValueError, "stale or conflicts"):
                             source.install_source_release(data, guard, base)
                         release["sequence"] = 3
+                        current_metadata = source.source_runtime(base) / "release.json"
+                        saved_metadata = current_metadata.read_bytes()
+                        current_metadata.write_text(
+                            json.dumps(json.loads(saved_metadata) | {"bundle_sha256": "0" * 64})
+                        )
+                        with self.assertRaisesRegex(ValueError, "does not match generation"):
+                            source.install_source_release(data, guard, base)
+                        current_metadata.write_bytes(saved_metadata)
                         with patch.object(source, "controls", side_effect=[{}, {"changed": True}]):
                             with self.assertRaisesRegex(ValueError, "controls changed"):
                                 source.install_source_release(data, guard, base)
