@@ -21,6 +21,11 @@ production version remains 1.2.3.
 
 ## [Unreleased]
 
+### Changed
+
+- Report bounded consumer identity/state when the post-recovery volume check
+  refuses exclusivity; preserve its refusal and keep startup closed.
+
 ### Fixed
 
 - Reuse the previously proven18GiB/2CPU named graph restore capacity with36GiB

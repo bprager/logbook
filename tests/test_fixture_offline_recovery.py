@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -133,6 +134,22 @@ class FixtureOfflineTests(unittest.TestCase):
             self.assertEqual(commands[5][:3], ['docker', 'stop', '--time'])
             self.assertFalse((root/'start-allowed').exists())
 
+    def test_post_stop_volume_consumer_is_reported_without_releasing_guard(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            request = self.make_state(root)
+            recovery = Mock()
+            mount = json.dumps([{'Destination':'/var/lib/memgraph','Type':'volume',
+                                'Name':'logbook-fixture-data','RW':True}])
+            recovery.run.side_effect = ['', 'container-id', '321 true none', mount,
+                                        'rolled-back', '', 'other-container', '/other running true']
+            with patch('logbook.fixture_offline_recovery.boot_id', return_value='boot-two'), \
+                 patch('logbook.fixture_offline_recovery.FixtureBootGuard') as guard:
+                guard.return_value.marker = root/'start-allowed'
+                with self.assertRaisesRegex(ValueError, '/other running true'):
+                    recover_offline(request, recovery)
+            self.assertFalse((root/'offline-outcome.json').exists())
+
     def test_busy_volume_or_failed_rollback_does_not_create_outcome(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -142,8 +159,9 @@ class FixtureOfflineTests(unittest.TestCase):
                 guard.return_value.marker = root/'start-allowed'
                 recovery = Mock()
                 recovery.run.return_value = 'other-container'
-                with self.assertRaisesRegex(ValueError, 'in use'):
+                with self.assertRaisesRegex(ValueError, 'in use') as raised:
                     recover_offline(request, recovery)
+                self.assertIn('other-container', str(raised.exception))
                 recovery.run.reset_mock()
                 recovery.run.side_effect = ['', 'container-id', '321 true none',
                                             json.dumps([{'Destination':'/var/lib/memgraph','Type':'volume',
@@ -203,7 +221,8 @@ class FixtureOfflineTests(unittest.TestCase):
                 elif scenario == 'outcome':
                     responses = ['', 'id', '321 true none', mount, 'unknown', '']
                 else:
-                    responses = ['', 'id', '321 true none', mount, 'rolled-back', '', 'still-running']
+                    responses = ['', 'id', '321 true none', mount, 'rolled-back', '', 'still-running',
+                                 subprocess.CalledProcessError(1, ['docker', 'inspect'])]
                 recovery.run.side_effect = responses
                 with patch('logbook.fixture_offline_recovery.boot_id', return_value='boot-two'), \
                      patch('logbook.fixture_offline_recovery.FixtureBootGuard') as guard:

@@ -40,6 +40,20 @@ def stop_offline_container(recovery, name: str) -> None:
             raise
 
 
+def ensure_volume_unused(recovery, volume: str, context: str = "") -> None:
+    consumers = recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).split()
+    if consumers:
+        diagnostics = []
+        for identifier in consumers[:3]:
+            try:
+                details = recovery.run(['docker', 'inspect', '--format',
+                                        '{{.Name}} {{.State.Status}} {{.State.Running}}', identifier])
+            except subprocess.CalledProcessError as error:
+                details = 'inspect failed: '+str(error)
+            diagnostics.append({'container':identifier,'state':details[:2000]})
+        raise ValueError('fixture volume in use '+context+': '+json.dumps(diagnostics))
+
+
 def _validate_named(request: dict) -> None:
     if (request.get('boot_guard_service') != 'memgraph.service'
             or Path(request.get('boot_guard_dir', '')) != NAMED_GUARD_DIR
@@ -171,8 +185,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
             raise ValueError('invalid recorded fixture storage')
         with (directory/'offline-recovery.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
-                raise ValueError('fixture volume is in use')
+            ensure_volume_unused(recovery, volume)
             _discard_stale_named_receipt(directory, expected, volume, record['boot_id'], None, False)
             if os.path.lexists(journal) or os.path.lexists(journal.with_name(journal.name+'.complete')):
                 raise ValueError('journal appeared during recovery')
@@ -194,8 +207,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
         raise ValueError('invalid recorded fixture storage')
     with (directory/'offline-recovery.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
-            raise ValueError('fixture volume is in use')
+        ensure_volume_unused(recovery, volume)
         if _named:
             _discard_stale_named_receipt(directory, expected, volume, record['boot_id'], batch, completed)
         memory = offline_memory_limit(_named)
@@ -228,8 +240,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
                 raise ValueError('fixture rollback outcome unconfirmed')
         finally:
             stop_offline_container(recovery, name)
-        if recovery.run(['docker', 'ps', '-q', '--filter', 'volume='+volume]).strip():
-            raise ValueError('fixture volume remains in use')
+        ensure_volume_unused(recovery, volume, 'after stopping '+name)
         _save(directory/'offline-outcome.json', {**expected, 'volume':volume, 'boot_id':boot_id(), 'outcome':result, 'batch':batch})
         return result
 
