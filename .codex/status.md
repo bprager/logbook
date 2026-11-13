@@ -1,6 +1,6 @@
 # Status
 
-## Current recovery hold — 2026-11-13 01:04 UTC
+## Exact guarded retry staged — 2026-11-13 UTC
 
 Signed sequence8 executor74a069ec is installed. Standing policy and permissions
 remain unchanged.110 actual repair windows returned retained. Last valid service
@@ -11,18 +11,26 @@ Full current node/link/property reconciliation is not yet proven.
 Current supervisor48339 is terminal: cycle89 timed out after441.988sec total,
 waiting390sec for independent source holder16943. Existing fixed pending checks
 returned recovery-pending through01:04 UTC; source guard and holder remain.
-The installed watchdog permits three starts capped at240sec each. Its actual
-protected service state is not exposed through the limited pending response;
-no terminal-watchdog cause is inferred. No new repair loop, forced marker release,
+Owner protected state/journals now confirm all three attempts failed at
+`drain_transactions`, first final drain then initial drain, followed by start-limit
+refusal. Recovery is failed/failed/exit-code with no process; worker/timer inactive,
+Memgraph service running. Underlying active-transaction/listing cause is not yet
+observed. No new repair loop, forced marker release,
 service restart, policy change or owner signing was performed.
 
-Exact next on Mimir: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-watchdog-74a069e/inspect-current-recovery.sh`.
-This prepared, shell-checked script reads only exact pending worker/recovery unit
-state and logs through the protected recovery login. Owner must privately unlock
-that SSH login because automation cannot read those logs. It requests no approval
-signature and starts no repair/retry. Inspect output, recover only this pending
-window through existing verified paths, then finish all current identifiers,
-classifications, extra-record preservation and guard/health checks before readiness.
+Exact next ON MIMIR: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-6fcb354/retry-pending-recovery.sh`.
+The existing reviewed retry adapter is staged with only its exact target changed
+to6fcb354f44694457bf18d0b4e93f0506. Four existing safety tests against that candidate,
+wrong/old target refusal, AST-only-pin equivalence, native byte matching, Ruff and
+shell checks passed. It verifies installed signed executor, private exact stop
+proof, target/fence and failed/inactive retry state, emits redacted transaction
+listing diagnostic and invokes the installed guarded retry. It does not clear
+fences directly or change code/policy/permissions. Existing outcome/binding checks
+precede startup permission; source guard release stays with its independent holder.
+Owner privately unlocks the protected SSH recovery login; no new approval
+signature is requested. Paste output. Then recover only this pending window,
+finish actual identifiers/classifications/extras/recovery/guard/health comparison
+and the original goal audit. New repair has not started. Do not run the old updater.
 Do not ask for a generic proceed or repeat strategic approval.
 
 Fjolsvidr draft [PR377](https://github.com/bprager/Fjolsvidr/pull/377) contains actual
@@ -31,7 +39,8 @@ failure is recorded in the existing private outcome ledger as
 `operator-task.188f049b542185bfccf509e36ef72b6a7d423ac328d08a0f3caa02be23462e44`;
 replay/fresh read passed, operator-reported, benefit missing, no runtime authority.
 Existing source implementation gate:664 tests passed/21 skipped, lint/types/docs/
-watcher build/changed-line coverage passed. This update changes status only.
+watcher build/changed-line coverage passed. This update changes status only. Current retry artifact and tests are in Fjolsvidr
+`transaction-drain-recovery-2026-11-13/assessment.md`, PR377.
 This supersedes earlier next actions below.
 
 ## Bounded recovery watchdog retries — 2026-11-12 UTC
