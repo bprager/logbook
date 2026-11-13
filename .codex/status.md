@@ -1,5 +1,30 @@
 # Status
 
+## Recovery confirmed; bounded repair resumed — 2026-11-13 UTC
+
+The owner retry recovered exact6fcb354 and confirmed retained outcome/startup
+permission. Routine pending call45430 returned retained, exit0/empty stderr;
+source guard absent, old holder exited and both locks free before resuming.
+111 retained windows including the recovered incident; sole supervisor73425 has
+added three more as of02:18 UTC (114 total). Policy, executor and permissions
+unchanged; no owner action currently needed.
+
+Actual quiet-point comparison found271/271 jobs but1698 missing nodes/11374
+missing links,28 extra nodes/2135 extra links and5 old fields on3 existing jobs.
+Source projection refresh matched; graph counts stable while collected. Other
+content properties were not compared. Preserve extras; totals alone do not close
+the gap. Current protected repair is create-only and will not fix those fields.
+Read-only authority review supports the existing normal job-scoped projection
+path for prior approved source decisions, conditional on comparing the complete
+three projections first (293 nodes/517 links in private preview, no writes).
+
+Exact next: supervise73425 to terminal, refresh comparison, then use normal sync
+only if its effective changes match approved source updates; otherwise assess
+additional changes. Verify recovery/guard/health and record final truthful ledger,
+evidence and original-goal audit. No policy expansion, forced release or source
+reclassification. Fjolsvidr evidence: transaction-drain-recovery-2026-11-13,
+commit7b5a4a9c, draftPR377. This supersedes old retry instructions below.
+
 ## Exact guarded retry staged — 2026-11-13 UTC
 
 Signed sequence8 executor74a069ec is installed. Standing policy and permissions
