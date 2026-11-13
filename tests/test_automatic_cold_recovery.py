@@ -164,6 +164,8 @@ class AutomaticColdRecoveryTests(TestCase):
             self.assertTrue(frame["logs"]["memgraph.log"].endswith("snapshot loading"))
             self.assertEqual(len(frame["logs"]["memgraph.log"]), 4096)
             self.assertNotEqual(frame["logs"]["link"], "VmRSS: 1024 kB")
+            (process / "status").write_text("State:\tZ (zombie)\n")
+            self.assertFalse(capture("123", root)["alive"])
             self.assertFalse(capture("456", root)["alive"])
             with self.assertRaisesRegex(ValueError, "positive"):
                 capture("0", root)

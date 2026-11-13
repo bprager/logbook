@@ -25,9 +25,9 @@ def offline_memory_limit(named: bool) -> str:
         return '1g'
     match = re.search(r'^MemAvailable:\s+([0-9]+) kB$',
                       Path('/proc/meminfo').read_text(), re.MULTILINE)
-    if match is None or int(match[1]) < 8 * 1024 * 1024:
-        raise ValueError('8GiB available memory headroom required for named recovery')
-    return '4g'
+    if match is None or int(match[1]) < 36 * 1024 * 1024:
+        raise ValueError('36GiB available memory headroom required for named recovery')
+    return '18g'
 
 
 def stop_offline_container(recovery, name: str) -> None:
@@ -202,7 +202,7 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
         name = 'logbook-fixture-recovery-'+uuid.uuid4().hex
         try:
             recovery.run(['docker', 'run', '-d', '--rm', '--name', name, '--network=none',
-                          '--cpus=1', '--memory='+memory, '--memory-swap='+memory,
+                          '--cpus='+('2' if _named else '1'), '--memory='+memory, '--memory-swap='+memory,
                           '--mount', 'type=volume,src='+volume+',dst=/var/lib/memgraph',
                           image, '--bolt-port='+str(request['port']),
                           *(['--storage-recovery-thread-count=1', '--log-level=INFO',
@@ -222,7 +222,8 @@ def recover_offline(request: dict, recovery, *, _named: bool = False) -> str:
             with StartupEvidence(details[0],directory) if _named else nullcontext():
                 result = recovery.run(['nsenter', '-t', details[0], '-n', '/usr/bin/env', 'PYTHONPATH='+str(bundle),
                                        '/usr/bin/python3', '-m', 'logbook.fixture_offline_worker',
-                                       request['journal'], str(directory), str(request['port']), mode], timeout=120).strip()
+                                       request['journal'], str(directory), str(request['port']), mode,
+                                       *(['120'] if _named else [])], timeout=180 if _named else 120).strip()
             if result not in ({'retained'} if completed else {'rolled-back', 'not-retained'}):
                 raise ValueError('fixture rollback outcome unconfirmed')
         finally:

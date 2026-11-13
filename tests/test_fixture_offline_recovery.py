@@ -11,8 +11,8 @@ class FixtureOfflineTests(unittest.TestCase):
     def test_named_memory_cap_requires_headroom_and_keeps_fixture_small(self):
         from logbook.fixture_offline_recovery import offline_memory_limit
         with patch('logbook.fixture_offline_recovery.Path.read_text', return_value='MemAvailable: 56069312 kB\n'):
-            self.assertEqual(offline_memory_limit(True), '4g')
-        with patch('logbook.fixture_offline_recovery.Path.read_text', return_value='MemAvailable: 1048576 kB\n'):
+            self.assertEqual(offline_memory_limit(True), '18g')
+        with patch('logbook.fixture_offline_recovery.Path.read_text', return_value='MemAvailable: 36700160 kB\n'):
             with self.assertRaisesRegex(ValueError, 'headroom'):
                 offline_memory_limit(True)
             self.assertEqual(offline_memory_limit(False), '1g')

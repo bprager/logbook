@@ -1,5 +1,25 @@
 # Status
 
+## Current — reuse the proven full-database restore capacity
+
+PR96/607280c delivered automatically (sequence15). Its bounded recorder now retains
+living frames after process death; latest emitted frame was a zombie. The decisive
+existing Fjolsvidr evidence predates this incident: logbook-live-edge-index-2026-11-05
+records11.75GiB resident for this shared graph; logbook-graph-restore-2026-11-05 and
+logbook-repair-rehearsal-2026-11-05 record successful same-image full restores under
+18GiB/2CPU. The prior1/4GiB caps were smaller than known actual database memory.
+
+Branch fix/reuse-proven-recovery-capacity reuses18GiB/2CPU for this exact named
+volume, requires36GiB available host memory, keeps fixtures1GiB/1CPU, permits at
+most120 readiness attempts within180sec worker/240sec remote deadlines, and
+classifies zombie samples as dead. Image/volume, data recovery, durability,
+receipt/startup gates, signed policy4 and500/5000 record limits stay unchanged.
+31 focused tests pass after capacity/readiness/zombie regressions first failed;
+Ruff/types pass. Exact next: required gate, signed routine publication/delivery,
+one pending recovery; verify retained outcome, receipt-guarded restart and normal
+independent source-holder release, then finish reconciliation. No owner action.
+132 earlier retained; current outcome unknown/graph inactive/guard held until proof.
+
 ## Current — preserve useful startup evidence after process exit
 
 PR95/966f0b2 merged542d707; publisher43430475264 passed and native machine-only

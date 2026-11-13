@@ -23,6 +23,12 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Reuse the previously proven18GiB/2CPU named graph restore capacity with36GiB
+  available-memory preflight and bounded120-attempt startup allowance. Preserve
+  useful startup samples when an exited process remains briefly as a zombie.
+
+### Fixed
+
 - Preserve final living startup evidence when later polls find an exited recovery
   process; repeated missing-process errors no longer erase useful diagnostics.
 
