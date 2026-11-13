@@ -23,6 +23,11 @@ production version remains 1.2.3.
 
 ### Fixed
 
+- Match isolated named recovery to its one-CPU allowance with one recovery
+  thread and preserve INFO startup evidence under the unchanged4GiB cap.
+
+### Fixed
+
 - Verify installed public source metadata in a private verifier copy and execute
   the freshly signed installer, allowing successive routine source updates
   under the existing standing maintenance policy without owner signatures.

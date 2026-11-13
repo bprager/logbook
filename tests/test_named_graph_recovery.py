@@ -58,6 +58,8 @@ class NamedGraphRecoveryTests(TestCase):
                 self.assertIn('--memory=4g',command)
                 self.assertIn('--memory-swap=4g',command)
                 self.assertIn('--cpus=1',command)
+                self.assertIn('--storage-recovery-thread-count=1',command)
+                self.assertIn('--log-level=INFO',command)
                 self.assertIn('--network=none',command)
                 self.assertIn('--storage-wal-enabled=true',command)
                 self.assertIn('--storage-wal-file-flush-every-n-tx=1',command)
