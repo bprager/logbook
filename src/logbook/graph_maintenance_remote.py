@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from logbook.fixture_boot_guard import FixtureBootGuard, MemgraphBootGuard, verify_fixture_binding, verify_memgraph_binding  # noqa: E402
-from logbook.fixture_offline_recovery import record_fixture_storage, record_named_graph_storage, recover_offline, recover_named_graph_offline  # noqa: E402
+from logbook.fixture_offline_recovery import record_fixture_storage, record_named_graph_storage, recover_offline, recover_named_graph_offline, named_offline_required  # noqa: E402
 from logbook.fixture_recovery_release import (authorize_fixture_restart, fixture_restarted, verify_offline_receipt,
                                               authorize_named_graph_restart, verify_named_graph_receipt, _validate_named)  # noqa: E402
 from logbook.graph_maintenance_cross_host import recovery_confirmed  # noqa: E402
@@ -133,7 +133,11 @@ def main() -> None:
         elif action in {'named-status', 'named-outcome'} and launcher.cancelled() is True:
             print('RECOVERED' if action == 'named-status' else 'not-retained')
         elif action == 'named-offline':
-            print(recover_named_graph_offline(request, recovery))
+            try:
+                outcome = verify_named_graph_receipt(request)['outcome']
+            except (FileNotFoundError,ValueError):
+                outcome = recover_named_graph_offline(request,recovery)
+            print(outcome)
         elif action == 'named-authorize':
             authorize_named_graph_restart(request, recovery)
             print('STARTED')
@@ -156,7 +160,14 @@ def main() -> None:
                 except Exception:
                     confirmed = False
                 if action == 'named-status':
-                    print('RECOVERED' if confirmed else 'PENDING')
+                    if confirmed:
+                        print('RECOVERED')
+                    else:
+                        try:
+                            offline = named_offline_required(request,recovery)
+                        except (OSError,ValueError):
+                            offline = False
+                        print('OFFLINE_REQUIRED' if offline else 'PENDING')
                 else:
                     print(verify_named_graph_receipt(request)['outcome'] if confirmed else 'PENDING')
         return

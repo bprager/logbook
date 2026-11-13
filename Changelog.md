@@ -23,6 +23,11 @@ production version remains 1.2.3.
 
 ### Changed
 
+- Resume saved cold recovery through existing machine-only commands, reuse
+  verified receipts, and preserve bounded startup diagnostics before process exit.
+
+### Changed
+
 - Explicit standing maintenance delegation replaces per-release owner signatures
   with verified automatic executor and immutable source updates on both hosts.
   Authority changes still require the owner; initial delegation is not activated.

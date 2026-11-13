@@ -149,7 +149,8 @@ class RepairCycleTests(TestCase):
             marker.chmod(0o600)
             from logbook.lock_guard_client import OPERATOR_KEY
             remote=Mock(host='logbook-repair@odin',identity=OPERATOR_KEY)
-            remote.recovered.side_effect=[False,True]
+            remote.invoke.return_value="PENDING"
+            remote.recovered.return_value=True
             remote.cancel_unstarted.return_value=True
             remote.outcome.return_value='not-retained'
             with patch('logbook.repair_cycle._named_remote',return_value=remote), \

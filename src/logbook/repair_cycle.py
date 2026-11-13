@@ -71,7 +71,15 @@ def _recover_pending(root: Path) -> str | None:
         return 'preparation-interrupted'
     remote = _named_remote(root/pending['state'])
     _check_remote(remote)
-    if not remote.recovered():
+    status = remote.invoke('named-status')
+    if status == 'OFFLINE_REQUIRED':
+        if remote.invoke('named-offline') not in {'retained','rolled-back','not-retained'}:
+            raise RuntimeError('offline recovery outcome unconfirmed')
+        if remote.invoke('named-authorize') != 'STARTED':
+            raise RuntimeError('named graph restart unconfirmed')
+        if not remote.recovered():
+            return 'recovery-pending'
+    elif status != 'RECOVERED':
         if not remote.cancel_unstarted() or not remote.recovered():
             return 'recovery-pending'
     outcome = remote.outcome()

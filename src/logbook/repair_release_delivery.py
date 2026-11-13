@@ -76,7 +76,7 @@ def send_release(manifest: bytes, signature: bytes, data: bytes | None = None) -
         raise TimeoutError('release receiver timed out') from error
     response = result.stdout.strip()
     if result.returncode or response not in {'UPDATED', 'UNCHANGED', 'MAINTENANCE_REQUIRED'}:
-        raise ConnectionError('release receiver rejected metadata')
+        raise ConnectionError('release receiver rejected metadata\nstdout:\n'+result.stdout+'\nstderr:\n'+result.stderr)
     return response
 
 
