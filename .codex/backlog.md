@@ -2,6 +2,8 @@
 
 ## Current — routine maintenance delegation, 2026-11-13
 
+Implementation `3c2ec90920d3bb120101881b66c2143a25d54f56`; [PR92](https://github.com/bprager/logbook/pull/92). Required commit gate also passed after documentation corrections.
+
 Owner correction: routine maintenance/development must never request per-version
 owner signatures. Implemented explicit version4 standing delegation to the
 existing signed publisher, automatic Odin executor/helpers and Mimir immutable
