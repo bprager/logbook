@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import tempfile
 
 from logbook import operator_bundle_bootstrap as bootstrap
 from logbook.repair_release_delivery import fetch_candidate, REPOSITORY
@@ -50,6 +51,19 @@ def validate_source_generation(path: Path, digest: str) -> None:
         raise ValueError("existing source generation mismatch")
 
 
+def installed_source_release(guard: Path, current: Path) -> dict:
+    """Verify root-controlled public code metadata in a private verifier copy."""
+    validate_source_generation(current, current.name)
+    with tempfile.TemporaryDirectory(prefix=".source-signature-", dir=guard) as temporary:
+        private = Path(temporary)
+        for name in ("release.json", "release.json.sig"):
+            data = (current / name).read_bytes()
+            if len(data) > 100000:
+                raise ValueError("bounded installed source metadata required")
+            atomic_file(private / name, data, 0o600)
+        return bootstrap.approved_release(guard, private)
+
+
 def install_source_release(data: bytes, guard: Path = GUARD, base: Path = BASE) -> str:
     if bootstrap.signed_policy(guard)["schema"] != 4:
         raise ValueError("owner maintenance delegation required")
@@ -62,7 +76,9 @@ def install_source_release(data: bytes, guard: Path = GUARD, base: Path = BASE) 
         if current.name == release["bundle_sha256"]:
             return "UNCHANGED"
         if current != base / "lib":
-            installed = bootstrap.approved_release(guard, current)
+            installed = installed_source_release(guard, current)
+            if installed["bundle_sha256"] != current.name:
+                raise ValueError("installed source release does not match generation")
             if release["sequence"] <= installed["sequence"]:
                 raise ValueError("source maintenance release is stale or conflicts")
         releases = base / "releases"

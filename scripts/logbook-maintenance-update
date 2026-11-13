@@ -4,6 +4,9 @@ import os
 import re
 import stat
 import sys
+import hashlib
+import subprocess
+import tempfile
 from pathlib import Path
 
 CODE_ROOT = Path('/Library/Application Support/LogbookPlanProducer/lib')
@@ -46,8 +49,33 @@ def main():
             check_trusted_file(Path(current)/name)
     sys.dont_write_bytecode = True
     sys.path.insert(0,str(code_root))
-    from logbook.source_maintenance import main as maintain
-    maintain()
+    # The installed generation supplies only the stable policy/signature verifier
+    # and fetcher. Execute the freshly verified installer's code, so a bug in an
+    # older source installer cannot prevent its own routine replacement.
+    from logbook import operator_bundle_bootstrap as bootstrap
+    from logbook.repair_release_delivery import fetch_candidate, REPOSITORY
+    guard = CODE_ROOT.parent/'maintenance'
+    bootstrap.trusted_parent(guard/'check')
+    if bootstrap.signed_policy(guard)['schema'] != 4:
+        raise ValueError('owner maintenance delegation required')
+    manifest,signature,data = fetch_candidate(REPOSITORY)
+    bootstrap.receive_release(guard,manifest,signature,_source=True)
+    release = bootstrap.approved_release(guard)
+    if hashlib.sha256(data).hexdigest() != release['bundle_sha256']:
+        raise ValueError('signed source installer package mismatch')
+    if code_root.name == release['bundle_sha256']:
+        print('UNCHANGED')
+        return
+    with tempfile.TemporaryDirectory(prefix='.signed-source-installer-',dir=guard) as temporary:
+        work = Path(temporary)
+        bootstrap.install_bundle(data,work/'runtime',release['bundle_sha256'])
+        package = work/'bundle.tar.gz'
+        package.write_bytes(data)
+        package.chmod(0o600)
+        driver = ("import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);"
+                  "from logbook.source_maintenance import install_source_release;"
+                  "print(install_source_release(Path(sys.argv[2]).read_bytes()))")
+        subprocess.run(['/usr/bin/python3','-I','-c',driver,str(work/'runtime'),str(package)],check=True)
 
 
 if __name__ == '__main__':

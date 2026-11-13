@@ -21,6 +21,12 @@ production version remains 1.2.3.
 
 ## [Unreleased]
 
+### Fixed
+
+- Verify installed public source metadata in a private verifier copy and execute
+  the freshly signed installer, allowing successive routine source updates
+  under the existing standing maintenance policy without owner signatures.
+
 ### Changed
 
 - Resume saved cold recovery through existing machine-only commands, reuse
