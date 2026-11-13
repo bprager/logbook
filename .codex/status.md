@@ -1,5 +1,58 @@
 # Status
 
+## Current — full comparison found remaining differences; read-only limit corrected
+
+The sole repair loop stopped safely at cycle69 after23 retained windows, before
+starting another repair. Actual producer job238 has6174 records; read-only
+incomplete_plan reproduces "repair plan exceeds policy". This inspection wrongly
+reused the complete write-plan size restriction. Branch
+fix/read-only-large-plan-discovery reuses canonical/scope validation in bounded
+pages for inspection only. Full write plans still reject >5000 records and500
+writes/window remains. No policy, permission, trust or signature change.
+
+A quiet source-locked full comparison through Memgraph MCP found4 missing nodes,
+900 missing links,304 property differences,28 extra nodes/2135 extra links;
+271 jobs on each side. No duplicate IDs or type/endpoint conflicts. Both source
+projection and graph counts stayed stable. The one huge response failed; bounded
+500-record pages returned actual full data. Private payloads remain local.
+
+Exact next: finish required gate/review, publish and automatically deliver this
+routine fix, finish the remaining bounded repairs, assess source evidence for
+all field differences before normal projection refresh, preserve/classify extras,
+then recompare and verify health. No user intervention currently required;
+readiness remains pending. Fjolsvidr delegated-recovery-2026-11-13 evidence.
+Earlier next steps below are historical.
+
+## Current — actual guarded recovery confirmed; reconciliation running
+
+PR99/6374402 mergedacebddaeb9291d7ccc57a0727f02c5f90c7e831a; publisher43433614741
+passed. Actual automatic sequence18 delivery returned RELEASE_READYacebdda on
+both hosts without signing/admin/login interaction. Native source pointer18
+is independently verified. Post-start pending call returned REPAIR_CYCLE retained
+with exit0/empty stderr. Source guard absent, old guardian51095/51099 exited and
+both source locks free BEFORE resuming. MCP RETURN1 and271 Logbook jobs succeeded.
+
+The offline receipt, guarded main restart and normal independent source release
+are now confirmed. Earlier startup/readiness check expired during main loading;
+a fresh existing pending check reconciled actual ready state without force-start
+or a new repair. No policy/permission/record-limit change. Current sole supervised
+repair loop has added two further retained windows as of13:37UTC, with one normal
+scan step; it stops on error/recovery-pending/scan-complete. Existing root bounds
+remain. Main availability is intermittent during these guarded windows; no final
+record equality or readiness is claimed.
+
+Owner severe-only signing correction is now actually synced through Memgraph MCP
+and global/project mirrors refreshed; pending preference record archived. A new
+truthful local recovery ledger observation fe389699 passed replay/fresh read and
+preserved all earlier records; benefit/intended outcome remains missing, no authority.
+
+Exact next: supervise the existing loop to a quiet scan completion, compare all
+source/graph identifiers, labels, link endpoints and approved fields, preserve/
+classify extras, apply only accepted source-field refresh through normal projection,
+then verify health and truthful final evidence. Do not start a competing loop or
+ask for another generic proceed. Full original goal/readiness remains pending.
+Fjolsvidr evidence: delegated-recovery-2026-11-13/. Earlier next actions superseded.
+
 ## Current — exact Docker removal race identified and corrected
 
 PR98/cbdabdc merged5f2556d; publisher43432774530 passed and automatic delivery

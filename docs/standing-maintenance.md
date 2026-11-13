@@ -38,19 +38,22 @@ switching the source host backwards after a newer update.
 
 ## Initial activation and limits
 
-The existing production version 3 policy does not grant this maintenance trust.
-A single explicit version 4 policy signature and initial root installation on
-both machines are required. The reviewed Fjolsvidr `delegate-maintenance.py`
-performs this authority transition; it does not request an executor-version
-signature. Its Odin login and local administrator authentication are used only
-for this initial permission change, not normal maintenance.
+The owner activated version4 on both hosts at abb99da/sequence11. The initial
+fixed source updater required one administrator repair because its old verifier
+rejected public generation permissions. PR94 corrected successive updates; the
+narrow repair changed only the signed fixed updater, with no new signature/policy.
 
-The implementation does not resolve the pending cold recovery's memory failure.
-The owner's latest output proves executor `404d1cb` installed and the 4 GiB
-isolated recovery also OOM-killed. There are 132 prior retained windows; the
-pending outcome remains unknown. No direct graph startup or source-guard release
-is authorized by a maintenance receipt. Actual production activation and an
-ownerless subsequent release remain to be verified after the initial transition.
+Actual native machine-only delivery then applied successive releases13–18 on both
+hosts without further owner intervention. Cold recovery now uses the already proven
+18GiB/2CPU full-database capacity with36GiB available-memory preflight, and waits
+only for the exact stopped temporary container's asynchronous removal. The guarded
+pending call subsequently returned retained; main graph query succeeded and the
+normal source holder released both locks. See PR95–99 and Fjolsvidr's
+delegated-recovery-2026-11-13 evidence. No force-start or guard bypass was used.
+
+Full record reconciliation and production readiness remain pending. Receipt-bound
+recovery is distinct from those outcomes. A new bounded repair loop is running;
+no continuous database availability is claimed during guarded maintenance windows.
 
 ## Evidence
 

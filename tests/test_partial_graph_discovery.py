@@ -15,6 +15,34 @@ class PartialGraphDiscoveryTests(TestCase):
                     {'id': n['id'], 'labels': n['labels']} for n in nodes]
         self.assertFalse(incomplete_plan(Session(), 1, plan))
 
+    def test_read_only_discovery_above_write_plan_limit_keeps_write_limit(self):
+        from logbook.partial_graph_discovery import incomplete_plan
+        from logbook.standing_graph_policy import check_plan
+        from logbook.named_graph_approval import plan_digest
+        job = 'logbook:job:000001'
+        nodes = [{'id': job, 'labels': ['LogbookJob'], 'properties': {}}] + [
+            {'id': job + f':segment:{i:04d}', 'labels': ['TranscriptSegment'], 'properties': {}}
+            for i in range(5000)]
+        plan = {'nodes': nodes, 'relationships': [], 'generated_at': 'fixture'}
+        class Session:
+            def run(self, query, **kwargs):
+                return [] if 'MATCH (a)-[r]' in query else [
+                    {'id': n['id'], 'labels': n['labels']} for n in nodes]
+        self.assertFalse(incomplete_plan(Session(), 1, plan))
+        policy = {'schema': 3, 'max_batch_records': 500, 'max_plan_records': 5000,
+                  'expires_at': None}
+        release = {'revision': '0'*40, 'bundle_sha256': '0'*64}
+        request = {'job_id': 1, **release, 'plan_sha256': plan_digest(plan)}
+        with self.assertRaisesRegex(ValueError, 'exceeds policy'):
+            check_plan(request, plan, policy, release=release)
+        with self.assertRaisesRegex(ValueError, 'duplicate plan'):
+            incomplete_plan(Session(), 1, {**plan, 'nodes': nodes + nodes[:1]})
+        with self.assertRaisesRegex(ValueError, 'exceeds policy'):
+            incomplete_plan(Session(), 1, {**plan, 'nodes': []})
+        invalid = {**nodes[-1], 'id': 'another:job:1'}
+        with self.assertRaisesRegex(ValueError, 'out-of-scope'):
+            incomplete_plan(Session(), 1, {**plan, 'nodes': nodes[:-1] + [invalid]})
+
     def test_signed_discovery_checks_graph_binding_and_result(self):
         from unittest.mock import patch
         from logbook.partial_graph_discovery import discover
