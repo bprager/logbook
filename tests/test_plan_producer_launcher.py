@@ -32,10 +32,12 @@ class ProducerLauncherTests(TestCase):
         with patch.object(module,'check_trusted_directory'), patch.object(module,'check_trusted_file'), \
              patch.object(module.os,'walk',return_value=[]), patch.object(module.os,'geteuid',return_value=3), \
              patch.object(module.pwd,'getpwnam',side_effect=lambda name: SimpleNamespace(pw_uid=users[name])), \
+             patch.object(module.subprocess,'run',return_value=SimpleNamespace(returncode=0)) as update, \
              patch('logbook.repair_release_delivery.main') as run, patch.object(module.sys,'path',list(module.sys.path)), \
              patch.object(module.sys,'dont_write_bytecode',False), patch.object(module.sys,'argv',['launcher']):
             module.main()
             run.assert_called_once_with()
+            self.assertEqual(update.call_args.args[0], ['/usr/bin/sudo','-n','/usr/local/libexec/logbook-maintenance-update'])
 
     def test_restricted_operator_can_run_only_fixed_repair_cycle(self):
         import plistlib

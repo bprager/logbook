@@ -1,5 +1,14 @@
 # Decision Log
 
+## 2026-11-13 — Approval follows authority, not implementation hashes
+
+Routine maintenance, development, diagnostics and recovery inside standing
+authority do not require owner signatures. Version4 explicitly delegates signed
+implementation maintenance to the existing release publisher, which becomes a
+trusted privileged-code supplier. New policy/trust/permission/exception changes
+remain severe. Legacy executor-version approvals are not the normal update path.
+See [standing maintenance](../docs/standing-maintenance.md).
+
 ## Accepted
 
 ### D-020: Quiet remote retries and buffer-verified eject

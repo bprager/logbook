@@ -75,7 +75,7 @@ def authorize_repair(request: dict, plan: dict, guard: Path, *, now: int | None 
         if not isinstance(policy, dict):
             raise ValueError('standing policy must be an object')
         release = None
-        if policy.get('schema') in (2, 3):
+        if policy.get('schema') in (2, 3, 4):
             unit = request.get('unit')
             match = re.fullmatch(r'logbook-graph-maintenance-([a-f0-9]{32})\.service', unit) if isinstance(unit, str) else None
             if match is None:

@@ -1,5 +1,24 @@
 # Status
 
+## Current — routine maintenance delegation, 2026-11-13
+
+Owner correction: routine maintenance/development must never request per-version
+owner signatures. Implemented explicit version4 standing delegation to the
+existing signed publisher, automatic Odin executor/helpers and Mimir immutable
+source/launchers, update locks, ordering and rollback. It explicitly trusts the
+publisher as a privileged-code supplier; policy/trust/permissions changes still
+need owner intervention. Existing500/5000 bounds remain.
+
+Validation: required gate passed672 tests/21 skipped, lint/types/docs/watcher build
+and99% changed-line coverage. Crypto test deletes the fixture owner private key
+before routine upgrades. See docs/standing-maintenance.md and gate evidence.
+Production is NOT delegated yet. Owner output proves404d1cb installed, but its4GiB
+cold recovery also OOM-killed;132 prior retained windows/current outcome unknown.
+Exact next: publish this implementation once, stage/rehearse the single policy-only
+signature transition on both hosts, then activate that severe delegation and use
+ordinary automatic updates/recovery to close the existing incident. Do not offer
+old per-version signing commands. Earlier handoffs below are historical.
+
 2026-11-13: Owner Docker events prove the isolated named recovery container hit OOM and died137 about9sec after launch. Host MemAvailable56069312kB; 1GiB scratch cap is insufficient. Branch fix/offline-recovery-memory raises only named recovery to4GiB with at least8GiB available host memory required; CPU1, network-none, exact image/volume, 500-write policy, receipts and restart protections remain. Fixture cap stays1GiB. Cleanup confirms already-removed container absence without masking the worker failure. Not installed or qualified yet; protected executor remains74a069ec,132 earlier retained windows, current outcome unknown. Exact next: finish required gate, publish signed correction, stage tested exact owner executor update plus the existing cold recovery in one owner login, then confirm actual outcome and source-guard release and resume reconciliation. No repeated diagnostic retry under the insufficient cap. Fjolsvidr PR377/Logbook implementation PR to follow; no readiness claim.
 
 2026-11-13: Owner child stderr proves isolated retain-worker connectivity was refused at 127.0.0.1:7697 throughout its 30-attempt check. Restart verified; journal/completion present; no verified recovery/restart. Underlying database startup cause still unknown. Branch fix/offline-startup-diagnostics adds bounded read-only temporary-container state, logs (both streams) and events before existing cleanup; one attempt, original exception retained, no executor/policy/permission/resource changes. Seven focused checks, Ruff/shell/diff and native byte/mode match pass. Exact next ON MIMIR: `/bin/sh ~/.local/share/FjolsvidrAccessMigration/logbook-recovery-bafc7fb/recover-restarted-window.sh` then complete output; one private SSH login, no new signature. Inspect startup evidence before changing behavior. 132 earlier retained windows; current outcome unknown; no repair supervisor; source guard not force-cleared. Evidence: offline-startup-diagnostic-2026-11-13/assessment.md; PR377. Full reconciliation and readiness pending. Earlier handoffs are historical.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import fcntl
 import io
 import json
@@ -34,8 +35,16 @@ def policy_plan_limit(policy: dict, *, now: int | None = None) -> int:
             fields |= {'revision', 'bundle_sha256'}
         limit = policy.get('max_records')
         valid_bounds = type(limit) is int and 1 <= limit <= MAX_BATCH_RECORDS
-    elif schema == 3:
+    elif schema in (3, 4):
         fields |= {'max_batch_records', 'max_plan_records'}
+        if schema == 4:
+            fields.add('maintenance')
+            delegation = policy.get('maintenance')
+            if (not isinstance(delegation, dict) or set(delegation) != {'mode','release_key'}
+                    or delegation['mode'] != 'trusted-signed-releases'
+                    or not isinstance(delegation['release_key'], str)
+                    or not re.fullmatch(r'SHA256:[A-Za-z0-9+/]{43}', delegation['release_key'])):
+                raise ValueError('explicit trusted maintenance delegation required')
         limit = policy.get('max_plan_records')
         batch = policy.get('max_batch_records')
         valid_bounds = (type(batch) is int and batch == MAX_BATCH_RECORDS
@@ -45,7 +54,7 @@ def policy_plan_limit(policy: dict, *, now: int | None = None) -> int:
     expiry = policy.get('expires_at')
     current = int(time.time()) if now is None else now
     if (set(policy) != fields or not valid_bounds
-            or not ((schema in (2, 3) and expiry is None)
+            or not ((schema in (2, 3, 4) and expiry is None)
                     or (type(expiry) is int and expiry >= current))):
         raise ValueError('invalid or expired standing policy')
     return limit
@@ -196,6 +205,30 @@ def executor_approval(guard: Path, *, current: bool) -> dict:
     return approval
 
 
+def signed_policy(guard: Path) -> dict:
+    """Owner signature authorizes authority; schema4 delegates implementation."""
+    content = _private_file(guard/'standing-policy.json')
+    signature = guard/'standing-policy.json.sig'
+    allowed = guard/'approval.allowed_signers'
+    _private_file(signature)
+    _private_file(allowed)
+    result = subprocess.run(['/usr/bin/ssh-keygen','-Y','verify','-f',str(allowed),
+                             '-I','owner','-n','logbook-graph-policy','-s',str(signature)],
+                            input=content,capture_output=True,timeout=10)
+    if result.returncode:
+        raise ValueError('standing policy signature invalid')
+    policy = json.loads(content)
+    policy_plan_limit(policy)
+    if policy['schema'] == 4:
+        keys = re.findall(rb'(?:ssh-ed25519|ssh-rsa) ([A-Za-z0-9+/]+={0,3})',
+                          _private_file(guard/'release.allowed_signers'))
+        fingerprints = {'SHA256:'+base64.b64encode(hashlib.sha256(
+            base64.b64decode(key,validate=True)).digest()).decode().rstrip('=') for key in keys}
+        if fingerprints != {policy['maintenance']['release_key']} or len(keys) != 1:
+            raise ValueError('maintenance release identity does not match policy')
+    return policy
+
+
 def install_protected_executor(data: bytes, guard: Path) -> None:
     """Install an owner-approved fixed executor once, at its fixed location."""
     trusted_parent(guard/'executor')
@@ -215,7 +248,11 @@ def verify_protected_executor(guard: Path) -> None:
     info = root.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
         raise ValueError('private executor required')
-    approval = executor_approval(guard, current=False)
+    policy = signed_policy(guard) if os.path.lexists(guard/'standing-policy.json') else None
+    if policy is not None and policy['schema'] == 4:
+        approval = approved_release(guard, root)
+    else:
+        approval = executor_approval(guard, current=False)
     if _private_file(root/'.bundle-ready') != (approval['bundle_sha256']+'\n').encode():
         raise ValueError('executor approval mismatch')
     for current, directories, files in os.walk(root, followlinks=False, onerror=fail_walk):
@@ -232,12 +269,17 @@ def verify_protected_executor(guard: Path) -> None:
         raise ValueError('protected dispatcher mismatch')
 
 
-def receive_release(guard: Path, manifest: bytes, signature: bytes) -> str:
+def receive_release(guard: Path, manifest: bytes, signature: bytes, *, _source: bool = False) -> str:
     """Atomically select a newer signed release without changing repair policy."""
     if (not isinstance(manifest, bytes) or not 1 <= len(manifest) <= 100000
             or not isinstance(signature, bytes) or not 1 <= len(signature) <= 10000):
         raise ValueError('bounded release metadata required')
-    verify_protected_executor(guard)
+    if _source:
+        if (guard != Path('/Library/Application Support/LogbookPlanProducer/maintenance')
+                or signed_policy(guard)['schema'] != 4):
+            raise ValueError('fixed source maintenance delegation required')
+    else:
+        verify_protected_executor(guard)
     parent = guard/'releases'
     parent.mkdir(mode=0o700, exist_ok=True)
     trusted_parent(parent/'check')
@@ -294,14 +336,33 @@ def receive_release(guard: Path, manifest: bytes, signature: bytes) -> str:
 
 
 def receive_release_request(guard: Path, raw: bytes) -> str:
-    if not isinstance(raw, bytes) or len(raw) > 200000:
+    if not isinstance(raw, bytes) or len(raw) > 40200000:
         raise ValueError('bounded release request required')
     try:
         request = json.loads(raw)
-        if (not isinstance(request, dict) or set(request) != {'manifest', 'signature'}
+        if (not isinstance(request, dict) or set(request) not in ({'manifest','signature'}, {'manifest','signature','bundle'})
                 or not isinstance(request['manifest'], str) or not isinstance(request['signature'], str)):
             raise ValueError('invalid release request')
-        return receive_release(guard, request['manifest'].encode(), request['signature'].encode())
+        if 'bundle' not in request:
+            result = receive_release(guard, request['manifest'].encode(), request['signature'].encode())
+            if os.path.lexists(guard/'standing-policy.json') and signed_policy(guard)['schema'] == 4:
+                if approved_release(guard,guard/'executor') != approved_release(guard):
+                    return 'MAINTENANCE_REQUIRED'
+            return result
+        if not isinstance(request['bundle'], str) or len(request['bundle']) > 40000000:
+            raise ValueError('bounded maintenance bundle required')
+        if signed_policy(guard)['schema'] != 4:
+            raise ValueError('owner maintenance delegation required')
+        result = receive_release(guard, request['manifest'].encode(), request['signature'].encode())
+        verify_protected_executor(guard)
+        sys.dont_write_bytecode = True
+        sys.path.insert(0,str(guard/'executor'))
+        try:
+            from logbook.runtime_maintenance import install_executor_release
+            install_executor_release(base64.b64decode(request['bundle'],validate=True),guard)
+        finally:
+            sys.path.pop(0)
+        return result
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('invalid release request') from error
 
@@ -329,7 +390,7 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
     try:
         policy = json.loads(content)
         policy_plan_limit(policy)
-        if policy['schema'] in (2, 3):
+        if policy['schema'] in (2, 3, 4):
             verify_protected_executor(guard)
         release_dir = guard if policy['schema'] == 1 else current_release_directory(guard)
         release = policy if policy['schema'] == 1 else approved_release(guard, release_dir)
@@ -345,7 +406,7 @@ def install_named_bundle(data: bytes, destination: Path, staging: Path, guard: P
     try:
         install_bundle(data,destination,release['bundle_sha256'])
         installed = True
-        if policy['schema'] in (2, 3):
+        if policy['schema'] in (2, 3, 4):
             for name in ('release.json', 'release.json.sig'):
                 content = _private_file(release_dir/name)
                 fd = os.open(destination/name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -368,7 +429,7 @@ def main() -> None:  # pragma: no cover
     if Path(sys.argv[0]).name == 'logbook-repair-release-receiver':
         if os.geteuid() != 0 or len(sys.argv) != 1:
             raise SystemExit('root and no arguments required')
-        print(receive_release_request(Path('/var/lib/logbook-graph-guard'), sys.stdin.buffer.read(200001)))
+        print(receive_release_request(Path('/var/lib/logbook-graph-guard'), sys.stdin.buffer.read(40200001)))
         return
     if Path(sys.argv[0]).name == 'logbook-protected-executor-installer':
         if os.geteuid() != 0 or len(sys.argv) != 1:

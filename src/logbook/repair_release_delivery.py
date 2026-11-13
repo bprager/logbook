@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import hashlib
 import fcntl
 import os
@@ -53,23 +54,28 @@ def fetch_candidate(repository: str) -> tuple[bytes, bytes, bytes]:
         return manifest,signature,data
 
 
-def send_release(manifest: bytes, signature: bytes) -> str:
+def send_release(manifest: bytes, signature: bytes, data: bytes | None = None) -> str:
     if (not isinstance(manifest, bytes) or not 1 <= len(manifest) <= 100000
             or not isinstance(signature, bytes) or not 1 <= len(signature) <= 10000):
         raise ValueError('bounded release metadata required')
     try:
-        request = json.dumps({'manifest':manifest.decode('utf-8'), 'signature':signature.decode('utf-8')})
+        document = {'manifest':manifest.decode('utf-8'), 'signature':signature.decode('utf-8')}
+        if data is not None:
+            if not isinstance(data,bytes) or not 1 <= len(data) <= 30000000:
+                raise ValueError('bounded maintenance bundle required')
+            document['bundle'] = base64.b64encode(data).decode()
+        request = json.dumps(document)
     except UnicodeDecodeError as error:
         raise ValueError('invalid release metadata') from error
     try:
         result = subprocess.run(['ssh', '-i', str(OPERATOR_KEY), '-o', 'BatchMode=yes',
                                  '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=yes',
                                  'logbook-repair@odin', 'sudo -n /usr/local/libexec/logbook-repair-release-receiver'],
-                                input=request, capture_output=True, text=True, timeout=30)
+                                input=request, capture_output=True, text=True, timeout=120 if data is not None else 30)
     except subprocess.TimeoutExpired as error:
         raise TimeoutError('release receiver timed out') from error
     response = result.stdout.strip()
-    if result.returncode or response not in {'UPDATED', 'UNCHANGED'}:
+    if result.returncode or response not in {'UPDATED', 'UNCHANGED', 'MAINTENANCE_REQUIRED'}:
         raise ConnectionError('release receiver rejected metadata')
     return response
 
@@ -118,7 +124,10 @@ def _accept_candidate_locked(root: Path, manifest: bytes, signature: bytes, data
             os.fsync(fd)
         finally:
             os.close(fd)
-    send_release(manifest,signature)
+    response = send_release(manifest,signature)
+    if response == 'MAINTENANCE_REQUIRED':
+        if send_release(manifest,signature,data) not in {'UPDATED','UNCHANGED'}:
+            raise ConnectionError('maintenance update was not accepted')
     result = {**item, 'bundle_path':str(package)}
     fd, temporary = tempfile.mkstemp(prefix='.release-state-', dir=root)
     try:

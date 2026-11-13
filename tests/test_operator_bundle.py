@@ -293,6 +293,10 @@ class RevisionBundleTests(unittest.TestCase):
             source = root/'src/logbook'
             source.mkdir(parents=True)
             (source/'__init__.py').write_text('reviewed')
+            scripts = root/'scripts'
+            scripts.mkdir()
+            (scripts/'logbook-plan-producer').write_text('# reviewed launcher\n')
+            subprocess.run(['git','-C',str(root),'add','scripts'],check=True)
             subprocess.run(['git', '-C', str(root), 'add', 'src'], check=True)
             subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c',
                             'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], check=True)
@@ -313,6 +317,7 @@ class RevisionBundleTests(unittest.TestCase):
                 self.assertEqual(payload, build_revision_bundle(root, revision, root))
             with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as tar:
                 self.assertEqual(tar.extractfile('logbook/__init__.py').read(), b'reviewed')
+                self.assertEqual(tar.extractfile('logbook/_entrypoints/logbook-plan-producer').read(),b'# reviewed launcher\n')
             from unittest.mock import patch
             with patch('logbook.operator_bundle_bootstrap.trusted_parent'):
                 install_bundle(payload, root/'installed', hashlib.sha256(payload).hexdigest())

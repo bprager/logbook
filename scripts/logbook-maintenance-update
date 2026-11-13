@@ -1,0 +1,54 @@
+#!/usr/bin/python3 -I
+"""Fixed root entry for explicitly delegated signed maintenance; no arguments."""
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+CODE_ROOT = Path('/Library/Application Support/LogbookPlanProducer/lib')
+
+
+def selected_code_root():
+    base = CODE_ROOT.parent
+    pointer = base/'source.current'
+    if not os.path.lexists(pointer):
+        return CODE_ROOT
+    check_trusted_file(pointer)
+    value = pointer.read_text().strip()
+    if not re.fullmatch(r'[a-f0-9]{64}',value):
+        raise ValueError('invalid source generation pointer')
+    return base/'releases'/value
+
+
+def check_trusted_directory(path):
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022):
+        raise ValueError('producer code directory is not root controlled')
+
+
+def check_trusted_file(path):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022):
+        raise ValueError('producer code file is not root controlled')
+
+
+def main():
+    if os.geteuid() != 0 or sys.argv[1:]:
+        raise SystemExit('root and no arguments required')
+    code_root = selected_code_root()
+    for ancestor in (code_root, *code_root.parents):
+        check_trusted_directory(ancestor)
+    for current,directories,files in os.walk(code_root,followlinks=False):
+        for name in directories:
+            check_trusted_directory(Path(current)/name)
+        for name in files:
+            check_trusted_file(Path(current)/name)
+    sys.dont_write_bytecode = True
+    sys.path.insert(0,str(code_root))
+    from logbook.source_maintenance import main as maintain
+    maintain()
+
+
+if __name__ == '__main__':
+    main()

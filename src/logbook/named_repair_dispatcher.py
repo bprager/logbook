@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import fcntl
+from contextlib import contextmanager
 import os
 import re
 import stat
@@ -108,11 +110,11 @@ def reject_uncontained_policy(*, protected: bool = False) -> None:
         raise ValueError('policy too large')
     document = json.loads(content)
     if (not isinstance(document, dict) or type(document.get('schema')) is not int
-            or document['schema'] not in ((2, 3) if protected else (1,))):
+            or document['schema'] not in ((2, 3, 4) if protected else (1,))):
         raise ValueError('separate release authority is disabled')
 
 
-def main() -> None:  # pragma: no cover
+def _dispatch() -> None:  # pragma: no cover
     if os.geteuid() != 0 or len(sys.argv) != 2:
         raise SystemExit('root and one named action required')
     raw = sys.stdin.buffer.read(5000001)
@@ -148,6 +150,24 @@ def main() -> None:  # pragma: no cover
                             env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'},
                             cwd='/',timeout=240,check=False)
     raise SystemExit(result.returncode)
+
+
+@contextmanager
+def dispatch_lock():
+    fd = os.open(GUARD/'runtime-update.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'r+b') as lock:
+        info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise ValueError('private runtime update lock required')
+        fcntl.flock(lock,fcntl.LOCK_SH)
+        yield
+
+
+def main() -> None:  # pragma: no cover
+    if os.geteuid() != 0:
+        raise SystemExit('root required')
+    with dispatch_lock():
+        _dispatch()
 
 
 if __name__ == '__main__':  # pragma: no cover
