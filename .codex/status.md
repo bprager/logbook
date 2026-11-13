@@ -1,5 +1,25 @@
 # Status
 
+## Current activation handoff — 2026-11-13
+
+[PR92](https://github.com/bprager/logbook/pull/92) merged asabb99da65a9e60e882c7df9d2ad1cf41e1721169 (implementation3c2ec90920d3bb120101881b66c2143a25d54f56). Signed publisher43379432367 passed; sequence11 digestbcc2afe90b34b0174ec7bcc78a4fa85fbd740d9669ddbf40575a2c3efaeb9e67 is staged. Required gate672 tests/21 skipped,99% changed-line coverage passed. Actual published package passed disposable root Odin migration/idempotence/rollback and Mimir migration/idempotence/visudo rehearsals;12 Fjolsvidr transition/legacy tests passed. Four staged per-version signing commands are retired.
+
+Production standing maintenance delegation remains PENDING. Existing404d1cb is
+installed; its4GiB isolated cold recovery also OOM-killed.132 prior retained
+windows; pending bafc7fb outcome unknown, graph inactive, source guard retained.
+No production code/policy/permission/startup changed by this handoff.
+
+Exact next ON MIMIR: `/usr/bin/python3 ~/.local/share/FjolsvidrAccessMigration/logbook-standing-maintenance-abb99da/delegate-maintenance.py --apply`.
+This is one new severe trust/permission delegation: ONE standing-policy signature,
+private recovery SSH login and local administrator authentication. No executor
+signature or repair starts. Retry reuses existing policy signature. Then verify
+actual activation and use restricted automatic updates/diagnostics/recovery;
+never ask for a new signature just because code/version changed. Diagnose live
+memory evidence before resource changes; do not force-start graph/clear guards.
+Original reconciliation/readiness remains unfinished. Earlier next actions below
+are historical and superseded. Evidence lives in Fjolsvidr
+maintenance-authority-correction-2026-11-13/assessment.md.
+
 ## Current — routine maintenance delegation, 2026-11-13
 
 Implementation `3c2ec90920d3bb120101881b66c2143a25d54f56`; [PR92](https://github.com/bprager/logbook/pull/92). Required commit gate also passed after documentation corrections.
